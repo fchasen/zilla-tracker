@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5BE2FA0098A003FB395 /* BugzillaKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		3339A5A02FA001FC003FB395 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = Zilla;
 			packageProductDependencies = (
+				3339A5BE2FA0098A003FB395 /* BugzillaKit */,
 			);
 			productName = Zilla;
 			productReference = 3339A5902FA001FC003FB395 /* Zilla.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = 3339A5872FA001FB003FB395;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3339A5BD2FA0098A003FB395 /* XCLocalSwiftPackageReference "Packages/BugzillaKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
 			projectDirPath = "";
@@ -605,6 +614,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		3339A5BD2FA0098A003FB395 /* XCLocalSwiftPackageReference "Packages/BugzillaKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/BugzillaKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3339A5BE2FA0098A003FB395 /* BugzillaKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BugzillaKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3339A5882FA001FB003FB395 /* Project object */;
 }
