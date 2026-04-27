@@ -233,88 +233,184 @@ private struct ProductGroup: View {
     }
 }
 
-// MARK: - Bug list (placeholder)
+// MARK: - Bug list
 
 struct BugListView: View {
     @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
     let selection: SidebarSelection?
     @Binding var selectedBugID: Bug.ID?
 
+    @State private var bugs: [Bug] = []
+    @State private var totalMatches: Int?
+    @State private var isLoading = false
+    @State private var loadError: String?
+
+    private static let pageLimit = 50
+
     var body: some View {
         Group {
-            if let selection {
-                let query = workspace.bugQuery(for: selection)
-                List(selection: $selectedBugID) {
-                    Section {
-                        Text("No bugs loaded — bug list networking not wired in the UI yet.")
-                            .foregroundStyle(.secondary)
-                    } header: {
-                        QueryHeader(selection: selection, query: query)
-                    }
-                }
-                .navigationTitle(title(for: selection))
-            } else {
+            if selection == nil {
                 ContentUnavailableView(
                     "Pick something",
                     systemImage: "sidebar.left",
                     description: Text("Choose a smart list or component on the left.")
                 )
+            } else if isLoading && bugs.isEmpty {
+                ProgressView().controlSize(.large)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ContentUnavailableView(
+                    "Couldn't load bugs",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error)
+                )
+            } else if bugs.isEmpty {
+                ContentUnavailableView(
+                    "No bugs",
+                    systemImage: "tray",
+                    description: Text("Nothing matches this filter.")
+                )
+            } else {
+                List(selection: $selectedBugID) {
+                    ForEach(bugs) { bug in
+                        BugRow(bug: bug).tag(Optional(bug.id))
+                    }
+                    if let total = totalMatches, total > bugs.count {
+                        Text("Showing \(bugs.count) of \(total). Refine the search to narrow.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
+        .navigationTitle(title)
         #if os(macOS)
-        .navigationSplitViewColumnWidth(min: 320, ideal: 420)
+        .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
+        .task(id: loadKey) { await load() }
     }
 
-    private func title(for selection: SidebarSelection) -> String {
+    private var loadKey: BugListLoadKey {
+        BugListLoadKey(selection: selection, search: workspace.searchText)
+    }
+
+    private var title: String {
+        guard let selection else { return "Zilla" }
         switch selection {
         case .smart(let s): return s.title
         case .component(let ref): return "\(ref.product) :: \(ref.component)"
         case .metaBug(let id): return "Meta \(id)"
         }
     }
+
+    private func load() async {
+        guard let selection else {
+            bugs = []
+            totalMatches = nil
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+        } catch {
+            return
+        }
+
+        var query = workspace.bugQuery(for: selection)
+        let trimmed = workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            query.quicksearch = trimmed
+        }
+        query.limit = Self.pageLimit
+        query.includeFields = [
+            "id", "summary", "status", "resolution", "product", "component",
+            "assigned_to", "priority", "severity", "keywords",
+            "last_change_time", "creation_time"
+        ]
+
+        isLoading = true
+        loadError = nil
+        defer { isLoading = false }
+
+        do {
+            let result = try await auth.client.searchBugs(query)
+            bugs = result.bugs
+            totalMatches = result.totalMatches
+        } catch is CancellationError {
+            return
+        } catch {
+            loadError = error.localizedDescription
+            bugs = []
+            totalMatches = nil
+        }
+    }
 }
 
-private struct QueryHeader: View {
-    let selection: SidebarSelection
-    let query: BugQuery
+private struct BugListLoadKey: Hashable {
+    let selection: SidebarSelection?
+    let search: String
+}
+
+private struct BugRow: View {
+    let bug: Bug
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label(for: selection))
-                .font(.headline)
-                .foregroundStyle(.primary)
-            Text(querySummary(query))
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: statusIcon)
+                .foregroundStyle(statusColor)
+                .imageScale(.large)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(bug.summary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                HStack(spacing: 6) {
+                    Text("#\(bug.id)")
+                    Text("·")
+                    Text(bug.status)
+                    if let assignee = friendlyAssignee {
+                        Text("·")
+                        Text(assignee)
+                            .lineLimit(1)
+                    }
+                    if let when = bug.lastChangeTime {
+                        Text("·")
+                        Text(when, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+                    }
+                }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 
-    private func label(for selection: SidebarSelection) -> String {
-        switch selection {
-        case .smart(let s): return s.title
-        case .component(let ref): return "\(ref.product) :: \(ref.component)"
-        case .metaBug(let id): return "Meta bug \(id)"
+    private var statusIcon: String {
+        switch bug.status.uppercased() {
+        case "RESOLVED", "VERIFIED", "CLOSED": return "checkmark.circle.fill"
+        case "ASSIGNED", "IN_PROGRESS": return "circle.lefthalf.filled"
+        default: return "circle"
         }
     }
 
-    private func querySummary(_ q: BugQuery) -> String {
-        var parts: [String] = []
-        if !q.product.isEmpty { parts.append("product=\(q.product.joined(separator: ","))") }
-        if !q.component.isEmpty { parts.append("component=\(q.component.joined(separator: ","))") }
-        if !q.assignedTo.isEmpty { parts.append("assigned_to=\(q.assignedTo.joined(separator: ","))") }
-        if !q.reporter.isEmpty { parts.append("reporter=\(q.reporter.joined(separator: ","))") }
-        if !q.resolution.isEmpty { parts.append("resolution=\(q.resolution.joined(separator: ","))") }
-        if !q.blocks.isEmpty { parts.append("blocks=\(q.blocks.map(String.init).joined(separator: ","))") }
-        if let r = q.flagRequestee { parts.append("flag_requestee=\(r)") }
-        if let n = q.flagName { parts.append("flag_name=\(n)") }
-        if let user = q.userInvolved { parts.append("involves=\(user)") }
-        if let after = q.changedAfter {
-            parts.append("changed_after=\(ISO8601DateFormatter().string(from: after))")
+    private var statusColor: Color {
+        switch bug.status.uppercased() {
+        case "RESOLVED", "VERIFIED", "CLOSED": return .green
+        case "ASSIGNED", "IN_PROGRESS": return .blue
+        default: return .secondary
         }
-        return parts.isEmpty ? "(no filters)" : parts.joined(separator: " · ")
+    }
+
+    private var friendlyAssignee: String? {
+        guard let raw = bug.assignedTo, !raw.isEmpty else { return nil }
+        if raw.contains("nobody") { return nil }
+        if let at = raw.firstIndex(of: "@") {
+            return String(raw[..<at])
+        }
+        return raw
     }
 }
 
