@@ -118,19 +118,41 @@ public extension BugzillaClient {
     }
 
     func login(name: String, apiKey: String, restrictToIP: Bool = true) async throws -> Authentication {
-        throw BugzillaError.notImplemented
+        struct Response: Decodable {
+            let id: Int
+            let token: String
+        }
+        let endpoint = Endpoint(
+            path: "login",
+            query: [
+                URLQueryItem(name: "login", value: name),
+                URLQueryItem(name: "api_key", value: apiKey),
+                URLQueryItem(name: "restrict_login", value: restrictToIP ? "true" : "false")
+            ]
+        )
+        let response: Response = try await execute(endpoint)
+        let auth = Authentication.token(response.token, userID: response.id)
+        self.authentication = auth
+        return auth
     }
 
-    func validLogin(_ authentication: Authentication) async throws -> Bool {
-        throw BugzillaError.notImplemented
+    func validLogin() async throws -> Bool {
+        do {
+            _ = try await whoami()
+            return true
+        } catch BugzillaError.unauthorized {
+            return false
+        }
     }
 
     func logout() async throws {
-        throw BugzillaError.notImplemented
+        struct Empty: Decodable {}
+        let _: Empty = try await execute(Endpoint(path: "logout"))
+        self.authentication = .none
     }
 
     func whoami() async throws -> User {
-        throw BugzillaError.notImplemented
+        try await execute(Endpoint(path: "whoami"))
     }
 
     func selectableProducts() async throws -> [Product] {
