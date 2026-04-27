@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import BugzillaKit
 
 // MARK: - Sidebar selection
@@ -166,8 +167,11 @@ struct ContentView: View {
 // MARK: - Sidebar
 
 struct Sidebar: View {
-    @Environment(Workspace.self) private var workspace
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \FollowedComponent.addedAt) private var followedComponents: [FollowedComponent]
     @Binding var selection: SidebarSelection?
+
+    @State private var showAddComponent = false
 
     var body: some View {
         List(selection: $selection) {
@@ -178,24 +182,35 @@ struct Sidebar: View {
                 }
             }
 
-            Section("Components") {
-                if workspace.isLoadingProducts && workspace.products.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading…").foregroundStyle(.secondary)
-                    }
-                } else if let error = workspace.loadError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                } else if workspace.products.isEmpty {
-                    Text("No accessible products.")
+            Section {
+                if followedComponents.isEmpty {
+                    Text("No components yet. Tap + to follow one.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .padding(.vertical, 4)
                 } else {
-                    ForEach(workspace.products) { product in
-                        ProductGroup(product: product)
+                    ForEach(followedComponents) { followed in
+                        FollowedComponentRow(followed: followed)
+                            .tag(SidebarSelection.component(followed.ref))
+                            .contextMenu {
+                                Button("Remove", role: .destructive) {
+                                    modelContext.delete(followed)
+                                }
+                            }
                     }
+                }
+            } header: {
+                HStack {
+                    Text("Components")
+                    Spacer()
+                    Button {
+                        showAddComponent = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .imageScale(.small)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                 }
             }
         }
@@ -203,33 +218,26 @@ struct Sidebar: View {
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
         #endif
+        .sheet(isPresented: $showAddComponent) {
+            ComponentPickerSheet()
+        }
     }
 }
 
-private struct ProductGroup: View {
-    let product: Product
+private struct FollowedComponentRow: View {
+    let followed: FollowedComponent
 
     var body: some View {
-        DisclosureGroup {
-            ForEach(activeComponents) { component in
-                Label {
-                    Text(component.name).lineLimit(1)
-                } icon: {
-                    Image(systemName: "square.stack.3d.up")
-                }
-                .tag(SidebarSelection.component(
-                    ComponentRef(product: product.name, component: component.name)
-                ))
+        Label {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(followed.componentName).lineLimit(1)
+                Text(followed.product)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-        } label: {
-            Label(product.name, systemImage: "shippingbox")
+        } icon: {
+            Image(systemName: "square.stack.3d.up")
         }
-    }
-
-    private var activeComponents: [Component] {
-        product.components
-            .filter(\.isActive)
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 
