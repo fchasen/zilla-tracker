@@ -9,12 +9,31 @@ import SwiftUI
 
 @main
 struct ZillaApp: App {
-    @State private var workspace = Workspace.mock
+    @State private var auth = AuthStore()
+    @State private var workspace = Workspace()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environment(auth)
                 .environment(workspace)
+                .task { await auth.bootstrap() }
+        }
+    }
+}
+
+struct RootView: View {
+    @Environment(AuthStore.self) private var auth
+
+    var body: some View {
+        switch auth.state {
+        case .unknown:
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .signedIn:
+            ContentView()
+        case .signedOut, .signingIn, .error:
+            SignInView()
         }
     }
 }

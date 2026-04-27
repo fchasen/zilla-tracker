@@ -43,7 +43,7 @@ enum SidebarSelection: Hashable {
     case metaBug(Int)
 }
 
-// MARK: - Followed entities (mocked, in-memory for now)
+// MARK: - Followed entities (placeholder until real product loading)
 
 struct FollowedComponent: Identifiable, Hashable {
     let id = UUID()
@@ -60,7 +60,6 @@ struct FollowedMetaBug: Identifiable, Hashable {
 
 @Observable
 final class Workspace {
-    var currentUserLogin: String = "fchasen@mozilla.com"
     var followedComponents: [FollowedComponent] = []
     var sidebarSelection: SidebarSelection? = .smart(.myBugs)
     var selectedBugID: Bug.ID?
@@ -81,10 +80,6 @@ final class Workspace {
                 metaBugs: [
                     FollowedMetaBug(id: 1812345, title: "Custom elements parity")
                 ]
-            ),
-            FollowedComponent(
-                ref: ComponentRef(product: "Toolkit", component: "Storage"),
-                metaBugs: []
             )
         ]
         return ws
@@ -112,6 +107,7 @@ final class Workspace {
 
 struct ContentView: View {
     @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -124,6 +120,24 @@ struct ContentView: View {
                 .searchable(text: $workspace.searchText, prompt: "Search bugs")
         } detail: {
             BugDetailView(bugID: workspace.selectedBugID)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if let user = auth.currentUser {
+                        Text(user.realName ?? user.name)
+                        if let nick = user.nick {
+                            Text("@\(nick)")
+                        }
+                        Divider()
+                    }
+                    Button("Sign Out", role: .destructive) {
+                        Task { await auth.signOut() }
+                    }
+                } label: {
+                    Image(systemName: "person.crop.circle")
+                }
+            }
         }
     }
 }
@@ -143,29 +157,31 @@ struct Sidebar: View {
                 }
             }
 
-            Section("Components") {
-                ForEach(workspace.followedComponents) { followed in
-                    if followed.metaBugs.isEmpty {
-                        ComponentRow(followed: followed)
-                            .tag(SidebarSelection.component(followed.ref))
-                    } else {
-                        DisclosureGroup {
-                            ForEach(followed.metaBugs) { meta in
-                                Label {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(meta.title).lineLimit(1)
-                                        Text("Bug \(meta.id)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                } icon: {
-                                    Image(systemName: "circle.dashed")
-                                }
-                                .tag(SidebarSelection.metaBug(meta.id))
-                            }
-                        } label: {
+            if !workspace.followedComponents.isEmpty {
+                Section("Components") {
+                    ForEach(workspace.followedComponents) { followed in
+                        if followed.metaBugs.isEmpty {
                             ComponentRow(followed: followed)
                                 .tag(SidebarSelection.component(followed.ref))
+                        } else {
+                            DisclosureGroup {
+                                ForEach(followed.metaBugs) { meta in
+                                    Label {
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text(meta.title).lineLimit(1)
+                                            Text("Bug \(meta.id)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    } icon: {
+                                        Image(systemName: "circle.dashed")
+                                    }
+                                    .tag(SidebarSelection.metaBug(meta.id))
+                                }
+                            } label: {
+                                ComponentRow(followed: followed)
+                                    .tag(SidebarSelection.component(followed.ref))
+                            }
                         }
                     }
                 }
@@ -208,7 +224,7 @@ struct BugListView: View {
                 let query = workspace.bugQuery(for: selection)
                 List(selection: $selectedBugID) {
                     Section {
-                        Text("No bugs loaded — networking not wired yet.")
+                        Text("No bugs loaded — networking not wired in the UI yet.")
                             .foregroundStyle(.secondary)
                     } header: {
                         QueryHeader(selection: selection, query: query)
@@ -305,4 +321,5 @@ struct BugDetailView: View {
 #Preview {
     ContentView()
         .environment(Workspace.mock)
+        .environment(AuthStore())
 }
