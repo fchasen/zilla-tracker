@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 @main
 struct ZillaApp: App {
@@ -19,6 +20,7 @@ struct ZillaApp: App {
                 .environment(workspace)
                 .task { await auth.bootstrap() }
         }
+        .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self])
     }
 }
 
