@@ -217,7 +217,11 @@ public extension BugzillaClient {
     }
 
     func comments(bugID: Bug.ID) async throws -> [Comment] {
-        throw BugzillaError.notImplemented
+        struct Response: Decodable { let bugs: [String: BugComments] }
+        struct BugComments: Decodable { let comments: [Comment] }
+        let endpoint = Endpoint(path: "bug/\(bugID)/comment")
+        let response: Response = try await execute(endpoint)
+        return response.bugs[String(bugID)]?.comments ?? []
     }
 
     func history(bugID: Bug.ID) async throws -> [HistoryEntry] {

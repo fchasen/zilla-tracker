@@ -95,7 +95,7 @@ public struct Comment: Codable, Sendable, Hashable, Identifiable {
     public typealias ID = Int
 
     public let id: ID
-    public let bugID: Bug.ID
+    public let bugId: Bug.ID
     public let creator: String
     public let text: String
     public let creationTime: Date
@@ -107,7 +107,7 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
     public typealias ID = Int
 
     public let id: ID
-    public let bugID: Bug.ID
+    public let bugId: Bug.ID
     public let fileName: String
     public let summary: String
     public let contentType: String
