@@ -43,46 +43,39 @@ enum SidebarSelection: Hashable {
     case metaBug(Int)
 }
 
-// MARK: - Followed entities (placeholder until real product loading)
-
-struct FollowedComponent: Identifiable, Hashable {
-    let id = UUID()
-    let ref: ComponentRef
-    var metaBugs: [FollowedMetaBug]
-}
-
-struct FollowedMetaBug: Identifiable, Hashable {
-    let id: Int
-    let title: String
-}
-
 // MARK: - Workspace
 
 @Observable
 final class Workspace {
-    var followedComponents: [FollowedComponent] = []
+    private(set) var products: [Product] = []
+    private(set) var isLoadingProducts = false
+    private(set) var loadError: String?
+
     var sidebarSelection: SidebarSelection? = .smart(.myBugs)
     var selectedBugID: Bug.ID?
     var searchText: String = ""
 
-    static var mock: Workspace {
-        let ws = Workspace()
-        ws.followedComponents = [
-            FollowedComponent(
-                ref: ComponentRef(product: "Firefox", component: "General"),
-                metaBugs: [
-                    FollowedMetaBug(id: 1700001, title: "Tab redesign tracking"),
-                    FollowedMetaBug(id: 1700042, title: "Sidebar overhaul")
-                ]
-            ),
-            FollowedComponent(
-                ref: ComponentRef(product: "Core", component: "DOM: Core & HTML"),
-                metaBugs: [
-                    FollowedMetaBug(id: 1812345, title: "Custom elements parity")
-                ]
-            )
-        ]
-        return ws
+    func loadProducts(using client: BugzillaClient) async {
+        guard !isLoadingProducts else { return }
+        isLoadingProducts = true
+        loadError = nil
+        defer { isLoadingProducts = false }
+        do {
+            let fetched = try await client.selectableProducts()
+            products = fetched
+                .filter(\.isActive)
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    func reset() {
+        products = []
+        loadError = nil
+        sidebarSelection = .smart(.myBugs)
+        selectedBugID = nil
+        searchText = ""
     }
 
     func bugQuery(for selection: SidebarSelection) -> BugQuery {
@@ -100,6 +93,26 @@ final class Workspace {
         case .metaBug(let id):
             return .blockedBy(metaBug: id)
         }
+    }
+
+    static var preview: Workspace {
+        let ws = Workspace()
+        ws.products = [
+            Product(
+                id: 1, name: "Firefox", description: "Browser", isActive: true,
+                components: [
+                    Component(id: 11, name: "General", description: ""),
+                    Component(id: 12, name: "Theme", description: "")
+                ]
+            ),
+            Product(
+                id: 2, name: "Core", description: "Engine", isActive: true,
+                components: [
+                    Component(id: 21, name: "DOM: Core & HTML", description: "")
+                ]
+            )
+        ]
+        return ws
     }
 }
 
@@ -132,11 +145,19 @@ struct ContentView: View {
                         Divider()
                     }
                     Button("Sign Out", role: .destructive) {
-                        Task { await auth.signOut() }
+                        Task {
+                            await auth.signOut()
+                            workspace.reset()
+                        }
                     }
                 } label: {
                     Image(systemName: "person.crop.circle")
                 }
+            }
+        }
+        .task {
+            if workspace.products.isEmpty {
+                await workspace.loadProducts(using: auth.client)
             }
         }
     }
@@ -157,57 +178,58 @@ struct Sidebar: View {
                 }
             }
 
-            if !workspace.followedComponents.isEmpty {
-                Section("Components") {
-                    ForEach(workspace.followedComponents) { followed in
-                        if followed.metaBugs.isEmpty {
-                            ComponentRow(followed: followed)
-                                .tag(SidebarSelection.component(followed.ref))
-                        } else {
-                            DisclosureGroup {
-                                ForEach(followed.metaBugs) { meta in
-                                    Label {
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(meta.title).lineLimit(1)
-                                            Text("Bug \(meta.id)")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    } icon: {
-                                        Image(systemName: "circle.dashed")
-                                    }
-                                    .tag(SidebarSelection.metaBug(meta.id))
-                                }
-                            } label: {
-                                ComponentRow(followed: followed)
-                                    .tag(SidebarSelection.component(followed.ref))
-                            }
-                        }
+            Section("Components") {
+                if workspace.isLoadingProducts && workspace.products.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading…").foregroundStyle(.secondary)
+                    }
+                } else if let error = workspace.loadError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if workspace.products.isEmpty {
+                    Text("No accessible products.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(workspace.products) { product in
+                        ProductGroup(product: product)
                     }
                 }
             }
         }
         .navigationTitle("Zilla")
         #if os(macOS)
-        .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+        .navigationSplitViewColumnWidth(min: 240, ideal: 280)
         #endif
     }
 }
 
-private struct ComponentRow: View {
-    let followed: FollowedComponent
+private struct ProductGroup: View {
+    let product: Product
 
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(followed.ref.component).lineLimit(1)
-                Text(followed.ref.product)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        DisclosureGroup {
+            ForEach(activeComponents) { component in
+                Label {
+                    Text(component.name).lineLimit(1)
+                } icon: {
+                    Image(systemName: "square.stack.3d.up")
+                }
+                .tag(SidebarSelection.component(
+                    ComponentRef(product: product.name, component: component.name)
+                ))
             }
-        } icon: {
-            Image(systemName: "square.stack.3d.up")
+        } label: {
+            Label(product.name, systemImage: "shippingbox")
         }
+    }
+
+    private var activeComponents: [Component] {
+        product.components
+            .filter(\.isActive)
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 
@@ -224,7 +246,7 @@ struct BugListView: View {
                 let query = workspace.bugQuery(for: selection)
                 List(selection: $selectedBugID) {
                     Section {
-                        Text("No bugs loaded — networking not wired in the UI yet.")
+                        Text("No bugs loaded — bug list networking not wired in the UI yet.")
                             .foregroundStyle(.secondary)
                     } header: {
                         QueryHeader(selection: selection, query: query)
@@ -320,6 +342,6 @@ struct BugDetailView: View {
 
 #Preview {
     ContentView()
-        .environment(Workspace.mock)
+        .environment(Workspace.preview)
         .environment(AuthStore())
 }

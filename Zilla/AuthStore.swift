@@ -19,7 +19,7 @@ final class AuthStore {
 
     private static let keychainService = "mozilla.Zilla.api-key"
     private static let keychainAccount = "default"
-    static let defaultBaseURL = URL(string: "https://bugzilla.mozilla.org")!
+    nonisolated static let defaultBaseURL = URL(string: "https://bugzilla.mozilla.org")!
 
     var state: State = .unknown
     let client: BugzillaClient
