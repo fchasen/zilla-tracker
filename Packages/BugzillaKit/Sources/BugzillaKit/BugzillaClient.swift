@@ -156,16 +156,41 @@ public extension BugzillaClient {
     }
 
     func selectableProducts() async throws -> [Product] {
-        throw BugzillaError.notImplemented
+        struct IDList: Decodable { let ids: [Int] }
+        let idResponse: IDList = try await execute(Endpoint(path: "product_selectable"))
+        if idResponse.ids.isEmpty { return [] }
+        return try await products(ids: idResponse.ids)
     }
 
     func products(ids: [Int]) async throws -> [Product] {
-        throw BugzillaError.notImplemented
+        try await fetchProducts(query:
+            .repeating("ids", values: ids.map(String.init))
+            + [Self.productIncludeFieldsItem]
+        )
     }
 
     func products(names: [String]) async throws -> [Product] {
-        throw BugzillaError.notImplemented
+        try await fetchProducts(query:
+            .repeating("names", values: names)
+            + [Self.productIncludeFieldsItem]
+        )
     }
+
+    private func fetchProducts(query: [URLQueryItem]) async throws -> [Product] {
+        struct Response: Decodable { let products: [Product] }
+        let endpoint = Endpoint(path: "product", query: query)
+        let response: Response = try await execute(endpoint)
+        return response.products
+    }
+
+    private static let productIncludeFieldsItem = URLQueryItem(
+        name: "include_fields",
+        value: [
+            "id", "name", "description", "is_active",
+            "components.id", "components.name", "components.description",
+            "components.default_assigned_to", "components.is_active"
+        ].joined(separator: ",")
+    )
 
     func getBug(id: Bug.ID) async throws -> Bug {
         throw BugzillaError.notImplemented

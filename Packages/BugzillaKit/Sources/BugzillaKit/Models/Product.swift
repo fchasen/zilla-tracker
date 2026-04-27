@@ -20,14 +20,14 @@ public struct Component: Codable, Sendable, Hashable, Identifiable {
     public let id: Int
     public let name: String
     public let description: String
-    public let defaultAssignee: String?
+    public let defaultAssignedTo: String?
     public let isActive: Bool
 
-    public init(id: Int, name: String, description: String, defaultAssignee: String? = nil, isActive: Bool = true) {
+    public init(id: Int, name: String, description: String, defaultAssignedTo: String? = nil, isActive: Bool = true) {
         self.id = id
         self.name = name
         self.description = description
-        self.defaultAssignee = defaultAssignee
+        self.defaultAssignedTo = defaultAssignedTo
         self.isActive = isActive
     }
 }
