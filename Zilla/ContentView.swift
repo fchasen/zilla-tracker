@@ -172,6 +172,7 @@ struct Sidebar: View {
     @Binding var selection: SidebarSelection?
 
     @State private var showAddComponent = false
+    @State private var addMetaBugTarget: FollowedComponent?
 
     var body: some View {
         List(selection: $selection) {
@@ -190,13 +191,12 @@ struct Sidebar: View {
                         .padding(.vertical, 4)
                 } else {
                     ForEach(followedComponents) { followed in
-                        FollowedComponentRow(followed: followed)
-                            .tag(SidebarSelection.component(followed.ref))
-                            .contextMenu {
-                                Button("Remove", role: .destructive) {
-                                    modelContext.delete(followed)
-                                }
-                            }
+                        FollowedComponentEntry(
+                            followed: followed,
+                            onAddMetaBug: { addMetaBugTarget = followed },
+                            onRemove: { modelContext.delete(followed) },
+                            onRemoveMetaBug: { modelContext.delete($0) }
+                        )
                     }
                 }
             } header: {
@@ -221,6 +221,47 @@ struct Sidebar: View {
         .sheet(isPresented: $showAddComponent) {
             ComponentPickerSheet()
         }
+        .sheet(item: $addMetaBugTarget) { component in
+            MetaBugPickerSheet(component: component)
+        }
+    }
+}
+
+private struct FollowedComponentEntry: View {
+    let followed: FollowedComponent
+    let onAddMetaBug: () -> Void
+    let onRemove: () -> Void
+    let onRemoveMetaBug: (FollowedMetaBug) -> Void
+
+    var body: some View {
+        let metas = followed.metaBugs.sorted { $0.addedAt < $1.addedAt }
+
+        Group {
+            if metas.isEmpty {
+                FollowedComponentRow(followed: followed)
+                    .tag(SidebarSelection.component(followed.ref))
+            } else {
+                DisclosureGroup {
+                    ForEach(metas) { meta in
+                        FollowedMetaBugRow(meta: meta)
+                            .tag(SidebarSelection.metaBug(meta.bugId))
+                            .contextMenu {
+                                Button("Remove", role: .destructive) {
+                                    onRemoveMetaBug(meta)
+                                }
+                            }
+                    }
+                } label: {
+                    FollowedComponentRow(followed: followed)
+                        .tag(SidebarSelection.component(followed.ref))
+                }
+            }
+        }
+        .contextMenu {
+            Button("Add Meta Bug…") { onAddMetaBug() }
+            Divider()
+            Button("Remove", role: .destructive) { onRemove() }
+        }
     }
 }
 
@@ -237,6 +278,23 @@ private struct FollowedComponentRow: View {
             }
         } icon: {
             Image(systemName: "square.stack.3d.up")
+        }
+    }
+}
+
+private struct FollowedMetaBugRow: View {
+    let meta: FollowedMetaBug
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(meta.summary).lineLimit(1)
+                Text("#\(meta.bugId)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: "circle.dashed")
         }
     }
 }
