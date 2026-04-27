@@ -193,15 +193,27 @@ public extension BugzillaClient {
     )
 
     func getBug(id: Bug.ID) async throws -> Bug {
-        throw BugzillaError.notImplemented
+        struct Response: Decodable { let bugs: [Bug] }
+        let response: Response = try await execute(Endpoint(path: "bug/\(id)"))
+        guard let bug = response.bugs.first else {
+            throw BugzillaError.notFound
+        }
+        return bug
     }
 
     func getBugs(ids: [Bug.ID]) async throws -> [Bug] {
-        throw BugzillaError.notImplemented
+        struct Response: Decodable { let bugs: [Bug] }
+        let endpoint = Endpoint(
+            path: "bug",
+            query: .repeating("id", values: ids.map(String.init))
+        )
+        let response: Response = try await execute(endpoint)
+        return response.bugs
     }
 
     func searchBugs(_ query: BugQuery) async throws -> BugSearchResult {
-        throw BugzillaError.notImplemented
+        let endpoint = Endpoint(path: "bug", query: query.queryItems())
+        return try await execute(endpoint)
     }
 
     func comments(bugID: Bug.ID) async throws -> [Comment] {

@@ -70,6 +70,90 @@ public struct BugQuery: Sendable, Hashable {
     }
 }
 
+extension BugQuery {
+    static let bmoDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        return f
+    }()
+
+    func queryItems() -> [URLQueryItem] {
+        var items: [URLQueryItem] = []
+
+        items += .repeating("product", values: product)
+        items += .repeating("component", values: component)
+        items += .repeating("status", values: status)
+        items += .repeating("resolution", values: resolution)
+        items += .repeating("assigned_to", values: assignedTo)
+        items += .repeating("reporter", values: reporter)
+        items += .repeating("cc", values: cc)
+        items += .repeating("keywords", values: keywords)
+        if !blocks.isEmpty {
+            items += .repeating("blocks", values: blocks.map(String.init))
+        }
+        if !dependsOn.isEmpty {
+            items += .repeating("depends_on", values: dependsOn.map(String.init))
+        }
+        if let whiteboard {
+            items.append(URLQueryItem(name: "whiteboard", value: whiteboard))
+        }
+        if let quicksearch {
+            items.append(URLQueryItem(name: "quicksearch", value: quicksearch))
+        }
+        if let changedAfter {
+            items.append(URLQueryItem(
+                name: "last_change_time",
+                value: Self.bmoDateFormatter.string(from: changedAfter)
+            ))
+        }
+        if let limit {
+            items.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        if let offset {
+            items.append(URLQueryItem(name: "offset", value: String(offset)))
+        }
+        if !includeFields.isEmpty {
+            items.append(URLQueryItem(name: "include_fields", value: includeFields.joined(separator: ",")))
+        }
+        if !excludeFields.isEmpty {
+            items.append(URLQueryItem(name: "exclude_fields", value: excludeFields.joined(separator: ",")))
+        }
+        for (key, values) in extra {
+            items += .repeating(key, values: values)
+        }
+
+        var chartIndex = 1
+        if let flagRequestee {
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: "requestees.login_name"))
+            items.append(URLQueryItem(name: "o\(chartIndex)", value: "equals"))
+            items.append(URLQueryItem(name: "v\(chartIndex)", value: flagRequestee))
+            chartIndex += 1
+        }
+        if let flagName {
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: "flagtypes.name"))
+            items.append(URLQueryItem(name: "o\(chartIndex)", value: "equals"))
+            items.append(URLQueryItem(name: "v\(chartIndex)", value: flagName))
+            chartIndex += 1
+        }
+        if let userInvolved {
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: "OP"))
+            items.append(URLQueryItem(name: "j\(chartIndex)", value: "OR"))
+            chartIndex += 1
+            for field in ["assigned_to", "reporter", "cc", "commenter"] {
+                items.append(URLQueryItem(name: "f\(chartIndex)", value: field))
+                items.append(URLQueryItem(name: "o\(chartIndex)", value: "equals"))
+                items.append(URLQueryItem(name: "v\(chartIndex)", value: userInvolved))
+                chartIndex += 1
+            }
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: "CP"))
+        }
+
+        return items
+    }
+}
+
 public extension BugQuery {
     static let me = "@me"
 
