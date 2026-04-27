@@ -60,9 +60,61 @@ public actor BugzillaClient {
     }
 }
 
+extension BugzillaClient {
+    func makeRequest(for endpoint: Endpoint) throws -> URLRequest {
+        guard let url = endpoint.url(relativeTo: baseURL) else {
+            throw BugzillaError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = endpoint.method.rawValue
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body = endpoint.body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        authentication.apply(to: &request)
+        return request
+    }
+
+    func execute<T: Decodable>(_ endpoint: Endpoint, as type: T.Type = T.self) async throws -> T {
+        let request = try makeRequest(for: endpoint)
+        let (data, response) = try await transport.send(request)
+        try mapStatus(response, data: data)
+        if let envelope = try? decoder.decode(APIErrorEnvelope.self, from: data), envelope.error {
+            throw BugzillaError.api(code: envelope.code, message: envelope.message)
+        }
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw BugzillaError.decoding("\(error)")
+        }
+    }
+
+    private func mapStatus(_ response: HTTPURLResponse, data: Data) throws {
+        switch response.statusCode {
+        case 200..<300:
+            return
+        case 401:
+            throw BugzillaError.unauthorized
+        case 404:
+            throw BugzillaError.notFound
+        case 429:
+            let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+            throw BugzillaError.rateLimited(retryAfter: retryAfter)
+        default:
+            if let envelope = try? decoder.decode(APIErrorEnvelope.self, from: data) {
+                throw BugzillaError.api(code: envelope.code, message: envelope.message)
+            }
+            throw BugzillaError.invalidResponse
+        }
+    }
+}
+
 public extension BugzillaClient {
     func version() async throws -> String {
-        throw BugzillaError.notImplemented
+        struct Response: Decodable { let version: String }
+        let response: Response = try await execute(Endpoint(path: "version"))
+        return response.version
     }
 
     func login(name: String, apiKey: String, restrictToIP: Bool = true) async throws -> Authentication {
