@@ -480,28 +480,6 @@ private struct BugRow: View {
     }
 }
 
-// MARK: - Bug detail (placeholder)
-
-struct BugDetailView: View {
-    let bugID: Bug.ID?
-
-    var body: some View {
-        if let bugID {
-            ContentUnavailableView(
-                "Bug \(bugID)",
-                systemImage: "ant",
-                description: Text("Detail view not implemented yet.")
-            )
-        } else {
-            ContentUnavailableView(
-                "No bug selected",
-                systemImage: "ant",
-                description: Text("Pick a bug from the list to see details.")
-            )
-        }
-    }
-}
-
 #Preview {
     ContentView()
         .environment(Workspace.preview)
