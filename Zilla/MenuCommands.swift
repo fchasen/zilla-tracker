@@ -14,9 +14,6 @@ struct ZillaCommands: Commands {
     let workspace: Workspace
     let viewedBugs: ViewedBugsStore
 
-    @AppStorage(TypeSizeSettings.storageKey)
-    private var typeSizeIndex: Int = TypeSizeSettings.defaultIndex
-
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("New Bug Draft") {
@@ -61,7 +58,7 @@ struct ZillaCommands: Commands {
             .keyboardShortcut("-", modifiers: .command)
 
             Button("Reset Font Size") {
-                typeSizeIndex = TypeSizeSettings.defaultIndex
+                workspace.typeSizeIndex = TypeSizeSettings.defaultIndex
             }
             .keyboardShortcut("0", modifiers: .command)
 
@@ -205,7 +202,7 @@ struct ZillaCommands: Commands {
     }
 
     private func adjustTypeSize(by delta: Int) {
-        typeSizeIndex = TypeSizeSettings.clamp(typeSizeIndex + delta)
+        workspace.typeSizeIndex = TypeSizeSettings.clamp(workspace.typeSizeIndex + delta)
     }
 
     private func applyUpdate(_ update: BugUpdate) {

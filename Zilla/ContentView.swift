@@ -232,6 +232,14 @@ final class Workspace {
     var bugListRefreshToken: UUID = UUID()
     var revisionListRefreshToken: UUID = UUID()
 
+    var typeSizeIndex: Int = (UserDefaults.standard.object(forKey: TypeSizeSettings.storageKey) as? Int) ?? TypeSizeSettings.defaultIndex {
+        didSet {
+            if oldValue != typeSizeIndex {
+                UserDefaults.standard.set(typeSizeIndex, forKey: TypeSizeSettings.storageKey)
+            }
+        }
+    }
+
     var bugListSort: BugListSort {
         get {
             if case let .smart(endpoint) = sidebarSelection {
@@ -496,10 +504,8 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var followedMetaBugs: [FollowedMetaBug]
 
-    @AppStorage(TypeSizeSettings.storageKey) private var typeSizeIndex: Int = TypeSizeSettings.defaultIndex
-
     private var currentTypeSize: DynamicTypeSize {
-        TypeSizeSettings.options[TypeSizeSettings.clamp(typeSizeIndex)]
+        TypeSizeSettings.options[TypeSizeSettings.clamp(workspace.typeSizeIndex)]
     }
 
     var body: some View {
@@ -1642,6 +1648,7 @@ struct BugListView: View {
             selection: selection,
             search: workspace.searchText,
             sort: workspace.bugListSort,
+            refresh: workspace.bugListRefreshToken,
             signedIn: auth.isSignedIn
         )
     }
@@ -1807,6 +1814,7 @@ private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
     let sort: BugListSort
+    let refresh: UUID
     let signedIn: Bool
 }
 
