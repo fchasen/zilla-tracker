@@ -110,7 +110,12 @@ struct ComponentPickerSheet: View {
     }
 
     private func addComponent(_ product: Product, _ component: Component) {
-        let f = FollowedComponent(product: product.name, componentName: component.name)
+        let nextPosition = (existing.map(\.position).max() ?? -1) + 1
+        let f = FollowedComponent(
+            product: product.name,
+            componentName: component.name,
+            position: nextPosition
+        )
         modelContext.insert(f)
         dismiss()
     }

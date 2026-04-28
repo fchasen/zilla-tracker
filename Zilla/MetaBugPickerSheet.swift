@@ -92,10 +92,12 @@ struct MetaBugPickerSheet: View {
     }
 
     private func add(_ bug: Bug) {
+        let nextPosition = (component.metaBugs.map(\.position).max() ?? -1) + 1
         let meta = FollowedMetaBug(
             bugId: bug.id,
             summary: bug.summary,
-            component: component
+            component: component,
+            position: nextPosition
         )
         modelContext.insert(meta)
         dismiss()
