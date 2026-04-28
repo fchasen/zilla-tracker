@@ -122,6 +122,61 @@ struct ResourceCacheTests {
         let _: Int = try await cache.fetch(key: CacheKey.bug(1), force: false) { 1 }
         #expect(cache.freshness(for: CacheKey.bug(1)) == .fresh)
     }
+
+    @Test func invalidateCancelsInflightAndAllowsFreshFetch() async throws {
+        let cache = ResourceCache()
+        var providerCalls = 0
+
+        let slowFetch = Task<Int, Error> {
+            try await cache.fetch(key: CacheKey.bug(1), force: false) {
+                providerCalls += 1
+                try await Task.sleep(for: .milliseconds(500))
+                return 1
+            }
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        cache.invalidate(CacheKey.bug(1))
+
+        var slowFetchCancelled = false
+        do {
+            _ = try await slowFetch.value
+        } catch is CancellationError {
+            slowFetchCancelled = true
+        }
+        #expect(slowFetchCancelled)
+
+        let result: Int = try await cache.fetch(key: CacheKey.bug(1), force: false) {
+            providerCalls += 1
+            return 2
+        }
+        #expect(result == 2)
+        #expect(cache.get(CacheKey.bug(1), as: Int.self) == 2)
+        #expect(providerCalls == 2)
+    }
+
+    @Test func staleInflightDoesNotOverwriteFreshResult() async throws {
+        let cache = ResourceCache()
+
+        let stale = Task<Int, Error> {
+            try await cache.fetch(key: CacheKey.bug(1), force: false) {
+                try await Task.sleep(for: .milliseconds(300))
+                return 1  // pre-update value
+            }
+        }
+
+        try await Task.sleep(for: .milliseconds(30))
+        cache.invalidate(CacheKey.bug(1))
+
+        let fresh: Int = try await cache.fetch(key: CacheKey.bug(1), force: true) {
+            return 2  // post-update value
+        }
+        #expect(fresh == 2)
+        #expect(cache.get(CacheKey.bug(1), as: Int.self) == 2)
+
+        _ = try? await stale.value
+        #expect(cache.get(CacheKey.bug(1), as: Int.self) == 2)
+    }
 }
 
 actor CallCounter {

@@ -61,6 +61,8 @@ final class ResourceCache {
     private(set) var version: UInt64 = 0
     private var entries: [CacheKey: Entry] = [:]
     private var inflight: [CacheKey: Task<Any, Error>] = [:]
+    private var inflightToken: [CacheKey: UUID] = [:]
+    private var revalidationListeners: [CacheKey: Task<Void, Never>] = [:]
 
     func freshness(for key: CacheKey, now: Date = .now) -> Freshness {
         guard let entry = entries[key] else { return .missing }
@@ -84,6 +86,7 @@ final class ResourceCache {
     }
 
     func invalidate(_ key: CacheKey) {
+        cancelInflight(for: key)
         if entries.removeValue(forKey: key) != nil {
             version &+= 1
         }
@@ -92,6 +95,7 @@ final class ResourceCache {
     func invalidateBug(id: Bug.ID) {
         var changed = false
         for key in [CacheKey.bug(id), .comments(bugID: id), .dependencyMeta(id)] {
+            cancelInflight(for: key)
             if entries.removeValue(forKey: key) != nil { changed = true }
         }
         if changed { version &+= 1 }
@@ -99,10 +103,23 @@ final class ResourceCache {
 
     func clear() {
         for (_, task) in inflight { task.cancel() }
+        for (_, listener) in revalidationListeners { listener.cancel() }
         inflight.removeAll()
+        inflightToken.removeAll()
+        revalidationListeners.removeAll()
         if !entries.isEmpty {
             entries.removeAll()
             version &+= 1
+        }
+    }
+
+    private func cancelInflight(for key: CacheKey) {
+        if let task = inflight.removeValue(forKey: key) {
+            task.cancel()
+        }
+        inflightToken.removeValue(forKey: key)
+        if let listener = revalidationListeners.removeValue(forKey: key) {
+            listener.cancel()
         }
     }
 }
@@ -140,17 +157,24 @@ extension ResourceCache {
     ) -> Task<Any, Error> {
         if let existing = inflight[key] { return existing }
 
+        let token = UUID()
+        inflightToken[key] = token
+
         let task = Task<Any, Error> { @MainActor [weak self] in
             do {
                 let value = try await provider()
-                if let self {
+                if let self, self.inflightToken[key] == token {
                     self.entries[key] = Entry(value: value, storedAt: .now)
                     self.version &+= 1
-                    self.inflight[key] = nil
+                    self.inflight.removeValue(forKey: key)
+                    self.inflightToken.removeValue(forKey: key)
                 }
                 return value as Any
             } catch {
-                self?.inflight[key] = nil
+                if let self, self.inflightToken[key] == token {
+                    self.inflight.removeValue(forKey: key)
+                    self.inflightToken.removeValue(forKey: key)
+                }
                 throw error
             }
         }
@@ -165,11 +189,16 @@ extension ResourceCache {
     ) {
         let task = startOrJoin(key: key, provider: provider)
         guard let onRefresh else { return }
-        Task { @MainActor in
-            if let any = try? await task.value, let typed = any as? V {
+        revalidationListeners[key]?.cancel()
+        let listener = Task { @MainActor [weak self] in
+            defer { self?.revalidationListeners[key] = nil }
+            if let any = try? await task.value,
+               let typed = any as? V,
+               !Task.isCancelled {
                 onRefresh(typed)
             }
         }
+        revalidationListeners[key] = listener
     }
 }
 

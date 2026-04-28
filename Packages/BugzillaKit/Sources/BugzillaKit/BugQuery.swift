@@ -190,7 +190,9 @@ public extension BugQuery {
     }
 
     static func recentlyChanged(involving user: String, daysBack: Int = 7) -> BugQuery {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -daysBack, to: .now) ?? .now
+        let cal = Calendar.current
+        let anchor = cal.dateInterval(of: .hour, for: .now)?.start ?? .now
+        let cutoff = cal.date(byAdding: .day, value: -daysBack, to: anchor) ?? anchor
         return BugQuery(changedAfter: cutoff, userInvolved: user)
     }
 

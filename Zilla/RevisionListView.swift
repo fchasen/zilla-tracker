@@ -16,6 +16,7 @@ struct RevisionListView: View {
     @State private var revisions: [Revision] = []
     @State private var isLoading: Bool = false
     @State private var loadError: String?
+    @State private var lastSeenRefreshToken: UUID?
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -54,7 +55,7 @@ struct RevisionListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    Task { await load(force: true) }
+                    workspace.revisionListRefreshToken = UUID()
                 } label: {
                     if isLoading {
                         ProgressView().controlSize(.small)
@@ -66,11 +67,11 @@ struct RevisionListView: View {
                 .disabled(isLoading || !phab.isSignedIn)
             }
         }
-        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn)) {
-            await load(force: false)
-        }
-        .onChange(of: workspace.revisionListRefreshToken) { _, _ in
-            Task { await load(force: true) }
+        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, refresh: workspace.revisionListRefreshToken)) {
+            let current = workspace.revisionListRefreshToken
+            let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
+            lastSeenRefreshToken = current
+            await load(force: force)
         }
     }
 
@@ -140,6 +141,7 @@ struct RevisionListView: View {
     private struct TaskKey: Hashable {
         let list: ReviewList
         let signedIn: Bool
+        let refresh: UUID
     }
 }
 
