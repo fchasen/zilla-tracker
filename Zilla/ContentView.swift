@@ -1191,22 +1191,8 @@ struct BugListView: View {
             } else {
                 List(selection: $selectedBugID) {
                     let sorted = sortedBugs
-                    ReorderZone(
-                        endpointKey: endpointKey,
-                        zoneIndex: 0,
-                        displayed: sorted,
-                        entries: orderEntries,
-                        isEnabled: isOrdered
-                    )
                     ForEach(Array(sorted.enumerated()), id: \.element.id) { index, bug in
-                        row(for: bug)
-                        ReorderZone(
-                            endpointKey: endpointKey,
-                            zoneIndex: index + 1,
-                            displayed: sorted,
-                            entries: orderEntries,
-                            isEnabled: isOrdered
-                        )
+                        row(for: bug, index: index, displayed: sorted)
                     }
                     if let total = totalMatches, total > bugs.count {
                         Text("Showing \(bugs.count) of \(total). Refine the search to narrow.")
@@ -1344,7 +1330,7 @@ struct BugListView: View {
     }
 
     @ViewBuilder
-    private func row(for bug: Bug) -> some View {
+    private func row(for bug: Bug, index: Int, displayed: [Bug]) -> some View {
         BugRow(bug: bug)
             .tag(Optional(bug.id))
             .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
@@ -1353,6 +1339,14 @@ struct BugListView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
             }
             .bugLinkDrop(target: bug.id)
+            .bugReorderDrop(
+                bugID: bug.id,
+                indexInList: index,
+                endpointKey: endpointKey,
+                displayed: displayed,
+                entries: orderEntries,
+                isEnabled: isOrdered
+            )
             .contextMenu {
                 addAsMetaMenu(for: bug)
             }
@@ -1491,47 +1485,45 @@ private struct BugListLoadKey: Hashable {
     let signedIn: Bool
 }
 
-private struct ReorderZone: View {
+private struct BugReorderDropModifier: ViewModifier {
     @Environment(\.modelContext) private var modelContext
 
+    let bugID: Bug.ID
+    let indexInList: Int
     let endpointKey: String?
-    let zoneIndex: Int
     let displayed: [Bug]
     let entries: [BugOrderEntry]
     let isEnabled: Bool
 
-    @State private var isTargeted = false
-
-    var body: some View {
+    func body(content: Content) -> some View {
         if isEnabled, let key = endpointKey {
-            zoneBase
-                .dropDestination(for: BugTransfer.self) { transfers, _ in
-                    guard let transfer = transfers.first else { return false }
-                    reorder(bugID: transfer.id, key: key)
-                    return true
-                } isTargeted: { isTargeted = $0 }
+            content.overlay {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .dropDestination(for: BugTransfer.self) { transfers, _ in
+                            handleDrop(transfers, key: key, zoneIndex: indexInList)
+                        } isTargeted: { _ in }
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .dropDestination(for: BugTransfer.self) { transfers, _ in
+                            handleDrop(transfers, key: key, zoneIndex: indexInList + 1)
+                        } isTargeted: { _ in }
+                }
+            }
         } else {
-            zoneBase
+            content
         }
     }
 
-    private var zoneBase: some View {
-        Color.clear
-            .frame(height: 3)
-            .overlay(alignment: .center) {
-                if isTargeted {
-                    Capsule()
-                        .fill(Color.accentColor)
-                        .frame(height: 1.5)
-                        .padding(.horizontal, 4)
-                }
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
-            .selectionDisabled()
+    private func handleDrop(_ transfers: [BugTransfer], key: String, zoneIndex: Int) -> Bool {
+        guard let transfer = transfers.first else { return false }
+        if transfer.id == bugID { return false }
+        reorder(bugID: transfer.id, key: key, zoneIndex: zoneIndex)
+        return true
     }
 
-    private func reorder(bugID: Bug.ID, key: String) {
+    private func reorder(bugID: Bug.ID, key: String, zoneIndex: Int) {
         let removeIdx = displayed.firstIndex(where: { $0.id == bugID })
         var newOrder = displayed
         if let idx = removeIdx {
@@ -1573,6 +1565,26 @@ private struct ReorderZone: View {
             }
         }
         try? modelContext.save()
+    }
+}
+
+extension View {
+    func bugReorderDrop(
+        bugID: Bug.ID,
+        indexInList: Int,
+        endpointKey: String?,
+        displayed: [Bug],
+        entries: [BugOrderEntry],
+        isEnabled: Bool
+    ) -> some View {
+        modifier(BugReorderDropModifier(
+            bugID: bugID,
+            indexInList: indexInList,
+            endpointKey: endpointKey,
+            displayed: displayed,
+            entries: entries,
+            isEnabled: isEnabled
+        ))
     }
 }
 
