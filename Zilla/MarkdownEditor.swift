@@ -48,8 +48,8 @@ struct MarkdownEditor: View {
             }
         }
         .sheet(isPresented: $showingSearchfoxPicker) {
-            SearchfoxPickerSheet { hit in
-                insertSearchfoxLink(hit)
+            SearchfoxPickerSheet { hit, symbol in
+                insertSearchfoxLink(hit, symbol: symbol)
             }
         }
     }
@@ -146,10 +146,15 @@ struct MarkdownEditor: View {
         }
     }
 
-    private func insertSearchfoxLink(_ hit: SearchHit) {
-        let fallbackLabel = hit.lineNumber > 0
-            ? "\(hit.path)#L\(hit.lineNumber)"
-            : hit.path
+    private func insertSearchfoxLink(_ hit: SearchHit, symbol: String? = nil) {
+        let fallbackLabel: String
+        if let symbol, !symbol.isEmpty {
+            fallbackLabel = symbol
+        } else if hit.lineNumber > 0 {
+            fallbackLabel = "\(hit.path)#L\(hit.lineNumber)"
+        } else {
+            fallbackLabel = hit.path
+        }
         if let range = singleSelectionRange() {
             if range.isEmpty {
                 text.replaceSubrange(range, with: "[\(fallbackLabel)](\(hit.url))")

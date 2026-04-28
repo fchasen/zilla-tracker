@@ -7,13 +7,14 @@ import SwiftUI
 import SearchfoxKit
 
 struct SearchfoxPickerSheet: View {
-    let onPick: (SearchHit) -> Void
+    let onPick: (SearchHit, String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var query: String = ""
     @State private var debouncedQuery: String = ""
     @State private var results: [SearchHit] = []
+    @State private var resultSymbol: String?
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var selectedURL: String?
@@ -93,7 +94,7 @@ struct SearchfoxPickerSheet: View {
                     .tag(hit.url)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        onPick(hit)
+                        onPick(hit, resultSymbol)
                         dismiss()
                     }
             }
@@ -149,7 +150,7 @@ struct SearchfoxPickerSheet: View {
         guard let id, let hit = results.first(where: { $0.url == id }) else {
             return false
         }
-        onPick(hit)
+        onPick(hit, resultSymbol)
         dismiss()
         return true
     }
@@ -166,6 +167,7 @@ struct SearchfoxPickerSheet: View {
         let trimmed = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             results = []
+            resultSymbol = nil
             loadError = nil
             isLoading = false
             return
@@ -178,15 +180,19 @@ struct SearchfoxPickerSheet: View {
                 let identifier = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
                 guard !identifier.isEmpty else {
                     results = []
+                    resultSymbol = nil
                     return
                 }
                 results = try await searchIdentifiers(identifier: identifier, limit: 25)
+                resultSymbol = identifier
             } else {
                 results = try await searchFiles(path: trimmed, limit: 25)
+                resultSymbol = nil
             }
         } catch is CancellationError {
         } catch {
             results = []
+            resultSymbol = nil
             loadError = error.localizedDescription
         }
     }

@@ -9,6 +9,9 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import BugzillaKit
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Pills
 
@@ -421,6 +424,11 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var followedMetaBugs: [FollowedMetaBug]
 
+    @State private var quickSearchPresented = false
+    #if os(macOS)
+    @State private var quickSearchMonitor: Any?
+    #endif
+
     var body: some View {
         @Bindable var workspace = workspace
 
@@ -485,6 +493,11 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.phabricatorSettingsPresented) {
             PhabricatorSettingsView()
         }
+        .sheet(isPresented: $quickSearchPresented) {
+            QuickSearchSheet { bugID in
+                workspace.selectedBugID = bugID
+            }
+        }
         .alert(
             "Couldn't link bugs",
             isPresented: Binding(
@@ -501,7 +514,43 @@ struct ContentView: View {
                 workspace.bugzillaSettingsPresented = true
             }
         }
+        #if os(macOS)
+        .onAppear { installQuickSearchMonitor() }
+        .onDisappear { removeQuickSearchMonitor() }
+        #endif
     }
+
+    #if os(macOS)
+    private func installQuickSearchMonitor() {
+        guard quickSearchMonitor == nil else { return }
+        quickSearchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard !quickSearchPresented else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard mods == .shift, event.charactersIgnoringModifiers == " " else {
+                return event
+            }
+            if isEditingText() { return event }
+            DispatchQueue.main.async {
+                quickSearchPresented = true
+            }
+            return nil
+        }
+    }
+
+    private func removeQuickSearchMonitor() {
+        if let monitor = quickSearchMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickSearchMonitor = nil
+        }
+    }
+
+    private func isEditingText() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        if responder is NSTextView { return true }
+        if let text = responder as? NSText, text.isEditable { return true }
+        return false
+    }
+    #endif
 
     @ViewBuilder
     private var contentColumn: some View {

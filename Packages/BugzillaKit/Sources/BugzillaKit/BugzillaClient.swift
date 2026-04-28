@@ -155,6 +155,22 @@ public extension BugzillaClient {
         try await execute(Endpoint(path: "whoami"))
     }
 
+    func searchUsers(match: String, limit: Int = 20) async throws -> [User] {
+        let trimmed = match.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return [] }
+        struct Response: Decodable { let users: [User] }
+        var query: [URLQueryItem] = [
+            URLQueryItem(name: "match", value: trimmed),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        query.append(URLQueryItem(
+            name: "include_fields",
+            value: "id,name,real_name,nick,email"
+        ))
+        let response: Response = try await execute(Endpoint(path: "user", query: query))
+        return response.users
+    }
+
     func selectableProducts() async throws -> [Product] {
         struct IDList: Decodable { let ids: [Int] }
         let idResponse: IDList = try await execute(Endpoint(path: "product_selectable"))
