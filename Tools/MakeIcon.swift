@@ -1,7 +1,7 @@
 #!/usr/bin/env swift
 // Generates the Zilla app icon at every size required by
 // Zilla/Assets.xcassets/AppIcon.appiconset. A clean theropod footprint
-// (heel pad + three teardrop toes) on a warm gradient.
+// with sharp claws on a warm sand gradient — minimal Mac styling.
 //
 // Usage:
 //   swift Tools/MakeIcon.swift                  # writes into AppIcon set
@@ -38,22 +38,31 @@ let icons: [IconRequest] = [
     .init(pixelSize: 1024, filename: "icon_ios_tinted.png",  mode: .tinted),
 ]
 
-func gradient(for mode: Mode) -> (CGColor, CGColor) {
+struct Palette {
+    let top: CGColor
+    let bottom: CGColor
+    let footprint: CGColor
+}
+
+func palette(for mode: Mode) -> Palette {
     switch mode {
     case .standard:
-        return (
-            NSColor(srgbRed: 1.00, green: 0.58, blue: 0.32, alpha: 1.0).cgColor,
-            NSColor(srgbRed: 0.92, green: 0.30, blue: 0.18, alpha: 1.0).cgColor
+        return Palette(
+            top: NSColor(srgbRed: 0.957, green: 0.871, blue: 0.682, alpha: 1.0).cgColor,
+            bottom: NSColor(srgbRed: 0.706, green: 0.482, blue: 0.243, alpha: 1.0).cgColor,
+            footprint: NSColor(srgbRed: 0.118, green: 0.067, blue: 0.039, alpha: 1.0).cgColor
         )
     case .dark:
-        return (
-            NSColor(srgbRed: 0.20, green: 0.24, blue: 0.34, alpha: 1.0).cgColor,
-            NSColor(srgbRed: 0.07, green: 0.09, blue: 0.16, alpha: 1.0).cgColor
+        return Palette(
+            top: NSColor(srgbRed: 0.184, green: 0.165, blue: 0.133, alpha: 1.0).cgColor,
+            bottom: NSColor(srgbRed: 0.078, green: 0.067, blue: 0.051, alpha: 1.0).cgColor,
+            footprint: NSColor(srgbRed: 0.937, green: 0.851, blue: 0.659, alpha: 1.0).cgColor
         )
     case .tinted:
-        return (
-            NSColor(srgbRed: 0.13, green: 0.13, blue: 0.13, alpha: 1.0).cgColor,
-            NSColor(srgbRed: 0.04, green: 0.04, blue: 0.04, alpha: 1.0).cgColor
+        return Palette(
+            top: NSColor(srgbRed: 0.22, green: 0.22, blue: 0.22, alpha: 1.0).cgColor,
+            bottom: NSColor(srgbRed: 0.08, green: 0.08, blue: 0.08, alpha: 1.0).cgColor,
+            footprint: NSColor.white.cgColor
         )
     }
 }
@@ -77,7 +86,6 @@ func renderIcon(size: Int, mode: Mode) -> Data {
     let ctx = makeContext(size: size)
     let bounds = CGRect(x: 0, y: 0, width: s, height: s)
 
-    // macOS app-icon corner radius (Apple's continuous corner ≈ 22.37% of side).
     let corner = s * 0.2237
     let bg = CGPath(roundedRect: bounds, cornerWidth: corner, cornerHeight: corner, transform: nil)
 
@@ -85,10 +93,10 @@ func renderIcon(size: Int, mode: Mode) -> Data {
     ctx.addPath(bg)
     ctx.clip()
 
-    let (top, bottom) = gradient(for: mode)
+    let p = palette(for: mode)
     let grad = CGGradient(
         colorsSpace: ctx.colorSpace,
-        colors: [top, bottom] as CFArray,
+        colors: [p.top, p.bottom] as CFArray,
         locations: [0, 1]
     )!
     ctx.drawLinearGradient(
@@ -98,10 +106,11 @@ func renderIcon(size: Int, mode: Mode) -> Data {
         options: []
     )
 
-    let footprint = makeFootprint(canvas: s)
-    ctx.addPath(footprint)
-    ctx.setFillColor(NSColor.white.withAlphaComponent(0.97).cgColor)
-    ctx.fillPath()
+    ctx.setFillColor(p.footprint)
+    for shape in makeFootprintShapes(canvas: s) {
+        ctx.addPath(shape)
+        ctx.fillPath()
+    }
 
     ctx.restoreGState()
 
@@ -110,71 +119,76 @@ func renderIcon(size: Int, mode: Mode) -> Data {
     return rep.representation(using: .png, properties: [:])!
 }
 
-func makeFootprint(canvas s: CGFloat) -> CGPath {
-    let path = CGMutablePath()
+func makeFootprintShapes(canvas s: CGFloat) -> [CGPath] {
+    let scale = s / 1024.0
+    var shapes: [CGPath] = []
 
-    // Heel pad — wide stadium shape, dominant base of the print.
-    let heelW = s * 0.62
-    let heelH = s * 0.20
-    let heelRect = CGRect(x: (s - heelW) / 2, y: s * 0.14, width: heelW, height: heelH)
-    let heelPath = CGPath(
-        roundedRect: heelRect,
-        cornerWidth: heelH * 0.5,
-        cornerHeight: heelH * 0.5,
-        transform: nil
-    )
-    path.addPath(heelPath)
+    let baseX = 512 * scale
+    let baseY = (1024 - 540) * scale
 
-    // Three toes — fat stadiums embedded into the top of the heel pad.
-    let heelTop = heelRect.maxY
+    addToeShapes(to: &shapes,
+                 baseX: baseX, baseY: baseY,
+                 angle: 0,
+                 length: 560 * scale, width: 220 * scale,
+                 clawHeight: 96 * scale, clawWidth: 80 * scale,
+                 gap: 24 * scale)
 
-    addToe(
-        to: path,
-        base: CGPoint(x: s * 0.50, y: heelTop - s * 0.07),
-        length: s * 0.50,
-        width: s * 0.20,
-        angle: 0
-    )
-    addToe(
-        to: path,
-        base: CGPoint(x: s * 0.275, y: heelTop - s * 0.05),
-        length: s * 0.40,
-        width: s * 0.17,
-        angle: -0.42
-    )
-    addToe(
-        to: path,
-        base: CGPoint(x: s * 0.725, y: heelTop - s * 0.05),
-        length: s * 0.40,
-        width: s * 0.17,
-        angle: 0.42
-    )
+    addToeShapes(to: &shapes,
+                 baseX: baseX, baseY: baseY,
+                 angle: 42 * .pi / 180,
+                 length: 480 * scale, width: 200 * scale,
+                 clawHeight: 86 * scale, clawWidth: 74 * scale,
+                 gap: 22 * scale)
 
-    return path
+    addToeShapes(to: &shapes,
+                 baseX: baseX, baseY: baseY,
+                 angle: -42 * .pi / 180,
+                 length: 480 * scale, width: 200 * scale,
+                 clawHeight: 86 * scale, clawWidth: 74 * scale,
+                 gap: 22 * scale)
+
+    return shapes
 }
 
-// Adds a stadium-shaped toe (rectangle with semicircular ends) to `path`.
-// `angle` is radians clockwise from straight up.
-func addToe(to path: CGMutablePath,
-            base: CGPoint,
-            length: CGFloat,
-            width: CGFloat,
-            angle: CGFloat) {
-    let toeRect = CGRect(x: -width / 2, y: 0, width: width, height: length)
-    let toe = CGPath(
-        roundedRect: toeRect,
-        cornerWidth: width / 2,
-        cornerHeight: width / 2,
-        transform: nil
-    )
-    var transform = CGAffineTransform(translationX: base.x, y: base.y)
-        .rotated(by: -angle)
-    if let transformed = toe.copy(using: &transform) {
-        path.addPath(transformed)
+func addToeShapes(to shapes: inout [CGPath],
+                  baseX: CGFloat, baseY: CGFloat,
+                  angle: CGFloat,
+                  length: CGFloat, width: CGFloat,
+                  clawHeight: CGFloat, clawWidth: CGFloat,
+                  gap: CGFloat) {
+    let bodyHeight = length - clawHeight - gap
+    var transform = CGAffineTransform(translationX: baseX, y: baseY)
+        .rotated(by: angle)
+
+    let body = CGMutablePath()
+    body.move(to: CGPoint(x: width / 2, y: width / 2))
+    body.addLine(to: CGPoint(x: width / 2, y: bodyHeight - width / 2))
+    body.addArc(center: CGPoint(x: 0, y: bodyHeight - width / 2),
+                radius: width / 2,
+                startAngle: 0,
+                endAngle: .pi,
+                clockwise: false)
+    body.addLine(to: CGPoint(x: -width / 2, y: width / 2))
+    body.addArc(center: CGPoint(x: 0, y: width / 2),
+                radius: width / 2,
+                startAngle: .pi,
+                endAngle: 0,
+                clockwise: false)
+    body.closeSubpath()
+    if let transformed = body.copy(using: &transform) {
+        shapes.append(transformed)
+    }
+
+    let claw = CGMutablePath()
+    let clawBase = bodyHeight + gap
+    claw.move(to: CGPoint(x: 0, y: clawBase + clawHeight))
+    claw.addLine(to: CGPoint(x: -clawWidth / 2, y: clawBase))
+    claw.addLine(to: CGPoint(x: clawWidth / 2, y: clawBase))
+    claw.closeSubpath()
+    if let transformed = claw.copy(using: &transform) {
+        shapes.append(transformed)
     }
 }
-
-// MARK: - Run
 
 let fm = FileManager.default
 try fm.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
