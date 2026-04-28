@@ -488,7 +488,7 @@ struct BugMetadata: View {
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
             assigneeRow
-            row("Reporter", bug.reporter ?? bug.creator ?? "—")
+            row("Reporter", User.displayName(for: bug.reporter ?? bug.creator, detail: bug.creatorDetail))
             row("Component", "\(bug.product) :: \(bug.component)")
             editableRow(
                 label: "Priority",
@@ -539,7 +539,7 @@ struct BugMetadata: View {
                 showingAssignPicker = true
             } label: {
                 HStack(spacing: 4) {
-                    Text(bug.assignedTo ?? "—")
+                    Text(User.displayName(for: bug.assignedTo, detail: bug.assignedToDetail))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Image(systemName: "chevron.down")
@@ -550,6 +550,7 @@ struct BugMetadata: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .help(bug.assignedTo ?? "")
             .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
                 UserSearchPopover { user in
                     showingAssignPicker = false
@@ -927,10 +928,8 @@ private struct NeedinfoRow: View {
     }
 
     private var displayName: String {
-        let target = flag.requestee ?? ""
         if isMe { return "You" }
-        if target.isEmpty { return "—" }
-        return target
+        return User.displayName(for: flag.requestee)
     }
 
     private var tooltip: String {
@@ -1043,7 +1042,7 @@ private struct FlagPill: View {
     private var label: String {
         var text = "\(flag.name)\(flag.status)"
         if let requestee = flag.requestee, !requestee.isEmpty {
-            text += stripDomain(requestee)
+            text += User.localPart(of: requestee)
         }
         return text
     }
@@ -1069,13 +1068,6 @@ private struct FlagPill: View {
             parts.append(Self.dateFormatter.string(from: date))
         }
         return parts.joined(separator: "  ·  ")
-    }
-
-    private func stripDomain(_ value: String) -> String {
-        if let at = value.firstIndex(of: "@") {
-            return String(value[..<at])
-        }
-        return value
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -1355,7 +1347,7 @@ private struct CCRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(email)
+            Text(User.displayName(for: email))
                 .font(.callout)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -1369,6 +1361,7 @@ private struct CCRow: View {
             Spacer()
         }
         .contentShape(Rectangle())
+        .help(email)
         .contextMenu {
             Button("Copy email") { copy() }
         }
@@ -1493,8 +1486,9 @@ private struct CommentBlock: View {
         let stripped = stripAttachmentHeader(comment.text, hasAttachment: attachment != nil)
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(comment.creator)
+                Text(User.displayName(for: comment.creator))
                     .font(.caption.weight(.semibold))
+                    .help(comment.creator)
                 if let count = comment.count {
                     Text(verbatim: "#\(count)")
                         .font(.caption.monospaced())
@@ -1712,7 +1706,9 @@ private struct PatchRow: View {
                             }
                         }
                         HStack(spacing: 6) {
-                            Text(attachment.creator).lineLimit(1)
+                            Text(User.displayName(for: attachment.creator))
+                                .lineLimit(1)
+                                .help(attachment.creator)
                             Text(verbatim: "·")
                             Text(attachment.creationTime, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                             if isPhabricator {
@@ -1902,8 +1898,9 @@ private struct AttachmentRow: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(attachment.creator)
+                    Text(User.displayName(for: attachment.creator))
                         .lineLimit(1)
+                        .help(attachment.creator)
                     Text(verbatim: "·")
                     Text(attachment.creationTime, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                     if let size = attachment.size, size > 0, !isPhabricator {

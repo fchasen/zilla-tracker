@@ -897,6 +897,9 @@ struct Sidebar: View {
     @State private var addMetaBugTarget: FollowedComponent?
     @State private var showAddComponent = false
 
+    @AppStorage("sidebar.section.review.expanded") private var reviewExpanded = true
+    @AppStorage("sidebar.section.components.expanded") private var componentsExpanded = true
+
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $selection) {
@@ -921,14 +924,16 @@ struct Sidebar: View {
                     .tag(SidebarSelection.allDrafts)
                 }
 
-                Section("Review") {
+                Section(isExpanded: $reviewExpanded) {
                     ForEach(ReviewList.allCases) { item in
                         Label(item.title, systemImage: item.systemImage)
                             .tag(SidebarSelection.review(item))
                     }
+                } header: {
+                    Text("Review")
                 }
 
-                Section("Components") {
+                Section(isExpanded: $componentsExpanded) {
                     if followedComponents.isEmpty {
                         Text("No components yet. Tap + below to follow one.")
                             .font(.caption)
@@ -943,6 +948,8 @@ struct Sidebar: View {
                         }
                         .onMove(perform: moveComponents)
                     }
+                } header: {
+                    Text("Components")
                 }
             }
 
@@ -1073,6 +1080,16 @@ private struct FollowedComponentEntry: View {
     let onAddMetaBug: () -> Void
 
     @State private var isDropTarget = false
+    @AppStorage private var isExpanded: Bool
+
+    init(followed: FollowedComponent, onAddMetaBug: @escaping () -> Void) {
+        self.followed = followed
+        self.onAddMetaBug = onAddMetaBug
+        self._isExpanded = AppStorage(
+            wrappedValue: true,
+            "sidebar.component.\(followed.product)::\(followed.componentName).expanded"
+        )
+    }
 
     var body: some View {
         let metas = followed.metaBugs.sorted {
@@ -1085,7 +1102,7 @@ private struct FollowedComponentEntry: View {
                     .tag(SidebarSelection.component(followed.ref))
                     .contextMenu { componentMenu }
             } else {
-                DisclosureGroup {
+                DisclosureGroup(isExpanded: $isExpanded) {
                     ForEach(metas) { meta in
                         FollowedMetaBugRow(meta: meta)
                             .tag(SidebarSelection.metaBug(meta.bugId))
@@ -1667,6 +1684,7 @@ extension View {
 
 private struct BugRow: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
+    @Environment(AuthStore.self) private var auth
     let bug: Bug
 
     var body: some View {
@@ -1761,11 +1779,14 @@ private struct BugRow: View {
 
     private var friendlyAssignee: String? {
         guard let raw = bug.assignedTo, !raw.isEmpty else { return nil }
-        if raw.contains("nobody") { return nil }
-        if let at = raw.firstIndex(of: "@") {
-            return String(raw[..<at])
+        if raw.lowercased().contains("nobody") { return nil }
+        if let me = auth.currentUser?.name, raw.caseInsensitiveCompare(me) == .orderedSame {
+            return nil
         }
-        return raw
+        if let detail = bug.assignedToDetail {
+            return detail.displayName
+        }
+        return User.localPart(of: raw)
     }
 
     @ViewBuilder
