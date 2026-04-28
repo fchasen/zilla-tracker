@@ -32,6 +32,10 @@ struct BugzillaSettingsView: View {
             default:
                 signInSection
             }
+
+            #if !os(macOS)
+            Spacer()
+            #endif
         }
         .padding(20)
         .frame(minWidth: 420)
