@@ -460,11 +460,14 @@ struct BugListView: View {
     private var sortMenu: some View {
         @Bindable var workspace = workspace
         return Menu {
-            Picker("Sort", selection: $workspace.bugListSort) {
+            Picker(selection: $workspace.bugListSort) {
                 ForEach(BugListSort.allCases) { option in
                     Label(option.label, systemImage: option.systemImage).tag(option)
                 }
+            } label: {
+                EmptyView()
             }
+            .pickerStyle(.inline)
         } label: {
             Label("Sort", systemImage: "arrow.up.arrow.down")
         }
