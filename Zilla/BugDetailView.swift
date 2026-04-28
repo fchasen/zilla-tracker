@@ -21,7 +21,8 @@ struct BugDetailView: View {
     @State private var isLoading = false
     @State private var loadError: String?
 
-    @State private var composerText: AttributedString = AttributedString()
+    @State private var composerText: String = ""
+    @State private var composerSelection: TextSelection?
     @State private var isPostingComment = false
     @State private var composerError: String?
 
@@ -49,6 +50,7 @@ struct BugDetailView: View {
                     comments: comments,
                     loadError: loadError,
                     composerText: $composerText,
+                    composerSelection: $composerSelection,
                     isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
@@ -151,7 +153,8 @@ struct BugDetailView: View {
     }
 
     private func load(id: Int?) async {
-        composerText = AttributedString()
+        composerText = ""
+        composerSelection = nil
         composerError = nil
         guard let id else {
             bug = nil
@@ -179,8 +182,8 @@ struct BugDetailView: View {
     }
 
     private func postComment() async {
-        let markdown = composerText.toMarkdown().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !markdown.isEmpty, let id = bugID else { return }
+        let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = bugID else { return }
 
         isPostingComment = true
         composerError = nil
@@ -188,8 +191,9 @@ struct BugDetailView: View {
 
         let client = auth.client
         do {
-            _ = try await client.addComment(bugID: id, text: markdown, isMarkdown: true)
-            composerText = AttributedString()
+            _ = try await client.addComment(bugID: id, text: trimmed, isMarkdown: true)
+            composerText = ""
+            composerSelection = nil
             if let refreshed = try? await client.comments(bugID: id) {
                 comments = refreshed
             }
@@ -203,7 +207,8 @@ private struct BugContent: View {
     let bug: Bug
     let comments: [Comment]
     let loadError: String?
-    @Binding var composerText: AttributedString
+    @Binding var composerText: String
+    @Binding var composerSelection: TextSelection?
     let isPosting: Bool
     let composerError: String?
     let onPost: () -> Void
@@ -227,6 +232,7 @@ private struct BugContent: View {
                 Divider()
                 CommentComposer(
                     text: $composerText,
+                    selection: $composerSelection,
                     isPosting: isPosting,
                     error: composerError,
                     onPost: onPost
@@ -537,17 +543,22 @@ private struct DupeOfSheet: View {
 }
 
 private struct CommentComposer: View {
-    @Binding var text: AttributedString
+    @Binding var text: String
+    @Binding var selection: TextSelection?
     let isPosting: Bool
     let error: String?
     let onPost: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Add a comment")
-                .font(.headline)
+            HStack {
+                Text("Add a comment")
+                    .font(.headline)
+                Spacer()
+                formattingBar
+            }
 
-            TextEditor(text: $text)
+            TextEditor(text: $text, selection: $selection)
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 96)
@@ -566,7 +577,7 @@ private struct CommentComposer: View {
             }
 
             HStack {
-                Text("⌘B bold · ⌘I italic · ⌘↩ post")
+                Text("Markdown · ⌘↩ to post")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -584,57 +595,103 @@ private struct CommentComposer: View {
         }
     }
 
+    private var formattingBar: some View {
+        HStack(spacing: 2) {
+            FormatButton(systemImage: "bold", help: "Bold (⌘B)", shortcut: KeyboardShortcut("b", modifiers: .command)) {
+                wrap("**", "**", placeholder: "bold")
+            }
+            FormatButton(systemImage: "italic", help: "Italic (⌘I)", shortcut: KeyboardShortcut("i", modifiers: .command)) {
+                wrap("*", "*", placeholder: "italic")
+            }
+            FormatButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
+                wrap("`", "`", placeholder: "code")
+            }
+            FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
+                wrapLink()
+            }
+            FormatButton(systemImage: "text.quote", help: "Blockquote") {
+                prefixLines("> ")
+            }
+        }
+        .disabled(isPosting)
+    }
+
     private var trimmedIsEmpty: Bool {
-        String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Wraps the current selection (or inserts a placeholder if no selection)
+    /// with `prefix`/`suffix`. Falls back to appending at the end when the
+    /// selection isn't a single contiguous range we can resolve.
+    private func wrap(_ prefix: String, _ suffix: String, placeholder: String) {
+        if let range = singleSelectionRange(), !range.isEmpty {
+            let selected = String(text[range])
+            text.replaceSubrange(range, with: prefix + selected + suffix)
+        } else {
+            text += prefix + placeholder + suffix
+        }
+    }
+
+    private func wrapLink() {
+        if let range = singleSelectionRange(), !range.isEmpty {
+            let selected = String(text[range])
+            text.replaceSubrange(range, with: "[\(selected)](https://)")
+        } else {
+            text += "[text](https://)"
+        }
+    }
+
+    private func prefixLines(_ marker: String) {
+        if let range = singleSelectionRange(), !range.isEmpty {
+            let block = String(text[range])
+            let prefixed = block
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { marker + $0 }
+                .joined(separator: "\n")
+            text.replaceSubrange(range, with: prefixed)
+        } else {
+            text += (text.hasSuffix("\n") || text.isEmpty ? "" : "\n") + marker
+        }
+    }
+
+    private func singleSelectionRange() -> Range<String.Index>? {
+        guard let selection else { return nil }
+        switch selection.indices {
+        case .selection(let range):
+            return range
+        case .multiSelection(let ranges):
+            return ranges.ranges.first
+        @unknown default:
+            return nil
+        }
     }
 }
 
-// MARK: - AttributedString → Markdown
+private struct FormatButton: View {
+    let systemImage: String
+    let help: String
+    var shortcut: KeyboardShortcut? = nil
+    let action: () -> Void
 
-private extension AttributedString {
-    func toMarkdown() -> String {
-        var output = ""
-        for run in self.runs {
-            let segment = String(self.characters[run.range])
-            output += format(segment: segment, run: run)
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 24, height: 22)
         }
-        return output
+        .buttonStyle(.borderless)
+        .help(help)
+        .modifier(OptionalKeyboardShortcut(shortcut: shortcut))
     }
+}
 
-    private func format(segment: String, run: AttributedString.Runs.Run) -> String {
-        let intent = run.inlinePresentationIntent ?? InlinePresentationIntent()
-        var bold = intent.contains(.stronglyEmphasized)
-        var italic = intent.contains(.emphasized)
-        let code = intent.contains(.code)
-        let strike = intent.contains(.strikethrough)
+private struct OptionalKeyboardShortcut: ViewModifier {
+    let shortcut: KeyboardShortcut?
 
-        #if canImport(AppKit)
-        if let font = run.appKit.font {
-            let traits = font.fontDescriptor.symbolicTraits
-            if traits.contains(.bold) { bold = true }
-            if traits.contains(.italic) { italic = true }
+    func body(content: Content) -> some View {
+        if let shortcut {
+            content.keyboardShortcut(shortcut)
+        } else {
+            content
         }
-        #endif
-
-        let trailing = trailingWhitespace(of: segment)
-        let core = String(segment.dropLast(trailing.count))
-        if core.isEmpty { return segment }
-
-        var s = core
-        if code { s = "`\(s)`" }
-        if strike { s = "~~\(s)~~" }
-        if bold { s = "**\(s)**" }
-        if italic { s = "*\(s)*" }
-
-        if let url = run.link {
-            s = "[\(s)](\(url.absoluteString))"
-        }
-
-        return s + trailing
-    }
-
-    private func trailingWhitespace(of text: String) -> String {
-        let suffix = text.reversed().prefix { $0.isWhitespace || $0.isNewline }
-        return String(suffix.reversed())
     }
 }
