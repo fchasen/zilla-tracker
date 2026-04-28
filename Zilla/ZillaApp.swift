@@ -27,6 +27,7 @@ struct ZillaApp: App {
                     await phab.bootstrap()
                 }
         }
+        .defaultSize(width: 1600, height: 1024)
         .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self, BugDraft.self])
     }
 }

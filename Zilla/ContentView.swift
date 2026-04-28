@@ -1325,30 +1325,12 @@ private struct BugRow: View {
                         .multilineTextAlignment(.leading)
                 }
 
-                HStack(spacing: 6) {
-                    BugTypePill(type: bug.type)
-                    Text(verbatim: "\(bug.id)")
-                    Text(verbatim: "·")
-                    Text(bug.status.bugzillaTitleCased)
-                    if let priority = displayPriority {
-                        Text(verbatim: "·")
-                        Text(priority)
-                            .foregroundStyle(priorityColor(bug.priority))
-                    }
-                    if let severity = displaySeverity {
-                        Text(verbatim: "·")
-                        Text(severity)
-                            .foregroundStyle(severityColor(bug.severity))
-                    }
-                    if let assignee = friendlyAssignee {
-                        Text(verbatim: "·")
-                        Text(assignee)
-                            .lineLimit(1)
-                    }
-                    if let when = bug.lastChangeTime {
-                        Text(verbatim: "·")
-                        Text(when, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                    }
+                ViewThatFits(in: .horizontal) {
+                    metadataLine(level: 0)
+                    metadataLine(level: 1)
+                    metadataLine(level: 2)
+                    metadataLine(level: 3)
+                    metadataLine(level: 4)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1420,6 +1402,35 @@ private struct BugRow: View {
             return String(raw[..<at])
         }
         return raw
+    }
+
+    @ViewBuilder
+    private func metadataLine(level: Int) -> some View {
+        HStack(spacing: 6) {
+            BugTypePill(type: bug.type)
+            Text(verbatim: "\(bug.id)")
+            Text(verbatim: "·")
+            Text(bug.status.bugzillaTitleCased)
+            if level <= 3, let priority = displayPriority {
+                Text(verbatim: "·")
+                Text(priority)
+                    .foregroundStyle(priorityColor(bug.priority))
+            }
+            if level <= 2, let severity = displaySeverity {
+                Text(verbatim: "·")
+                Text(severity)
+                    .foregroundStyle(severityColor(bug.severity))
+            }
+            if level <= 1, let assignee = friendlyAssignee {
+                Text(verbatim: "·")
+                Text(assignee)
+            }
+            if level <= 0, let when = bug.lastChangeTime {
+                Text(verbatim: "·")
+                Text(when, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+            }
+        }
+        .lineLimit(1)
     }
 }
 
