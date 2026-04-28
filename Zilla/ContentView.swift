@@ -901,8 +901,7 @@ struct Sidebar: View {
     @AppStorage("sidebar.section.components.expanded") private var componentsExpanded = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            List(selection: $selection) {
+        List(selection: $selection) {
                 Section {
                     ForEach(SmartEndpoint.allCases) { endpoint in
                         Label(endpoint.title, systemImage: endpoint.systemImage)
@@ -935,7 +934,7 @@ struct Sidebar: View {
 
                 Section(isExpanded: $componentsExpanded) {
                     if followedComponents.isEmpty {
-                        Text("No components yet. Tap + below to follow one.")
+                        Text("No components yet. Tap + above to follow one.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.vertical, 4)
@@ -949,25 +948,19 @@ struct Sidebar: View {
                         .onMove(perform: moveComponents)
                     }
                 } header: {
-                    Text("Components")
+                    HStack(spacing: 4) {
+                        Text("Components")
+                        Spacer()
+                        Button {
+                            showAddComponent = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Add Component")
+                    }
                 }
             }
-
-            Divider()
-            HStack {
-                Button {
-                    showAddComponent = true
-                } label: {
-                    Label("Add Component", systemImage: "plus")
-                        .font(.callout)
-                }
-                .buttonStyle(.borderless)
-                .help("Add Component")
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
         .navigationTitle("Zilla")
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
