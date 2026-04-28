@@ -76,7 +76,7 @@ struct ZillaCommands: Commands {
                 .keyboardShortcut("1", modifiers: .command)
             Button("Reported") { workspace.sidebarSelection = .smart(.reported) }
                 .keyboardShortcut("2", modifiers: .command)
-            Button("Needs Review") { workspace.sidebarSelection = .smart(.needsReview) }
+            Button("Needs Info") { workspace.sidebarSelection = .smart(.needsReview) }
                 .keyboardShortcut("3", modifiers: .command)
             Button("Recently Changed") { workspace.sidebarSelection = .smart(.recentlyChanged) }
                 .keyboardShortcut("4", modifiers: .command)

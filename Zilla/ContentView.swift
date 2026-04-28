@@ -90,7 +90,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .myBugs: return "My Bugs"
         case .reported: return "Reported"
-        case .needsReview: return "Needs Review"
+        case .needsReview: return "Needs Info"
         case .recentlyChanged: return "Recently Changed"
         }
     }
