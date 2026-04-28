@@ -339,6 +339,7 @@ private func attachmentURL(_ attachment: BugzillaKit.Attachment) -> URL? {
 
 private struct BugHeader: View {
     let bug: Bug
+    @Environment(\.openURL) private var openURL
     @State private var didCopy = false
 
     var body: some View {
@@ -358,10 +359,13 @@ private struct BugHeader: View {
                 .help(didCopy ? "Copied" : "Click to copy bug number")
 
                 if let url = bmoURL {
-                    Link(destination: url) {
+                    Button {
+                        openURL(url)
+                    } label: {
                         Image(systemName: "arrow.up.forward.square")
                             .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
                     .pointerStyle(.link)
                     .help("Open in Bugzilla")
                     .contextMenu {

@@ -5,9 +5,15 @@
 
 import SwiftUI
 import WebKit
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 struct RevisionWebView: View {
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
+    @Environment(\.openURL) private var openURL
     let revisionID: Int
     let onClose: () -> Void
 
@@ -34,12 +40,19 @@ struct RevisionWebView: View {
 
                 Spacer()
 
-                Link(destination: revisionURL) {
+                Button {
+                    openURL(revisionURL)
+                } label: {
                     Label("Open in Browser", systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(.borderless)
                 .pointerStyle(.link)
                 .help("Open D\(String(revisionID)) in your browser")
+                .contextMenu {
+                    Button("Copy Link") {
+                        copyLink(revisionURL)
+                    }
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -52,6 +65,15 @@ struct RevisionWebView: View {
         .task(id: revisionID) {
             viewedRevisions.markViewed(revisionID)
         }
+    }
+
+    private func copyLink(_ url: URL) {
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = url.absoluteString
+        #endif
     }
 }
 
