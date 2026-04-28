@@ -439,42 +439,6 @@ struct ContentView: View {
         } detail: {
             detailColumn
         }
-        .toolbar {
-            ToolbarItem(placement: leadingToolbarPlacement) {
-                Menu {
-                    if let user = auth.currentUser {
-                        Text(user.realName ?? user.name)
-                        if let nick = user.nick {
-                            Text("@\(nick)")
-                        }
-                        Divider()
-                        Button("Bugzilla…") {
-                            workspace.bugzillaSettingsPresented = true
-                        }
-                        Button("Phabricator…") {
-                            workspace.phabricatorSettingsPresented = true
-                        }
-                        Divider()
-                        Button("Sign Out", role: .destructive) {
-                            Task {
-                                await auth.signOut()
-                                workspace.reset()
-                            }
-                        }
-                    } else {
-                        Button("Sign In to Bugzilla…") {
-                            workspace.bugzillaSettingsPresented = true
-                        }
-                        Button("Phabricator…") {
-                            workspace.phabricatorSettingsPresented = true
-                        }
-                    }
-                } label: {
-                    Image(systemName: "person.crop.circle")
-                }
-                .help("Account")
-            }
-        }
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
@@ -580,14 +544,6 @@ struct ContentView: View {
         } else {
             BugInspector()
         }
-    }
-
-    private var leadingToolbarPlacement: ToolbarItemPlacement {
-        #if os(macOS)
-        .navigation
-        #else
-        .topBarLeading
-        #endif
     }
 
     private var newBugHelpText: String {
@@ -888,6 +844,8 @@ private struct DraftMetadata: View {
 
 struct Sidebar: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AuthStore.self) private var auth
+    @Environment(Workspace.self) private var workspace
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
@@ -967,6 +925,11 @@ struct Sidebar: View {
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                accountMenu
+            }
+        }
         .sheet(item: $addMetaBugTarget) { component in
             MetaBugPickerSheet(component: component)
         }
@@ -981,6 +944,42 @@ struct Sidebar: View {
         for (index, item) in items.enumerated() {
             item.position = index
         }
+    }
+
+    @ViewBuilder
+    private var accountMenu: some View {
+        Menu {
+            if let user = auth.currentUser {
+                Text(user.realName ?? user.name)
+                if let nick = user.nick {
+                    Text("@\(nick)")
+                }
+                Divider()
+                Button("Bugzilla…") {
+                    workspace.bugzillaSettingsPresented = true
+                }
+                Button("Phabricator…") {
+                    workspace.phabricatorSettingsPresented = true
+                }
+                Divider()
+                Button("Sign Out", role: .destructive) {
+                    Task {
+                        await auth.signOut()
+                        workspace.reset()
+                    }
+                }
+            } else {
+                Button("Sign In to Bugzilla…") {
+                    workspace.bugzillaSettingsPresented = true
+                }
+                Button("Phabricator…") {
+                    workspace.phabricatorSettingsPresented = true
+                }
+            }
+        } label: {
+            Image(systemName: "person.crop.circle")
+        }
+        .help("Account")
     }
 }
 
