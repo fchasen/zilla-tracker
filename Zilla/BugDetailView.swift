@@ -362,6 +362,7 @@ private struct BugHeader: View {
                         Image(systemName: "arrow.up.forward.square")
                             .foregroundStyle(.secondary)
                     }
+                    .pointerStyle(.link)
                     .help("Open in Bugzilla")
                     .contextMenu {
                         Button("Copy Link") {
@@ -1573,6 +1574,7 @@ private struct AttachmentImagePreview: View {
                 }
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .help("Open attachment in Bugzilla")
         }
     }
@@ -1615,6 +1617,7 @@ private struct AttachmentInlineLink: View {
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .help("Open attachment in Bugzilla")
         }
     }
@@ -1736,6 +1739,7 @@ private struct PatchRow: View {
                 }
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .help(isPhabricator ? "Open D\(phabRevisionInt.map(String.init) ?? "") in Phabricator" : "Open patch in Bugzilla")
 
             if let id = phabRevisionInt {
@@ -1884,6 +1888,7 @@ private struct AttachmentRow: View {
                 rowContent
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .help("Open attachment in Bugzilla")
         } else {
             rowContent

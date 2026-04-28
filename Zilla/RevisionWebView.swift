@@ -38,6 +38,7 @@ struct RevisionWebView: View {
                     Label("Open in Browser", systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(.borderless)
+                .pointerStyle(.link)
                 .help("Open D\(String(revisionID)) in your browser")
             }
             .padding(.horizontal, 12)
