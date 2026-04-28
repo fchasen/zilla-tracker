@@ -1713,6 +1713,7 @@ extension View {
 
 private struct BugRow: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
+    @Environment(Workspace.self) private var workspace
     let bug: Bug
 
     var body: some View {
@@ -1723,7 +1724,7 @@ private struct BugRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(bug.summary)
+                Text(displaySummary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
@@ -1736,8 +1737,31 @@ private struct BugRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isMeta {
+                Button {
+                    workspace.sidebarSelection = .metaBug(bug.id)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Show bugs blocked by #\(bug.id)")
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    private var displaySummary: String {
+        FollowedMetaBug.cleanedSummary(bug.summary)
+    }
+
+    private var isMeta: Bool {
+        bug.summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     private var isClosed: Bool {
@@ -1807,6 +1831,11 @@ private struct BugRow: View {
             }
             BugTypePill(type: bug.type)
             Text(verbatim: "\(bug.id)")
+            if isMeta {
+                Text(verbatim: "·")
+                Text("meta")
+                    .foregroundStyle(.purple)
+            }
             Text(verbatim: "·")
             Text(bug.status.bugzillaTitleCased)
             if level <= 2, let priority = displayPriority {
