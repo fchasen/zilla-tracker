@@ -204,7 +204,6 @@ struct ContentView: View {
         } content: {
             BugListView(selection: workspace.sidebarSelection,
                         selectedBugID: $workspace.selectedBugID)
-                .searchable(text: $workspace.searchText, prompt: "Search bugs")
         } detail: {
             BugDetailView(bugID: workspace.selectedBugID)
         }
@@ -484,6 +483,9 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                searchField
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     workspace.bugListRefreshToken = UUID()
@@ -503,6 +505,20 @@ struct BugListView: View {
             }
         }
         .task(id: loadKey) { await load() }
+    }
+
+    private var searchField: some View {
+        @Bindable var workspace = workspace
+        return HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search bugs", text: $workspace.searchText)
+                .textFieldStyle(.plain)
+                .frame(width: 200)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
     }
 
     private var sortMenu: some View {
