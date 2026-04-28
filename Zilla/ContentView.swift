@@ -116,8 +116,23 @@ final class Workspace {
     var sidebarSelection: SidebarSelection? = .smart(.myBugs)
     var selectedBugID: Bug.ID?
     var searchText: String = ""
-    var bugListSort: BugListSort = .priority
+    var smartSort: BugListSort = .recent
+    var componentSort: BugListSort = .priority
     var bugListRefreshToken: UUID = UUID()
+
+    var bugListSort: BugListSort {
+        get {
+            if case .smart = sidebarSelection { return smartSort }
+            return componentSort
+        }
+        set {
+            if case .smart = sidebarSelection {
+                smartSort = newValue
+            } else {
+                componentSort = newValue
+            }
+        }
+    }
 
     // Active bug (loaded once per selection; shared with the inspector).
     private(set) var loadedBug: Bug?
