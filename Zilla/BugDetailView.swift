@@ -488,21 +488,11 @@ private struct DescriptionBlock: View {
                 Divider()
                 Text("Description")
                     .font(.headline)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(comment.creator)
-                            .font(.caption.weight(.semibold))
-                        Text(comment.creationTime, format: .relative(presentation: .named))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    StructuredText(markdown: comment.text)
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(12)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                StructuredText(markdown: comment.text)
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -673,6 +663,9 @@ private struct CommentComposer: View {
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
                 .disabled(isPosting)
+                .onKeyPress(.return) {
+                    handleReturnInList() ? .handled : .ignored
+                }
         }
     }
 
@@ -692,6 +685,9 @@ private struct CommentComposer: View {
             }
             FormatButton(systemImage: "list.bullet", help: "Bullet list") {
                 prefixLines("- ")
+            }
+            FormatButton(systemImage: "list.number", help: "Numbered list") {
+                numberedList()
             }
             FormatButton(systemImage: "text.quote", help: "Blockquote") {
                 prefixLines("> ")
@@ -750,6 +746,88 @@ private struct CommentComposer: View {
         } else {
             text += (text.hasSuffix("\n") || text.isEmpty ? "" : "\n") + marker
         }
+    }
+
+    private func numberedList() {
+        if let range = singleSelectionRange(), !range.isEmpty {
+            let block = String(text[range])
+            let lines = block.split(separator: "\n", omittingEmptySubsequences: false)
+            let numbered = lines.enumerated()
+                .map { index, line in "\(index + 1). \(line)" }
+                .joined(separator: "\n")
+            text.replaceSubrange(range, with: numbered)
+        } else {
+            text += (text.hasSuffix("\n") || text.isEmpty ? "" : "\n") + "1. "
+        }
+    }
+
+    /// Intercepts Return when the cursor is on a list line. Returns true if
+    /// the keystroke was consumed; false to let the editor insert a newline.
+    private func handleReturnInList() -> Bool {
+        guard let cursor = currentCursor() else { return false }
+
+        // Locate the start of the line the cursor is on.
+        let beforeCursor = text[..<cursor]
+        let lineStart = beforeCursor.lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        let currentLine = String(text[lineStart..<cursor])
+
+        guard let info = listMarker(of: currentLine) else { return false }
+
+        let content = currentLine.dropFirst(info.marker.count)
+        if content.trimmingCharacters(in: .whitespaces).isEmpty {
+            // Empty list item: strip the marker so Return exits the list.
+            text.removeSubrange(lineStart..<cursor)
+            let newCursor = text.index(text.startIndex, offsetBy: text.distance(from: text.startIndex, to: lineStart))
+            selection = TextSelection(insertionPoint: newCursor)
+            return true
+        } else {
+            // Continue the list with the next marker.
+            let nextMarker = info.kind.nextMarker(after: info.marker)
+            let inserted = "\n" + nextMarker
+            let cursorOffset = text.distance(from: text.startIndex, to: cursor)
+            text.insert(contentsOf: inserted, at: cursor)
+            let newCursor = text.index(text.startIndex, offsetBy: cursorOffset + inserted.count)
+            selection = TextSelection(insertionPoint: newCursor)
+            return true
+        }
+    }
+
+    private func currentCursor() -> String.Index? {
+        guard let selection else { return nil }
+        switch selection.indices {
+        case .selection(let range):
+            return range.upperBound
+        case .multiSelection(let ranges):
+            return ranges.ranges.first?.upperBound
+        @unknown default:
+            return nil
+        }
+    }
+
+    private enum ListKind {
+        case bullet
+        case numbered
+
+        func nextMarker(after marker: String) -> String {
+            switch self {
+            case .bullet:
+                return "- "
+            case .numbered:
+                let digits = marker.dropLast(2)
+                let n = Int(digits) ?? 1
+                return "\(n + 1). "
+            }
+        }
+    }
+
+    private func listMarker(of line: String) -> (marker: String, kind: ListKind)? {
+        if line.hasPrefix("- ") {
+            return (marker: "- ", kind: .bullet)
+        }
+        if let match = line.range(of: #"^\d+\. "#, options: .regularExpression) {
+            return (marker: String(line[match]), kind: .numbered)
+        }
+        return nil
     }
 
     private func singleSelectionRange() -> Range<String.Index>? {
