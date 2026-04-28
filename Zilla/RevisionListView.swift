@@ -139,6 +139,7 @@ struct RevisionListView: View {
 }
 
 private struct RevisionRow: View {
+    @Environment(Workspace.self) private var workspace
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
     let revision: Revision
 
@@ -165,7 +166,16 @@ private struct RevisionRow: View {
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 6) {
                     if let bug = revision.fields.bugzillaBugID, !bug.isEmpty {
-                        Text("bug #\(bug)")
+                        Button {
+                            if let id = Int(bug) {
+                                workspace.selectedBugID = id
+                            }
+                        } label: {
+                            Text(verbatim: "#\(bug)")
+                                .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open bug \(bug) in Zilla")
                         Text(verbatim: "·")
                     }
                     Text(revision.fields.dateModified, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
