@@ -10,6 +10,39 @@ import SwiftData
 import UniformTypeIdentifiers
 import BugzillaKit
 
+// MARK: - Pills
+
+struct BugTypePill: View {
+    let type: String?
+
+    var body: some View {
+        if let displayed {
+            Text(displayed)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(color.opacity(0.18), in: Capsule())
+                .foregroundStyle(color)
+        }
+    }
+
+    private var displayed: String? {
+        guard let raw = type?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              raw != "--" else { return nil }
+        return raw.prefix(1).uppercased() + raw.dropFirst()
+    }
+
+    private var color: Color {
+        switch type?.lowercased() {
+        case "defect": return .red
+        case "enhancement": return .indigo
+        case "task": return .gray
+        default: return .secondary
+        }
+    }
+}
+
 // MARK: - Drag payload
 
 struct BugTransfer: Codable, Transferable {
@@ -591,8 +624,9 @@ struct BugListView: View {
         query.limit = Self.pageLimit
         query.includeFields = [
             "id", "summary", "status", "resolution", "product", "component",
-            "assigned_to", "priority", "severity", "keywords",
-            "last_change_time", "creation_time"
+            "assigned_to", "priority", "severity", "keywords", "type",
+            "last_change_time", "creation_time",
+            "attachments.id", "attachments.content_type", "attachments.is_obsolete"
         ]
 
         isLoading = true
@@ -637,6 +671,7 @@ private struct BugRow: View {
                 HStack(spacing: 6) {
                     Text(verbatim: "#\(bug.id)")
                     Text(verbatim: "·")
+                    BugTypePill(type: bug.type)
                     Text(bug.status)
                     if let priority = displayPriority {
                         Text(verbatim: "·")
@@ -665,9 +700,14 @@ private struct BugRow: View {
         .padding(.vertical, 2)
     }
 
+    private var isClosed: Bool {
+        ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
+    }
+
     private var statusIcon: String {
+        if isClosed { return "checkmark.circle.fill" }
+        if bug.hasPhabricatorPatch { return "circle.lefthalf.filled" }
         switch bug.status.uppercased() {
-        case "RESOLVED", "VERIFIED", "CLOSED": return "checkmark.circle.fill"
         case "ASSIGNED": return "circle"
         case "IN_PROGRESS": return "circle.lefthalf.filled"
         default: return "circle"
@@ -675,8 +715,9 @@ private struct BugRow: View {
     }
 
     private var statusColor: Color {
+        if isClosed { return .green }
+        if bug.hasPhabricatorPatch { return .blue }
         switch bug.status.uppercased() {
-        case "RESOLVED", "VERIFIED", "CLOSED": return .green
         case "ASSIGNED", "IN_PROGRESS": return .blue
         default: return .secondary
         }

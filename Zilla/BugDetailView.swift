@@ -261,6 +261,7 @@ private struct BugHeader: View {
                     .help("Open in Bugzilla")
                 }
 
+                BugTypePill(type: bug.type)
                 StatusPill(bug: bug)
 
                 if didCopy {
