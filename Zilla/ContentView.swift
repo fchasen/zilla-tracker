@@ -384,6 +384,9 @@ struct BugListView: View {
         }
 
         var query = workspace.bugQuery(for: selection)
+        if let login = auth.currentUser?.name {
+            query = query.substitutingMe(with: login)
+        }
         let trimmed = workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             query.quicksearch = trimmed
