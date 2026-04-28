@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5BE2FA0098A003FB395 /* BugzillaKit */; };
+		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */,
+				3339A5C22FA00C00003FB395 /* Textual in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,6 +120,7 @@
 			name = Zilla;
 			packageProductDependencies = (
 				3339A5BE2FA0098A003FB395 /* BugzillaKit */,
+				3339A5C12FA00C00003FB395 /* Textual */,
 			);
 			productName = Zilla;
 			productReference = 3339A5902FA001FC003FB395 /* Zilla.app */;
@@ -203,6 +206,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				3339A5BD2FA0098A003FB395 /* XCLocalSwiftPackageReference "Packages/BugzillaKit" */,
+				3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -624,10 +628,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/Textual";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		3339A5BE2FA0098A003FB395 /* BugzillaKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BugzillaKit;
+		};
+		3339A5C12FA00C00003FB395 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */;
+			productName = Textual;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

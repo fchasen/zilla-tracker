@@ -5,6 +5,7 @@
 
 import SwiftUI
 import BugzillaKit
+import Textual
 #if canImport(AppKit)
 import AppKit
 #elseif canImport(UIKit)
@@ -467,7 +468,7 @@ private struct CommentBlock: View {
                 Text(comment.creator)
                     .font(.caption.weight(.semibold))
                 if let count = comment.count {
-                    Text("#\(count)")
+                    Text(verbatim: "#\(count)")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
@@ -476,9 +477,8 @@ private struct CommentBlock: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
-            Text(comment.text)
+            StructuredText(markdown: comment.text)
                 .font(.body)
-                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
