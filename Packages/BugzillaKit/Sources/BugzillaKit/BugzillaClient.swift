@@ -212,7 +212,10 @@ public extension BugzillaClient {
         struct Response: Decodable { let bugs: [Bug] }
         let endpoint = Endpoint(
             path: "bug/\(id)",
-            query: [URLQueryItem(name: "include_fields", value: "_default,attachments")]
+            query: [URLQueryItem(
+                name: "include_fields",
+                value: "_default,attachments,see_also,target_milestone,cf_fx_points,assigned_to_detail,creator_detail"
+            )]
         )
         let response: Response = try await execute(endpoint)
         guard let bug = response.bugs.first else {
@@ -248,14 +251,20 @@ public extension BugzillaClient {
             let assignedTo: String?
             let priority: String?
             let severity: String?
+            let targetMilestone: String?
+            let points: String?
             let comment: CommentBody?
             let blocks: BugRelationUpdate?
             let dependsOn: BugRelationUpdate?
+            let seeAlso: SeeAlsoUpdate?
+            let flags: [FlagUpdate]?
 
             enum CodingKeys: String, CodingKey {
                 case status, resolution, dupeOf
                 case assignedTo, priority, severity, comment
-                case blocks, dependsOn
+                case targetMilestone
+                case blocks, dependsOn, seeAlso, flags
+                case points = "cfFxPoints"
             }
 
             func encode(to encoder: Encoder) throws {
@@ -266,9 +275,13 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(assignedTo, forKey: .assignedTo)
                 try c.encodeIfPresent(priority, forKey: .priority)
                 try c.encodeIfPresent(severity, forKey: .severity)
+                try c.encodeIfPresent(targetMilestone, forKey: .targetMilestone)
+                try c.encodeIfPresent(points, forKey: .points)
                 try c.encodeIfPresent(comment, forKey: .comment)
                 try c.encodeIfPresent(blocks, forKey: .blocks)
                 try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
+                try c.encodeIfPresent(seeAlso, forKey: .seeAlso)
+                try c.encodeIfPresent(flags, forKey: .flags)
             }
         }
 
@@ -279,9 +292,13 @@ public extension BugzillaClient {
             assignedTo: update.assignedTo,
             priority: update.priority,
             severity: update.severity,
+            targetMilestone: update.targetMilestone,
+            points: update.points,
             comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) },
             blocks: update.blocks,
-            dependsOn: update.dependsOn
+            dependsOn: update.dependsOn,
+            seeAlso: update.seeAlso,
+            flags: update.flags
         )
         let body = try encoder.encode(payload)
 

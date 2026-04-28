@@ -20,9 +20,14 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
     public let whiteboard: String?
     public let blocks: [Int]
     public let dependsOn: [Int]
+    public let seeAlso: [String]
     public let cc: [String]
     public let flags: [Flag]
     public let type: String?
+    public let targetMilestone: String?
+    public let points: String?
+    public let assignedToDetail: User?
+    public let creatorDetail: User?
     public let attachments: [Attachment]
 
     public init(
@@ -43,9 +48,14 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         whiteboard: String? = nil,
         blocks: [Int] = [],
         dependsOn: [Int] = [],
+        seeAlso: [String] = [],
         cc: [String] = [],
         flags: [Flag] = [],
         type: String? = nil,
+        targetMilestone: String? = nil,
+        points: String? = nil,
+        assignedToDetail: User? = nil,
+        creatorDetail: User? = nil,
         attachments: [Attachment] = []
     ) {
         self.id = id
@@ -65,9 +75,14 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.whiteboard = whiteboard
         self.blocks = blocks
         self.dependsOn = dependsOn
+        self.seeAlso = seeAlso
         self.cc = cc
         self.flags = flags
         self.type = type
+        self.targetMilestone = targetMilestone
+        self.points = points
+        self.assignedToDetail = assignedToDetail
+        self.creatorDetail = creatorDetail
         self.attachments = attachments
     }
 
@@ -76,8 +91,10 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         case assignedTo, creator, reporter
         case creationTime, lastChangeTime
         case priority, severity, keywords, whiteboard
-        case blocks, dependsOn, cc, flags
-        case type, attachments
+        case blocks, dependsOn, seeAlso, cc, flags
+        case type, targetMilestone, attachments
+        case points = "cfFxPoints"
+        case assignedToDetail, creatorDetail
     }
 
     public init(from decoder: Decoder) throws {
@@ -99,9 +116,14 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.whiteboard = try c.decodeIfPresent(String.self, forKey: .whiteboard)
         self.blocks = try c.decodeIfPresent([Int].self, forKey: .blocks) ?? []
         self.dependsOn = try c.decodeIfPresent([Int].self, forKey: .dependsOn) ?? []
+        self.seeAlso = try c.decodeIfPresent([String].self, forKey: .seeAlso) ?? []
         self.cc = try c.decodeIfPresent([String].self, forKey: .cc) ?? []
         self.flags = try c.decodeIfPresent([Flag].self, forKey: .flags) ?? []
         self.type = try c.decodeIfPresent(String.self, forKey: .type)
+        self.targetMilestone = try c.decodeIfPresent(String.self, forKey: .targetMilestone)
+        self.points = try c.decodeIfPresent(String.self, forKey: .points)
+        self.assignedToDetail = try c.decodeIfPresent(User.self, forKey: .assignedToDetail)
+        self.creatorDetail = try c.decodeIfPresent(User.self, forKey: .creatorDetail)
         self.attachments = try c.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
     }
 
@@ -166,6 +188,65 @@ public struct BugRelationUpdate: Sendable, Equatable, Encodable {
     }
 }
 
+public struct SeeAlsoUpdate: Sendable, Equatable, Encodable {
+    public var add: [String]?
+    public var remove: [String]?
+
+    public init(add: [String]? = nil, remove: [String]? = nil) {
+        self.add = add
+        self.remove = remove
+    }
+
+    public static func add(_ urls: [String]) -> SeeAlsoUpdate {
+        SeeAlsoUpdate(add: urls)
+    }
+
+    public static func remove(_ urls: [String]) -> SeeAlsoUpdate {
+        SeeAlsoUpdate(remove: urls)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case add, remove
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(add, forKey: .add)
+        try c.encodeIfPresent(remove, forKey: .remove)
+    }
+}
+
+public struct FlagUpdate: Sendable, Equatable, Encodable {
+    public var id: Int?
+    public var name: String?
+    public var status: String
+    public var requestee: String?
+
+    public init(
+        id: Int? = nil,
+        name: String? = nil,
+        status: String,
+        requestee: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.requestee = requestee
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, status, requestee
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(id, forKey: .id)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(requestee, forKey: .requestee)
+    }
+}
+
 public struct BugUpdate: Sendable, Equatable {
     public var status: String?
     public var resolution: String?
@@ -173,10 +254,14 @@ public struct BugUpdate: Sendable, Equatable {
     public var assignedTo: String?
     public var priority: String?
     public var severity: String?
+    public var targetMilestone: String?
+    public var points: String?
     public var comment: String?
     public var commentIsPrivate: Bool?
     public var blocks: BugRelationUpdate?
     public var dependsOn: BugRelationUpdate?
+    public var seeAlso: SeeAlsoUpdate?
+    public var flags: [FlagUpdate]?
 
     public init(
         status: String? = nil,
@@ -185,10 +270,14 @@ public struct BugUpdate: Sendable, Equatable {
         assignedTo: String? = nil,
         priority: String? = nil,
         severity: String? = nil,
+        targetMilestone: String? = nil,
+        points: String? = nil,
         comment: String? = nil,
         commentIsPrivate: Bool? = nil,
         blocks: BugRelationUpdate? = nil,
-        dependsOn: BugRelationUpdate? = nil
+        dependsOn: BugRelationUpdate? = nil,
+        seeAlso: SeeAlsoUpdate? = nil,
+        flags: [FlagUpdate]? = nil
     ) {
         self.status = status
         self.resolution = resolution
@@ -196,10 +285,14 @@ public struct BugUpdate: Sendable, Equatable {
         self.assignedTo = assignedTo
         self.priority = priority
         self.severity = severity
+        self.targetMilestone = targetMilestone
+        self.points = points
         self.comment = comment
         self.commentIsPrivate = commentIsPrivate
         self.blocks = blocks
         self.dependsOn = dependsOn
+        self.seeAlso = seeAlso
+        self.flags = flags
     }
 }
 
