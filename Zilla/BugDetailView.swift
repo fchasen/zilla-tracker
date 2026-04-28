@@ -363,6 +363,11 @@ private struct BugHeader: View {
                             .foregroundStyle(.secondary)
                     }
                     .help("Open in Bugzilla")
+                    .contextMenu {
+                        Button("Copy Link") {
+                            copyToPasteboard(url.absoluteString)
+                        }
+                    }
                 }
 
                 StatusPill(bug: bug)
