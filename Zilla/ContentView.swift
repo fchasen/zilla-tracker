@@ -464,6 +464,19 @@ struct ContentView: View {
     @State private var quickSearchMonitor: Any?
     #endif
 
+    @AppStorage("dynamicTypeSizeIndex") private var typeSizeIndex: Int = Self.defaultTypeSizeIndex
+
+    private static let typeSizeOptions: [DynamicTypeSize] = [
+        .xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge,
+        .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5
+    ]
+    private static let defaultTypeSizeIndex = 3
+
+    private var currentTypeSize: DynamicTypeSize {
+        let clamped = min(max(typeSizeIndex, 0), Self.typeSizeOptions.count - 1)
+        return Self.typeSizeOptions[clamped]
+    }
+
     var body: some View {
         @Bindable var workspace = workspace
 
@@ -474,6 +487,8 @@ struct ContentView: View {
         } detail: {
             detailColumn
         }
+        .dynamicTypeSize(currentTypeSize)
+        .background(fontSizeShortcuts)
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
@@ -542,6 +557,24 @@ struct ContentView: View {
         return false
     }
     #endif
+
+    private var fontSizeShortcuts: some View {
+        Group {
+            Button("Increase Font Size") { adjustTypeSize(by: 1) }
+                .keyboardShortcut("+", modifiers: .command)
+            Button("Increase Font Size") { adjustTypeSize(by: 1) }
+                .keyboardShortcut("=", modifiers: .command)
+            Button("Decrease Font Size") { adjustTypeSize(by: -1) }
+                .keyboardShortcut("-", modifiers: .command)
+        }
+        .hidden()
+        .accessibilityHidden(true)
+    }
+
+    private func adjustTypeSize(by delta: Int) {
+        let maxIndex = Self.typeSizeOptions.count - 1
+        typeSizeIndex = min(max(typeSizeIndex + delta, 0), maxIndex)
+    }
 
     @ViewBuilder
     private var contentColumn: some View {
