@@ -139,7 +139,6 @@ enum SidebarSelection: Hashable {
 
 enum DetailRoute: Hashable {
     case bug(Int)
-    case blockedBugs(metaBugID: Int, summary: String)
 }
 
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
@@ -567,8 +566,6 @@ struct ContentView: View {
                     switch route {
                     case .bug(let id):
                         BugDetailView(bugID: id)
-                    case .blockedBugs(let metaID, let summary):
-                        BlockedBugsListView(metaBugID: metaID, metaBugSummary: summary)
                     }
                 }
         }
@@ -1736,42 +1733,55 @@ extension View {
     }
 }
 
-private struct BlockedBugsListView: View {
+struct BlockedBugsSection: View {
     @Environment(AuthStore.self) private var auth
     let metaBugID: Int
-    let metaBugSummary: String
 
     @State private var bugs: [Bug] = []
     @State private var isLoading = false
     @State private var loadError: String?
 
     var body: some View {
-        Group {
-            if isLoading && bugs.isEmpty {
-                ProgressView().controlSize(.large)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = loadError {
-                ContentUnavailableView(
-                    "Couldn't load bugs",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
-                )
-                .textSelection(.enabled)
-            } else if bugs.isEmpty {
-                ContentUnavailableView(
-                    "No blocked bugs",
-                    systemImage: "tray",
-                    description: Text("Nothing is currently blocked by #\(metaBugID).")
-                )
-            } else {
-                List(bugs) { bug in
-                    NavigationLink(value: DetailRoute.bug(bug.id)) {
-                        BugRow(bug: bug)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("Blocked Bugs")
+                    .font(.headline)
+                if !bugs.isEmpty {
+                    Text("\(bugs.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isLoading {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if let error = loadError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            } else if !isLoading && bugs.isEmpty {
+                Text("Nothing currently blocked.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if !bugs.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(bugs.enumerated()), id: \.element.id) { index, bug in
+                        NavigationLink(value: DetailRoute.bug(bug.id)) {
+                            BugRow(bug: bug)
+                                .padding(.vertical, 6)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        if index < bugs.count - 1 {
+                            Divider()
+                        }
                     }
                 }
             }
         }
-        .navigationTitle(FollowedMetaBug.cleanedSummary(metaBugSummary))
         .task(id: metaBugID) { await load() }
     }
 

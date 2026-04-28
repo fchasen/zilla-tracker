@@ -93,14 +93,6 @@ struct BugDetailView: View {
             }
         }
         .toolbar {
-            if let bug, BugDetailView.isMeta(bug) {
-                ToolbarItem(placement: .primaryAction) {
-                    NavigationLink(value: DetailRoute.blockedBugs(metaBugID: bug.id, summary: bug.summary)) {
-                        Label("Blocked Bugs", systemImage: "list.bullet.rectangle")
-                    }
-                    .help("Show bugs blocked by this meta bug")
-                }
-            }
             if let bug {
                 if !BugStatuses.isClosed(bug.status) {
                     ToolbarItem(placement: .primaryAction) {
@@ -284,18 +276,22 @@ private struct BugContent: View {
                 if !bug.attachments.isEmpty {
                     AttachmentsSection(attachments: bug.attachments)
                 }
-                BugCommentsSection(
-                    comments: threadComments,
-                    attachmentsByID: attachmentsByID
-                )
-                Divider()
-                CommentComposer(
-                    text: $composerText,
-                    selection: $composerSelection,
-                    isPosting: isPosting,
-                    error: composerError,
-                    onPost: onPost
-                )
+                if BugDetailView.isMeta(bug) {
+                    BlockedBugsSection(metaBugID: bug.id)
+                } else {
+                    BugCommentsSection(
+                        comments: threadComments,
+                        attachmentsByID: attachmentsByID
+                    )
+                    Divider()
+                    CommentComposer(
+                        text: $composerText,
+                        selection: $composerSelection,
+                        isPosting: isPosting,
+                        error: composerError,
+                        onPost: onPost
+                    )
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
