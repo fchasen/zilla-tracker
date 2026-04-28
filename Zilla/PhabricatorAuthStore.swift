@@ -59,7 +59,13 @@ final class PhabricatorAuthStore {
             state = .signedIn(user)
         } catch PhabricatorError.unauthorized {
             await client.setAuthentication(.none)
-            state = .error("That API token was rejected.")
+            state = .error("That API token was rejected. Tokens start with \"api-\" and are generated at phabricator.services.mozilla.com/settings/panel/apitokens/.")
+        } catch let PhabricatorError.api(code, info) where code == "ERR-INVALID-AUTH" || code == "ERR-INVALID-SESSION" {
+            await client.setAuthentication(.none)
+            state = .error("Token rejected: \(info)")
+        } catch let PhabricatorError.api(code, info) {
+            await client.setAuthentication(.none)
+            state = .error("\(code): \(info)")
         } catch {
             await client.setAuthentication(.none)
             state = .error(error.localizedDescription)

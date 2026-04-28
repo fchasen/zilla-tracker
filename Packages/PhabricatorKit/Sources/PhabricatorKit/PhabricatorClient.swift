@@ -51,15 +51,22 @@ public actor PhabricatorClient {
         encoder.outputFormatting = [.sortedKeys]
         return encoder
     }
+
+    static func wrapParams<P: Encodable>(_ params: P, token: String?, encoder: JSONEncoder) throws -> String {
+        let paramsData = try encoder.encode(params)
+        var dict = (try JSONSerialization.jsonObject(with: paramsData) as? [String: Any]) ?? [:]
+        if let token {
+            dict["__conduit__"] = ["token": token]
+        }
+        let mergedData = try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
+        return String(data: mergedData, encoding: .utf8) ?? "{}"
+    }
 }
 
 extension PhabricatorClient {
     func call<P: Encodable, T: Decodable>(method: String, params: P, as type: T.Type = T.self) async throws -> T {
-        let paramsData = try encoder.encode(params)
-        guard let paramsJSON = String(data: paramsData, encoding: .utf8) else {
-            throw PhabricatorError.invalidResponse
-        }
-        let body = ConduitFormBody.encode(token: authentication.token, paramsJSON: paramsJSON)
+        let paramsJSON = try Self.wrapParams(params, token: authentication.token, encoder: encoder)
+        let body = ConduitFormBody.encode(paramsJSON: paramsJSON)
         let endpoint = ConduitEndpoint(method: method, body: body)
         let request = try endpoint.request(relativeTo: baseURL)
         let (data, response) = try await transport.send(request)
@@ -71,9 +78,6 @@ extension PhabricatorClient {
             throw PhabricatorError.decoding("\(error)")
         }
         if let code = envelope.errorCode {
-            if code == "ERR-INVALID-AUTH" || code == "ERR-INVALID-SESSION" {
-                throw PhabricatorError.unauthorized
-            }
             throw PhabricatorError.api(code: code, info: envelope.errorInfo ?? code)
         }
         guard let result = envelope.result else {

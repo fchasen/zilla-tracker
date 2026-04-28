@@ -24,14 +24,11 @@ struct ConduitEndpoint {
 }
 
 enum ConduitFormBody {
-    static func encode(token: String?, paramsJSON: String) -> Data {
-        var pairs: [(String, String)] = []
-        if let token { pairs.append(("api.token", token)) }
-        pairs.append(("output", "json"))
-        pairs.append(("params", paramsJSON))
-        let encoded = pairs.map { name, value in
-            "\(percentEncode(name))=\(percentEncode(value))"
-        }.joined(separator: "&")
+    static func encode(paramsJSON: String?) -> Data {
+        guard let paramsJSON, !paramsJSON.isEmpty, paramsJSON != "{}" else {
+            return Data()
+        }
+        let encoded = "params=\(percentEncode(paramsJSON))"
         return Data(encoded.utf8)
     }
 

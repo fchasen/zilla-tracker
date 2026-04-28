@@ -94,12 +94,40 @@ final class RevisionDecodingTests: XCTestCase {
         XCTAssertEqual(query.constraints?.modifiedStart, 1_700_000_000)
     }
 
-    func testFormBodyEncodesTokenAndJSON() throws {
-        let body = ConduitFormBody.encode(token: "api-xyz", paramsJSON: "{\"order\":\"updated\"}")
+    func testFormBodyEncodesParamsJSON() throws {
+        let body = ConduitFormBody.encode(paramsJSON: "{\"order\":\"updated\"}")
         let s = String(data: body, encoding: .utf8) ?? ""
-        XCTAssertTrue(s.contains("api.token=api-xyz"))
-        XCTAssertTrue(s.contains("output=json"))
-        XCTAssertTrue(s.contains("params="))
-        XCTAssertTrue(s.contains("%7B%22order%22%3A%22updated%22%7D"))
+        XCTAssertEqual(s, "params=%7B%22order%22%3A%22updated%22%7D")
+    }
+
+    func testFormBodyOmitsEmptyParams() throws {
+        XCTAssertEqual(ConduitFormBody.encode(paramsJSON: "{}"), Data())
+        XCTAssertEqual(ConduitFormBody.encode(paramsJSON: nil), Data())
+        XCTAssertEqual(ConduitFormBody.encode(paramsJSON: ""), Data())
+    }
+
+    func testWrapParamsInjectsConduitToken() throws {
+        struct Empty: Encodable {}
+        let encoder = PhabricatorClient.makeEncoder()
+        let json = try PhabricatorClient.wrapParams(Empty(), token: "api-xyz", encoder: encoder)
+        XCTAssertTrue(json.contains("\"__conduit__\""))
+        XCTAssertTrue(json.contains("\"token\":\"api-xyz\""))
+    }
+
+    func testWrapParamsPreservesExistingFields() throws {
+        let query = RevisionQuery.active(authorPHID: "PHID-USER-aaa")
+        let encoder = PhabricatorClient.makeEncoder()
+        let json = try PhabricatorClient.wrapParams(query, token: "api-xyz", encoder: encoder)
+        XCTAssertTrue(json.contains("\"__conduit__\""))
+        XCTAssertTrue(json.contains("\"order\":\"updated\""))
+        XCTAssertTrue(json.contains("\"authorPHIDs\":[\"PHID-USER-aaa\"]"))
+    }
+
+    func testWrapParamsOmitsConduitWhenNoToken() throws {
+        struct Empty: Encodable {}
+        let encoder = PhabricatorClient.makeEncoder()
+        let json = try PhabricatorClient.wrapParams(Empty(), token: nil, encoder: encoder)
+        XCTAssertFalse(json.contains("__conduit__"))
+        XCTAssertEqual(json, "{}")
     }
 }
