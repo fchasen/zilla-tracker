@@ -21,6 +21,6 @@ rm -rf ../../Packages/SearchfoxKit
 mv SearchfoxKit ../../Packages/SearchfoxKit
 ```
 
-`Packages/SearchfoxKit/Package.swift` and the generated Swift bindings are committed.
-The xcframework (~240 MB) is gitignored — run the regenerate command above once after
-cloning before opening the Xcode project.
+`Packages/SearchfoxKit/Package.swift`, the generated Swift bindings, and the
+xcframework (~240 MB) are all committed, so the app target links straight after a
+fresh clone. Re-run the regenerate command above whenever the bridge changes.
