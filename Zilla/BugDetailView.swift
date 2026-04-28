@@ -15,6 +15,10 @@ struct BugDetailView: View {
     @State private var isLoading = false
     @State private var loadError: String?
 
+    @State private var composerText: String = ""
+    @State private var isPostingComment = false
+    @State private var composerError: String?
+
     var body: some View {
         Group {
             if bugID == nil {
@@ -30,7 +34,15 @@ struct BugDetailView: View {
                     description: Text(error)
                 )
             } else if let bug {
-                BugContent(bug: bug, comments: comments, loadError: loadError)
+                BugContent(
+                    bug: bug,
+                    comments: comments,
+                    loadError: loadError,
+                    composerText: $composerText,
+                    isPosting: isPostingComment,
+                    composerError: composerError,
+                    onPost: { Task { await postComment() } }
+                )
             } else if isLoading {
                 ProgressView()
                     .controlSize(.large)
@@ -56,6 +68,8 @@ struct BugDetailView: View {
     }
 
     private func load(id: Int?) async {
+        composerText = ""
+        composerError = nil
         guard let id else {
             bug = nil
             comments = []
@@ -80,12 +94,36 @@ struct BugDetailView: View {
             self.loadError = error.localizedDescription
         }
     }
+
+    private func postComment() async {
+        let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = bugID else { return }
+
+        isPostingComment = true
+        composerError = nil
+        defer { isPostingComment = false }
+
+        let client = auth.client
+        do {
+            _ = try await client.addComment(bugID: id, text: trimmed)
+            composerText = ""
+            if let refreshed = try? await client.comments(bugID: id) {
+                comments = refreshed
+            }
+        } catch {
+            composerError = error.localizedDescription
+        }
+    }
 }
 
 private struct BugContent: View {
     let bug: Bug
     let comments: [Comment]
     let loadError: String?
+    @Binding var composerText: String
+    let isPosting: Bool
+    let composerError: String?
+    let onPost: () -> Void
 
     var body: some View {
         ScrollView {
@@ -104,6 +142,14 @@ private struct BugContent: View {
                     Divider()
                     BugCommentsSection(comments: comments)
                 }
+
+                Divider()
+                CommentComposer(
+                    text: $composerText,
+                    isPosting: isPosting,
+                    error: composerError,
+                    onPost: onPost
+                )
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -239,5 +285,57 @@ private struct CommentBlock: View {
         }
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct CommentComposer: View {
+    @Binding var text: String
+    let isPosting: Bool
+    let error: String?
+    let onPost: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Add a comment")
+                .font(.headline)
+
+            TextEditor(text: $text)
+                .font(.body)
+                .frame(minHeight: 80)
+                .padding(8)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                )
+                .disabled(isPosting)
+
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Text("⌘↩ to post")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: onPost) {
+                    if isPosting {
+                        ProgressView().controlSize(.small).frame(width: 60)
+                    } else {
+                        Text("Post").frame(width: 60)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(trimmedIsEmpty || isPosting)
+            }
+        }
+    }
+
+    private var trimmedIsEmpty: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
