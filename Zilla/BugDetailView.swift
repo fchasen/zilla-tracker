@@ -273,8 +273,10 @@ private struct BugContent: View {
                     AttachmentsSection(attachments: bug.attachments)
                 }
                 BugCommentsSection(
+                    bugID: bug.id,
                     comments: threadComments,
-                    attachmentsByID: attachmentsByID
+                    attachmentsByID: attachmentsByID,
+                    onQuote: quoteIntoComposer
                 )
                 Divider()
                 CommentComposer(
@@ -288,6 +290,24 @@ private struct BugContent: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func quoteIntoComposer(_ text: String) {
+        let quoted = text
+            .components(separatedBy: "\n")
+            .map { line in line.isEmpty ? ">" : "> \(line)" }
+            .joined(separator: "\n")
+        let separator: String
+        if composerText.isEmpty {
+            separator = ""
+        } else if composerText.hasSuffix("\n\n") {
+            separator = ""
+        } else if composerText.hasSuffix("\n") {
+            separator = "\n"
+        } else {
+            separator = "\n\n"
+        }
+        composerText.append(separator + quoted + "\n\n")
     }
 
     private var descriptionComment: Comment? {
@@ -814,7 +834,10 @@ struct BugInspectorContent: View {
                 onOpenBug: onOpenBug,
                 onAddDependsOn: { quickAddTarget = .dependsOn },
                 onAddBlocks: { quickAddTarget = .blocks },
-                onAddSeeAlso: { quickAddTarget = .seeAlso }
+                onAddSeeAlso: { quickAddTarget = .seeAlso },
+                onRemoveDependsOn: { id in onUpdate(BugUpdate(dependsOn: .remove([id]))) },
+                onRemoveBlocks: { id in onUpdate(BugUpdate(blocks: .remove([id]))) },
+                onRemoveSeeAlso: { url in onUpdate(BugUpdate(seeAlso: .remove([url]))) }
             )
 
             if !bug.cc.isEmpty {
@@ -1180,6 +1203,9 @@ private struct DependenciesSection: View {
     let onAddDependsOn: () -> Void
     let onAddBlocks: () -> Void
     let onAddSeeAlso: () -> Void
+    let onRemoveDependsOn: (Bug.ID) -> Void
+    let onRemoveBlocks: (Bug.ID) -> Void
+    let onRemoveSeeAlso: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1189,7 +1215,8 @@ private struct DependenciesSection: View {
                 ids: dependsOn,
                 direction: .dragBlocksTarget,
                 onOpenBug: onOpenBug,
-                onAdd: onAddDependsOn
+                onAdd: onAddDependsOn,
+                onRemove: onRemoveDependsOn
             )
             DependencyList(
                 title: "Blocks",
@@ -1197,12 +1224,14 @@ private struct DependenciesSection: View {
                 ids: blocks,
                 direction: .targetBlocksDrag,
                 onOpenBug: onOpenBug,
-                onAdd: onAddBlocks
+                onAdd: onAddBlocks,
+                onRemove: onRemoveBlocks
             )
             SeeAlsoList(
                 urls: seeAlso,
                 onOpenBug: onOpenBug,
-                onAdd: onAddSeeAlso
+                onAdd: onAddSeeAlso,
+                onRemove: onRemoveSeeAlso
             )
         }
     }
@@ -1212,6 +1241,7 @@ private struct SeeAlsoList: View {
     let urls: [String]
     let onOpenBug: (Bug.ID) -> Void
     let onAdd: () -> Void
+    let onRemove: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1227,7 +1257,7 @@ private struct SeeAlsoList: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(urls, id: \.self) { url in
-                        SeeAlsoRow(url: url, onOpenBug: onOpenBug)
+                        SeeAlsoRow(url: url, onOpenBug: onOpenBug, onRemove: onRemove)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1241,6 +1271,7 @@ private struct SeeAlsoRow: View {
     @Environment(\.openURL) private var openURL
     let url: String
     let onOpenBug: (Bug.ID) -> Void
+    let onRemove: (String) -> Void
 
     var body: some View {
         Button {
@@ -1287,6 +1318,22 @@ private struct SeeAlsoRow: View {
         }
         .buttonStyle(.plain)
         .help(url)
+        .contextMenu {
+            if let id = bmoBugID {
+                Button("Open in Bugzilla") {
+                    if let resolved = URL(string: url) { openURL(resolved) }
+                }
+                Button("Copy Bug Link") { copyToPasteboard(url) }
+                Button("Copy Bug ID") { copyToPasteboard(String(id)) }
+            } else {
+                Button("Open Link") {
+                    if let resolved = URL(string: url) { openURL(resolved) }
+                }
+                Button("Copy Link") { copyToPasteboard(url) }
+            }
+            Divider()
+            Button("Remove", role: .destructive) { onRemove(url) }
+        }
     }
 
     private var bmoBugID: Bug.ID? {
@@ -1319,6 +1366,7 @@ private struct DependencyList: View {
     let direction: BlockDirection
     let onOpenBug: (Bug.ID) -> Void
     let onAdd: () -> Void
+    let onRemove: (Bug.ID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1335,7 +1383,7 @@ private struct DependencyList: View {
                         .padding(.vertical, 4)
                 } else {
                     ForEach(ids, id: \.self) { id in
-                        DependencyRow(id: id, onOpen: onOpenBug)
+                        DependencyRow(id: id, onOpen: onOpenBug, onRemove: onRemove)
                     }
                 }
             }
@@ -1348,8 +1396,10 @@ private struct DependencyList: View {
 
 private struct DependencyRow: View {
     @Environment(Workspace.self) private var workspace
+    @Environment(\.openURL) private var openURL
     let id: Int
     let onOpen: (Bug.ID) -> Void
+    let onRemove: (Bug.ID) -> Void
 
     var body: some View {
         Button {
@@ -1376,6 +1426,19 @@ private struct DependencyRow: View {
         }
         .buttonStyle(.plain)
         .help(metadata?.summary ?? "Open bug #\(id)")
+        .contextMenu {
+            Button("Open in Bugzilla") {
+                if let url = URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(id)") {
+                    openURL(url)
+                }
+            }
+            Button("Copy Bug Link") {
+                copyToPasteboard("https://bugzilla.mozilla.org/show_bug.cgi?id=\(id)")
+            }
+            Button("Copy Bug ID") { copyToPasteboard(String(id)) }
+            Divider()
+            Button("Remove", role: .destructive) { onRemove(id) }
+        }
     }
 
     private var metadata: DependencyMetadata? {
@@ -1500,8 +1563,10 @@ private struct FlowLayout: Layout {
 }
 
 private struct BugCommentsSection: View {
+    let bugID: Bug.ID
     let comments: [Comment]
     let attachmentsByID: [BugzillaKit.Attachment.ID: BugzillaKit.Attachment]
+    let onQuote: (String) -> Void
 
     var body: some View {
         let visible = comments.filter { comment in
@@ -1516,8 +1581,10 @@ private struct BugCommentsSection: View {
                     .font(.headline)
                 ForEach(visible) { comment in
                     CommentBlock(
+                        bugID: bugID,
                         comment: comment,
-                        attachment: comment.attachmentId.flatMap { attachmentsByID[$0] }
+                        attachment: comment.attachmentId.flatMap { attachmentsByID[$0] },
+                        onQuote: onQuote
                     )
                 }
             }
@@ -1638,8 +1705,18 @@ private struct DescriptionBlock: View {
 }
 
 private struct CommentBlock: View {
+    let bugID: Bug.ID
     let comment: Comment
     let attachment: BugzillaKit.Attachment?
+    let onQuote: (String) -> Void
+
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+
+    @State private var isEditing = false
+    @State private var editedText = ""
+    @State private var editorSelection: TextSelection?
+    @State private var saveError: String?
 
     var body: some View {
         let stripped = stripAttachmentHeader(comment.text, hasAttachment: attachment != nil)
@@ -1663,7 +1740,33 @@ private struct CommentBlock: View {
             } else if let attachment {
                 AttachmentInlineLink(attachment: attachment)
             }
-            if !stripped.isEmpty {
+            if isEditing {
+                MarkdownEditor(
+                    text: $editedText,
+                    selection: $editorSelection,
+                    minHeight: 120,
+                    isDisabled: workspace.isUpdatingBug
+                )
+                HStack(spacing: 8) {
+                    if let saveError {
+                        Label(saveError, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer()
+                    Button("Cancel") {
+                        isEditing = false
+                        saveError = nil
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(workspace.isUpdatingBug)
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(workspace.isUpdatingBug || !canSave)
+                }
+            } else if !stripped.isEmpty {
                 StructuredText(markdown: stripped)
                     .font(.body)
                     .textSelection(.enabled)
@@ -1672,6 +1775,53 @@ private struct CommentBlock: View {
         }
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .contextMenu {
+            if !stripped.isEmpty {
+                Button("Copy Comment Text") { copyToPasteboard(stripped) }
+                Button("Quote in Reply") { onQuote(stripped) }
+            }
+            Button("Copy Permalink") {
+                copyToPasteboard("https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)#c\(comment.count ?? 0)")
+            }
+            if isAuthor, !isEditing {
+                Divider()
+                Button("Edit Comment") {
+                    editedText = comment.text
+                    saveError = nil
+                    isEditing = true
+                }
+            }
+        }
+    }
+
+    private var isAuthor: Bool {
+        guard let me = auth.currentUser?.name else { return false }
+        return comment.creator == me
+    }
+
+    private var canSave: Bool {
+        let trimmed = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+            && trimmed != comment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func save() async {
+        let trimmed = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            saveError = "Comment can't be empty."
+            return
+        }
+        if let error = await workspace.updateComment(
+            bugID: bugID,
+            commentID: comment.id,
+            newText: trimmed,
+            using: auth.client
+        ) {
+            saveError = error.localizedDescription
+            return
+        }
+        isEditing = false
+        saveError = nil
     }
 }
 

@@ -1059,6 +1059,25 @@ private struct AllDraftsList: View {
     @Query(sort: [SortDescriptor(\BugDraft.updatedAt, order: .reverse)])
     private var drafts: [BugDraft]
 
+    private func duplicate(_ draft: BugDraft) {
+        let copy = BugDraft(
+            product: draft.product,
+            componentName: draft.componentName,
+            blocks: draft.blocks
+        )
+        copy.summary = draft.summary
+        copy.bugDescription = draft.bugDescription
+        copy.version = draft.version
+        copy.type = draft.type
+        copy.severity = draft.severity
+        copy.priority = draft.priority
+        copy.assignedTo = draft.assignedTo
+        copy.keywordsCSV = draft.keywordsCSV
+        copy.whiteboard = draft.whiteboard
+        modelContext.insert(copy)
+        workspace.selectedDraftID = copy.id
+    }
+
     var body: some View {
         @Bindable var workspace = workspace
 
@@ -1075,6 +1094,10 @@ private struct AllDraftsList: View {
                         DraftListRow(draft: draft)
                             .tag(Optional(draft.id))
                             .contextMenu {
+                                Button("Duplicate") {
+                                    duplicate(draft)
+                                }
+                                Divider()
                                 Button("Discard", role: .destructive) {
                                     if workspace.selectedDraftID == draft.id {
                                         workspace.selectedDraftID = nil
@@ -1123,6 +1146,7 @@ private struct DraftListRow: View {
 
 private struct FollowedComponentEntry: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
     let followed: FollowedComponent
     let onAddMetaBug: () -> Void
 
@@ -1150,6 +1174,15 @@ private struct FollowedComponentEntry: View {
                 FollowedMetaBugRow(meta: meta)
                     .tag(SidebarSelection.metaBug(meta.bugId))
                     .contextMenu {
+                        Button("Open in Bugzilla") {
+                            if let url = URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(meta.bugId)") {
+                                openURL(url)
+                            }
+                        }
+                        Button("Copy Bug Link") {
+                            copyToPasteboard("https://bugzilla.mozilla.org/show_bug.cgi?id=\(meta.bugId)")
+                        }
+                        Divider()
                         Button("Remove", role: .destructive) {
                             modelContext.delete(meta)
                         }
@@ -1188,6 +1221,9 @@ private struct FollowedComponentEntry: View {
     @ViewBuilder
     private var componentMenu: some View {
         Button("Add Meta Bug…") { onAddMetaBug() }
+        Button("Copy Component Path") {
+            copyToPasteboard("\(followed.product) :: \(followed.componentName)")
+        }
         Divider()
         Button("Remove", role: .destructive) {
             modelContext.delete(followed)
@@ -1258,6 +1294,8 @@ struct BugListView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
     @Environment(ResourceCache.self) private var cache
+    @Environment(ViewedBugsStore.self) private var viewedBugs
+    @Environment(\.openURL) private var openURL
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
@@ -1277,6 +1315,7 @@ struct BugListView: View {
     @State private var isLoadingMore = false
     @State private var canLoadMore = false
     @State private var loadError: String?
+    @State private var lastSeenRefreshToken: UUID?
 
     private static let pageLimit = 50
 
@@ -1382,9 +1421,11 @@ struct BugListView: View {
             text: searchBinding,
             prompt: "Search bugs"
         )
-        .task(id: loadKey) { await load(force: false) }
-        .onChange(of: workspace.bugListRefreshToken) { _, _ in
-            Task { await load(force: true) }
+        .task(id: loadKey) {
+            let current = workspace.bugListRefreshToken
+            let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
+            lastSeenRefreshToken = current
+            await load(force: force)
         }
         .onChange(of: selection) { _, _ in
             bugs = []
@@ -1487,8 +1528,67 @@ struct BugListView: View {
                 isEnabled: topIndex != nil && isOrdered
             )
             .contextMenu {
+                rowQuickActions(for: bug)
+                Divider()
                 addAsMetaMenu(for: bug)
             }
+    }
+
+    @ViewBuilder
+    private func rowQuickActions(for bug: Bug) -> some View {
+        Button("Open in Bugzilla") {
+            if let url = URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bug.id)") {
+                openURL(url)
+            }
+        }
+        Button("Copy Bug Link") {
+            copyToPasteboard("https://bugzilla.mozilla.org/show_bug.cgi?id=\(bug.id)")
+        }
+        Button("Copy Bug ID") {
+            copyToPasteboard(String(bug.id))
+        }
+        Divider()
+        if viewedBugs.contains(bug.id) {
+            Button("Mark as Unviewed") {
+                viewedBugs.markUnviewed(bug.id)
+            }
+        } else {
+            Button("Mark as Viewed") {
+                viewedBugs.markViewed(bug.id)
+            }
+        }
+        if BugStatuses.isUnassigned(bug.assignedTo), let me = auth.currentUser?.name {
+            Button("Take") {
+                takeBug(bug, as: me)
+            }
+        }
+        if isOrdered, let key = endpointKey,
+           orderEntries.contains(where: { $0.endpointKey == key && $0.bugId == bug.id }) {
+            Button("Remove from Custom Order") {
+                removeFromOrder(bugID: bug.id, key: key)
+            }
+        }
+    }
+
+    private func takeBug(_ bug: Bug, as username: String) {
+        let client = auth.client
+        Task {
+            do {
+                _ = try await client.updateBug(id: bug.id, BugUpdate(assignedTo: username))
+                workspace.bugListRefreshToken = UUID()
+                if workspace.loadedBug?.id == bug.id {
+                    _ = await workspace.applyBugUpdate(BugUpdate(assignedTo: username), using: client)
+                }
+            } catch {
+                workspace.lastUpdateError = error.localizedDescription
+            }
+        }
+    }
+
+    private func removeFromOrder(bugID: Bug.ID, key: String) {
+        for entry in orderEntries where entry.endpointKey == key && entry.bugId == bugID {
+            modelContext.delete(entry)
+        }
     }
 
     private var rootNodes: [BugNode] {

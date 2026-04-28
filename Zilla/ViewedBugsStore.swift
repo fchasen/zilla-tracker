@@ -25,4 +25,10 @@ final class ViewedBugsStore {
         ids.insert(id)
         UserDefaults.standard.set(Array(ids), forKey: Self.storageKey)
     }
+
+    func markUnviewed(_ id: Int) {
+        guard ids.contains(id) else { return }
+        ids.remove(id)
+        UserDefaults.standard.set(Array(ids), forKey: Self.storageKey)
+    }
 }

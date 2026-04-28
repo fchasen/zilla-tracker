@@ -116,7 +116,9 @@ struct RevisionListView: View {
             case .active: return .active(authorPHID: phid)
             case .review: return .reviewing(responsiblePHID: phid)
             case .landed:
-                let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 3600)
+                let cal = Calendar.current
+                let anchor = cal.dateInterval(of: .hour, for: .now)?.start ?? .now
+                let oneWeekAgo = cal.date(byAdding: .day, value: -7, to: anchor) ?? anchor
                 return .landed(authorPHID: phid, since: oneWeekAgo)
             }
         }()
@@ -144,6 +146,7 @@ struct RevisionListView: View {
 private struct RevisionRow: View {
     @Environment(Workspace.self) private var workspace
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
+    @Environment(\.openURL) private var openURL
     let revision: Revision
     let showsUnseenIndicator: Bool
 
@@ -190,6 +193,40 @@ private struct RevisionRow: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
+        .contextMenu { contextMenuContent }
+    }
+
+    private var revisionURL: URL? {
+        URL(string: "https://phabricator.services.mozilla.com/D\(revision.id)")
+    }
+
+    @ViewBuilder
+    private var contextMenuContent: some View {
+        if let url = revisionURL {
+            Button("Open in Phabricator") { openURL(url) }
+            Button("Copy Revision Link") {
+                copyToPasteboard(url.absoluteString)
+            }
+        }
+        Button("Copy Revision ID") {
+            copyToPasteboard(revision.revisionLabel)
+        }
+        Divider()
+        if viewedRevisions.contains(revision.id) {
+            Button("Mark as Unviewed") {
+                viewedRevisions.markUnviewed(revision.id)
+            }
+        } else {
+            Button("Mark as Viewed") {
+                viewedRevisions.markViewed(revision.id)
+            }
+        }
+        if let bug = revision.fields.bugzillaBugID, let id = Int(bug) {
+            Divider()
+            Button("Open Linked Bug #\(bug)") {
+                workspace.selectedBugID = id
+            }
+        }
     }
 }
 
