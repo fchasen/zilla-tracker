@@ -12,15 +12,17 @@ import SwiftData
 struct ZillaApp: App {
     @State private var auth = AuthStore()
     @State private var workspace = Workspace()
+    @State private var viewedBugs = ViewedBugsStore()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(auth)
                 .environment(workspace)
+                .environment(viewedBugs)
                 .task { await auth.bootstrap() }
         }
-        .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self])
+        .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self, BugDraft.self])
     }
 }
 

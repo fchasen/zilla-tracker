@@ -5,7 +5,6 @@
 
 import SwiftUI
 import BugzillaKit
-import SearchfoxKit
 import Textual
 #if canImport(AppKit)
 import AppKit
@@ -16,6 +15,7 @@ import UIKit
 struct BugDetailView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(Workspace.self) private var workspace
+    @Environment(ViewedBugsStore.self) private var viewedBugs
     let bugID: Bug.ID?
 
     @State private var composerText: String = ""
@@ -70,8 +70,13 @@ struct BugDetailView: View {
                     ProgressView().controlSize(.small)
                 }
             } else if let bug {
+                if !isClosed(bug) {
+                    ToolbarItem(placement: .primaryAction) {
+                        statusMenu(for: bug)
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
-                    statusMenu(for: bug)
+                    resolveMenu(for: bug)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -109,11 +114,9 @@ struct BugDetailView: View {
     }
 
     @ViewBuilder
-    private func statusMenu(for bug: Bug) -> some View {
-        let isClosed = ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
-
+    private func resolveMenu(for bug: Bug) -> some View {
         Menu {
-            if isClosed {
+            if isClosed(bug) {
                 Button("Reopen") {
                     Task { await applyUpdate(BugUpdate(status: "REOPENED", resolution: "")) }
                 }
@@ -129,8 +132,43 @@ struct BugDetailView: View {
                 }
             }
         } label: {
-            Label("Change status", systemImage: "checkmark.circle")
+            Label("Resolve", systemImage: "checkmark.circle")
         }
+    }
+
+    @ViewBuilder
+    private func statusMenu(for bug: Bug) -> some View {
+        Menu {
+            ForEach(Self.statusOptions, id: \.code) { option in
+                Button {
+                    Task { await applyUpdate(BugUpdate(status: option.code)) }
+                } label: {
+                    if bug.status.uppercased() == option.code {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+            if isUnassigned(bug), let me = auth.currentUser?.name {
+                Divider()
+                Button("Take") {
+                    Task { await applyUpdate(BugUpdate(assignedTo: me)) }
+                }
+            }
+        } label: {
+            Label("Status", systemImage: "arrow.triangle.2.circlepath")
+        }
+    }
+
+    private func isClosed(_ bug: Bug) -> Bool {
+        ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
+    }
+
+    private func isUnassigned(_ bug: Bug) -> Bool {
+        guard let raw = bug.assignedTo?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return true }
+        return raw.lowercased().contains("nobody")
     }
 
     private static let resolveOptions: [(code: String, label: String)] = [
@@ -139,6 +177,12 @@ struct BugDetailView: View {
         ("WORKSFORME", "Works for Me"),
         ("INCOMPLETE", "Incomplete"),
         ("WONTFIX", "Won't Fix")
+    ]
+
+    private static let statusOptions: [(code: String, label: String)] = [
+        ("NEW", "New"),
+        ("ASSIGNED", "Assigned"),
+        ("IN_PROGRESS", "In Progress")
     ]
 
     private func applyUpdate(_ update: BugUpdate) async {
@@ -155,6 +199,7 @@ struct BugDetailView: View {
             workspace.clearLoadedBug()
             return
         }
+        viewedBugs.markViewed(id)
         await workspace.loadBug(id: id, using: auth.client)
     }
 
@@ -364,8 +409,8 @@ struct BugMetadata: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 
-    private static let priorityOptions = ["--", "P1", "P2", "P3", "P4", "P5"]
-    private static let severityOptions = ["--", "S1", "S2", "S3", "S4", "N/A"]
+    static let priorityOptions = ["--", "P1", "P2", "P3", "P4", "P5"]
+    static let severityOptions = ["--", "S1", "S2", "S3", "S4", "N/A"]
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
@@ -598,21 +643,14 @@ private struct CommentComposer: View {
     let error: String?
     let onPost: () -> Void
 
-    @State private var showPreview = false
-    @State private var showingSearchfoxPicker = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Add a comment")
-                    .font(.headline)
-                Spacer()
-                if !showPreview {
-                    formattingBar
-                }
-            }
-
-            editorOrPreview
+            MarkdownEditor(
+                text: $text,
+                selection: $selection,
+                headerLabel: "Add a comment",
+                isDisabled: isPosting
+            )
 
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -621,16 +659,6 @@ private struct CommentComposer: View {
             }
 
             HStack {
-                Button {
-                    showPreview.toggle()
-                } label: {
-                    Label(
-                        showPreview ? "Edit" : "Preview",
-                        systemImage: showPreview ? "pencil" : "eye"
-                    )
-                }
-                .buttonStyle(.borderless)
-                .disabled(isPosting || (trimmedIsEmpty && !showPreview))
                 Spacer()
                 Button(action: onPost) {
                     if isPosting {
@@ -645,271 +673,9 @@ private struct CommentComposer: View {
                 .disabled(trimmedIsEmpty || isPosting)
             }
         }
-        .sheet(isPresented: $showingSearchfoxPicker) {
-            SearchfoxPickerSheet { hit in
-                insertSearchfoxLink(hit)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var editorOrPreview: some View {
-        if showPreview {
-            ScrollView {
-                Group {
-                    if trimmedIsEmpty {
-                        Text("Nothing to preview yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        StructuredText(markdown: text)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(8)
-            }
-            .frame(minHeight: 96)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-            )
-        } else {
-            TextEditor(text: $text, selection: $selection)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(.hidden)
-                .frame(minHeight: 96)
-                .padding(8)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                )
-                .disabled(isPosting)
-                .onKeyPress(.return) {
-                    handleReturnInList() ? .handled : .ignored
-                }
-        }
-    }
-
-    private var formattingBar: some View {
-        HStack(spacing: 2) {
-            FormatButton(systemImage: "bold", help: "Bold (⌘B)", shortcut: KeyboardShortcut("b", modifiers: .command)) {
-                wrap("**", "**", placeholder: "bold")
-            }
-            FormatButton(systemImage: "italic", help: "Italic (⌘I)", shortcut: KeyboardShortcut("i", modifiers: .command)) {
-                wrap("*", "*", placeholder: "italic")
-            }
-            FormatButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Code block") {
-                wrapCodeBlock()
-            }
-            FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
-                wrapLink()
-            }
-            FormatButton(systemImage: "list.bullet", help: "Bullet list") {
-                prefixLines("- ")
-            }
-            FormatButton(systemImage: "list.number", help: "Numbered list") {
-                numberedList()
-            }
-            FormatButton(systemImage: "text.quote", help: "Blockquote") {
-                prefixLines("> ")
-            }
-            FormatButton(systemImage: "magnifyingglass", help: "Insert Searchfox link (⌘F)", shortcut: KeyboardShortcut("f", modifiers: .command)) {
-                showingSearchfoxPicker = true
-            }
-        }
-        .disabled(isPosting)
     }
 
     private var trimmedIsEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// Wraps the current selection (or inserts a placeholder if no selection)
-    /// with `prefix`/`suffix`. Falls back to appending at the end when the
-    /// selection isn't a single contiguous range we can resolve.
-    private func wrap(_ prefix: String, _ suffix: String, placeholder: String) {
-        if let range = singleSelectionRange(), !range.isEmpty {
-            let selected = String(text[range])
-            text.replaceSubrange(range, with: prefix + selected + suffix)
-        } else {
-            text += prefix + placeholder + suffix
-        }
-    }
-
-    private func wrapLink() {
-        if let range = singleSelectionRange(), !range.isEmpty {
-            let selected = String(text[range])
-            text.replaceSubrange(range, with: "[\(selected)](https://)")
-        } else {
-            text += "[text](https://)"
-        }
-    }
-
-    private func insertSearchfoxLink(_ hit: SearchHit) {
-        let fallbackLabel = hit.lineNumber > 0
-            ? "\(hit.path)#L\(hit.lineNumber)"
-            : hit.path
-        if let range = singleSelectionRange() {
-            if range.isEmpty {
-                text.replaceSubrange(range, with: "[\(fallbackLabel)](\(hit.url))")
-            } else {
-                let selected = String(text[range])
-                text.replaceSubrange(range, with: "[\(selected)](\(hit.url))")
-            }
-        } else {
-            text += "[\(fallbackLabel)](\(hit.url))"
-        }
-    }
-
-    /// Wraps the selection in a fenced code block, ensuring the fences sit on
-    /// their own lines.
-    private func wrapCodeBlock() {
-        let leadIn = text.hasSuffix("\n") || text.isEmpty ? "" : "\n"
-        if let range = singleSelectionRange(), !range.isEmpty {
-            var selected = String(text[range])
-            if selected.hasSuffix("\n") { selected.removeLast() }
-            let opening = (range.lowerBound == text.startIndex || text[text.index(before: range.lowerBound)] == "\n") ? "" : "\n"
-            text.replaceSubrange(range, with: "\(opening)```\n\(selected)\n```\n")
-        } else {
-            text += "\(leadIn)```\ncode\n```\n"
-        }
-    }
-
-    private func prefixLines(_ marker: String) {
-        if let range = singleSelectionRange(), !range.isEmpty {
-            let block = String(text[range])
-            let prefixed = block
-                .split(separator: "\n", omittingEmptySubsequences: false)
-                .map { marker + $0 }
-                .joined(separator: "\n")
-            text.replaceSubrange(range, with: prefixed)
-        } else {
-            text += (text.hasSuffix("\n") || text.isEmpty ? "" : "\n") + marker
-        }
-    }
-
-    private func numberedList() {
-        if let range = singleSelectionRange(), !range.isEmpty {
-            let block = String(text[range])
-            let lines = block.split(separator: "\n", omittingEmptySubsequences: false)
-            let numbered = lines.enumerated()
-                .map { index, line in "\(index + 1). \(line)" }
-                .joined(separator: "\n")
-            text.replaceSubrange(range, with: numbered)
-        } else {
-            text += (text.hasSuffix("\n") || text.isEmpty ? "" : "\n") + "1. "
-        }
-    }
-
-    /// Intercepts Return when the cursor is on a list line. Returns true if
-    /// the keystroke was consumed; false to let the editor insert a newline.
-    private func handleReturnInList() -> Bool {
-        guard let cursor = currentCursor() else { return false }
-
-        // Locate the start of the line the cursor is on.
-        let beforeCursor = text[..<cursor]
-        let lineStart = beforeCursor.lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
-        let currentLine = String(text[lineStart..<cursor])
-
-        guard let info = listMarker(of: currentLine) else { return false }
-
-        let content = currentLine.dropFirst(info.marker.count)
-        if content.trimmingCharacters(in: .whitespaces).isEmpty {
-            // Empty list item: strip the marker so Return exits the list.
-            text.removeSubrange(lineStart..<cursor)
-            let newCursor = text.index(text.startIndex, offsetBy: text.distance(from: text.startIndex, to: lineStart))
-            selection = TextSelection(insertionPoint: newCursor)
-            return true
-        } else {
-            // Continue the list with the next marker.
-            let nextMarker = info.kind.nextMarker(after: info.marker)
-            let inserted = "\n" + nextMarker
-            let cursorOffset = text.distance(from: text.startIndex, to: cursor)
-            text.insert(contentsOf: inserted, at: cursor)
-            let newCursor = text.index(text.startIndex, offsetBy: cursorOffset + inserted.count)
-            selection = TextSelection(insertionPoint: newCursor)
-            return true
-        }
-    }
-
-    private func currentCursor() -> String.Index? {
-        guard let selection else { return nil }
-        switch selection.indices {
-        case .selection(let range):
-            return range.upperBound
-        case .multiSelection(let ranges):
-            return ranges.ranges.first?.upperBound
-        @unknown default:
-            return nil
-        }
-    }
-
-    private enum ListKind {
-        case bullet
-        case numbered
-
-        func nextMarker(after marker: String) -> String {
-            switch self {
-            case .bullet:
-                return "- "
-            case .numbered:
-                let digits = marker.dropLast(2)
-                let n = Int(digits) ?? 1
-                return "\(n + 1). "
-            }
-        }
-    }
-
-    private func listMarker(of line: String) -> (marker: String, kind: ListKind)? {
-        if line.hasPrefix("- ") {
-            return (marker: "- ", kind: .bullet)
-        }
-        if let match = line.range(of: #"^\d+\. "#, options: .regularExpression) {
-            return (marker: String(line[match]), kind: .numbered)
-        }
-        return nil
-    }
-
-    private func singleSelectionRange() -> Range<String.Index>? {
-        guard let selection else { return nil }
-        switch selection.indices {
-        case .selection(let range):
-            return range
-        case .multiSelection(let ranges):
-            return ranges.ranges.first
-        @unknown default:
-            return nil
-        }
-    }
-}
-
-private struct FormatButton: View {
-    let systemImage: String
-    let help: String
-    var shortcut: KeyboardShortcut? = nil
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .frame(width: 24, height: 22)
-        }
-        .buttonStyle(.borderless)
-        .help(help)
-        .modifier(OptionalKeyboardShortcut(shortcut: shortcut))
-    }
-}
-
-private struct OptionalKeyboardShortcut: ViewModifier {
-    let shortcut: KeyboardShortcut?
-
-    func body(content: Content) -> some View {
-        if let shortcut {
-            content.keyboardShortcut(shortcut)
-        } else {
-            content
-        }
     }
 }

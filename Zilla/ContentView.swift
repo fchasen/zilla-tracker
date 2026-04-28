@@ -78,6 +78,7 @@ enum SidebarSelection: Hashable {
     case smart(SmartEndpoint)
     case component(ComponentRef)
     case metaBug(Int)
+    case draft(UUID)
 }
 
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
@@ -225,6 +226,8 @@ final class Workspace {
             return .openIn(component: ref)
         case .metaBug(let id):
             return .blockedBy(metaBug: id)
+        case .draft:
+            return BugQuery()
         }
     }
 
@@ -254,8 +257,8 @@ final class Workspace {
 struct ContentView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
-
-    @State private var showAddComponent = false
+    @Environment(\.modelContext) private var modelContext
+    @Query private var followedMetaBugs: [FollowedMetaBug]
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -266,16 +269,16 @@ struct ContentView: View {
             BugListView(selection: workspace.sidebarSelection,
                         selectedBugID: $workspace.selectedBugID)
         } detail: {
-            BugDetailView(bugID: workspace.selectedBugID)
+            detailColumn
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
-                    showAddComponent = true
+                    createDraft()
                 } label: {
-                    Label("Add Component", systemImage: "plus")
+                    Label("New Bug", systemImage: "square.and.pencil")
                 }
-                .help("Add Component")
+                .help(newBugHelpText)
             }
             ToolbarItem(placement: .navigation) {
                 Menu {
@@ -298,11 +301,8 @@ struct ContentView: View {
                 .help("Account")
             }
         }
-        .sheet(isPresented: $showAddComponent) {
-            ComponentPickerSheet()
-        }
         .inspector(isPresented: $workspace.showInspector) {
-            BugInspector()
+            inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
         }
         .task {
@@ -310,6 +310,58 @@ struct ContentView: View {
                 await workspace.loadProducts(using: auth.client)
             }
         }
+    }
+
+    @ViewBuilder
+    private var detailColumn: some View {
+        switch workspace.sidebarSelection {
+        case .draft(let id):
+            DraftEditorView(draftID: id)
+        default:
+            BugDetailView(bugID: workspace.selectedBugID)
+        }
+    }
+
+    @ViewBuilder
+    private var inspectorColumn: some View {
+        switch workspace.sidebarSelection {
+        case .draft(let id):
+            DraftInspector(draftID: id)
+        default:
+            BugInspector()
+        }
+    }
+
+    private var newBugHelpText: String {
+        switch workspace.sidebarSelection {
+        case .component(let ref):
+            return "New bug in \(ref.component)"
+        case .metaBug(let id):
+            return "New bug blocking #\(id)"
+        case .smart, .draft, .none:
+            return "New bug…"
+        }
+    }
+
+    private func createDraft() {
+        let draft = BugDraft()
+        switch workspace.sidebarSelection {
+        case .component(let ref):
+            draft.product = ref.product
+            draft.componentName = ref.component
+        case .metaBug(let bugId):
+            if let meta = followedMetaBugs.first(where: { $0.bugId == bugId }),
+               let parent = meta.component {
+                draft.product = parent.product
+                draft.componentName = parent.componentName
+            }
+            draft.blocks = [bugId]
+        case .smart, .draft, .none:
+            break
+        }
+        modelContext.insert(draft)
+        workspace.sidebarSelection = .draft(draft.id)
+        workspace.showInspector = true
     }
 }
 
@@ -336,6 +388,178 @@ private struct BugInspector: View {
     }
 }
 
+private struct DraftInspector: View {
+    let draftID: UUID
+
+    @Query private var matchingDrafts: [BugDraft]
+
+    init(draftID: UUID) {
+        self.draftID = draftID
+        self._matchingDrafts = Query(filter: #Predicate<BugDraft> { $0.id == draftID })
+    }
+
+    var body: some View {
+        if let draft = matchingDrafts.first {
+            ScrollView {
+                DraftMetadata(draft: draft)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            ContentUnavailableView(
+                "No draft",
+                systemImage: "sidebar.right",
+                description: Text("Pick a draft on the left.")
+            )
+        }
+    }
+}
+
+private struct DraftMetadata: View {
+    @Bindable var draft: BugDraft
+
+    private static let typeOptions: [(code: String?, label: String)] = [
+        (nil, "—"),
+        ("defect", "Defect"),
+        ("enhancement", "Enhancement"),
+        ("task", "Task")
+    ]
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 10) {
+            typeRow
+            menuRow(
+                label: "Priority",
+                current: draft.priority,
+                options: BugMetadata.priorityOptions
+            ) { value in
+                draft.priority = (value == "--") ? nil : value
+                draft.updatedAt = .now
+            }
+            menuRow(
+                label: "Severity",
+                current: draft.severity,
+                options: BugMetadata.severityOptions
+            ) { value in
+                draft.severity = (value == "--") ? nil : value
+                draft.updatedAt = .now
+            }
+            assigneeRow
+            keywordsRow
+            blocksRow
+            datesRow
+        }
+        .font(.callout)
+    }
+
+    @ViewBuilder
+    private var typeRow: some View {
+        GridRow {
+            Text("Type").foregroundStyle(.secondary)
+            Menu {
+                ForEach(Self.typeOptions, id: \.label) { option in
+                    Button {
+                        draft.type = option.code
+                        draft.updatedAt = .now
+                    } label: {
+                        if option.code == draft.type {
+                            Label(option.label, systemImage: "checkmark")
+                        } else {
+                            Text(option.label)
+                        }
+                    }
+                }
+            } label: {
+                Text(typeLabel)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var typeLabel: String {
+        Self.typeOptions.first(where: { $0.code == draft.type })?.label ?? "—"
+    }
+
+    @ViewBuilder
+    private func menuRow(
+        label: String,
+        current: String?,
+        options: [String],
+        onPick: @escaping (String) -> Void
+    ) -> some View {
+        let displayed = (current?.isEmpty == false ? current : nil) ?? "--"
+        GridRow {
+            Text(label).foregroundStyle(.secondary)
+            Menu {
+                ForEach(options, id: \.self) { value in
+                    Button {
+                        onPick(value)
+                    } label: {
+                        if value == current || (value == "--" && (current == nil || current?.isEmpty == true)) {
+                            Label(value, systemImage: "checkmark")
+                        } else {
+                            Text(value)
+                        }
+                    }
+                }
+            } label: {
+                Text(displayed)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var assigneeRow: some View {
+        GridRow {
+            Text("Assignee").foregroundStyle(.secondary)
+            TextField("default assignee", text: Binding(
+                get: { draft.assignedTo ?? "" },
+                set: { newValue in
+                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    draft.assignedTo = trimmed.isEmpty ? nil : newValue
+                    draft.updatedAt = .now
+                }
+            ))
+            .textFieldStyle(.roundedBorder)
+        }
+    }
+
+    @ViewBuilder
+    private var keywordsRow: some View {
+        GridRow {
+            Text("Keywords").foregroundStyle(.secondary)
+            TextField("comma-separated", text: $draft.keywordsCSV)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: draft.keywordsCSV) { draft.updatedAt = .now }
+        }
+    }
+
+    @ViewBuilder
+    private var blocksRow: some View {
+        if !draft.blocks.isEmpty {
+            GridRow {
+                Text("Blocks").foregroundStyle(.secondary)
+                Text(draft.blocks.map { "#\($0)" }.joined(separator: ", "))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var datesRow: some View {
+        GridRow {
+            Text("Updated").foregroundStyle(.secondary)
+            Text(draft.updatedAt, format: .relative(presentation: .named))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 // MARK: - Sidebar
 
 struct Sidebar: View {
@@ -343,36 +567,73 @@ struct Sidebar: View {
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
+    @Query(sort: [SortDescriptor(\BugDraft.updatedAt, order: .reverse)])
+    private var drafts: [BugDraft]
 
     @Binding var selection: SidebarSelection?
 
     @State private var addMetaBugTarget: FollowedComponent?
+    @State private var showAddComponent = false
 
     var body: some View {
-        List(selection: $selection) {
-            Section {
-                ForEach(SmartEndpoint.allCases) { endpoint in
-                    Label(endpoint.title, systemImage: endpoint.systemImage)
-                        .tag(SidebarSelection.smart(endpoint))
+        VStack(spacing: 0) {
+            List(selection: $selection) {
+                Section {
+                    ForEach(SmartEndpoint.allCases) { endpoint in
+                        Label(endpoint.title, systemImage: endpoint.systemImage)
+                            .tag(SidebarSelection.smart(endpoint))
+                    }
+                }
+
+                if !drafts.isEmpty {
+                    Section("Drafts") {
+                        ForEach(drafts) { draft in
+                            DraftRow(draft: draft)
+                                .tag(SidebarSelection.draft(draft.id))
+                                .contextMenu {
+                                    Button("Discard", role: .destructive) {
+                                        if selection == .draft(draft.id) {
+                                            selection = .smart(.myBugs)
+                                        }
+                                        modelContext.delete(draft)
+                                    }
+                                }
+                        }
+                    }
+                }
+
+                Section("Components") {
+                    if followedComponents.isEmpty {
+                        Text("No components yet. Tap + below to follow one.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(followedComponents) { followed in
+                            FollowedComponentEntry(
+                                followed: followed,
+                                onAddMetaBug: { addMetaBugTarget = followed }
+                            )
+                        }
+                        .onMove(perform: moveComponents)
+                    }
                 }
             }
 
-            Section("Components") {
-                if followedComponents.isEmpty {
-                    Text("No components yet. Tap + above to follow one.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
-                } else {
-                    ForEach(followedComponents) { followed in
-                        FollowedComponentEntry(
-                            followed: followed,
-                            onAddMetaBug: { addMetaBugTarget = followed }
-                        )
-                    }
-                    .onMove(perform: moveComponents)
+            Divider()
+            HStack {
+                Button {
+                    showAddComponent = true
+                } label: {
+                    Label("Add Component", systemImage: "plus")
+                        .font(.callout)
                 }
+                .buttonStyle(.borderless)
+                .help("Add Component")
+                Spacer()
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .navigationTitle("Zilla")
         #if os(macOS)
@@ -381,6 +642,9 @@ struct Sidebar: View {
         .sheet(item: $addMetaBugTarget) { component in
             MetaBugPickerSheet(component: component)
         }
+        .sheet(isPresented: $showAddComponent) {
+            ComponentPickerSheet()
+        }
     }
 
     private func moveComponents(from source: IndexSet, to destination: Int) {
@@ -388,6 +652,23 @@ struct Sidebar: View {
         items.move(fromOffsets: source, toOffset: destination)
         for (index, item) in items.enumerated() {
             item.position = index
+        }
+    }
+}
+
+private struct DraftRow: View {
+    let draft: BugDraft
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(draft.displaySummary).lineLimit(1)
+                Text(draft.displaySubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: "square.and.pencil")
         }
     }
 }
@@ -521,6 +802,11 @@ struct BugListView: View {
 
     private static let pageLimit = 50
 
+    private var isDraft: Bool {
+        if case .draft = selection { return true }
+        return false
+    }
+
     var body: some View {
         Group {
             if selection == nil {
@@ -528,6 +814,12 @@ struct BugListView: View {
                     "Pick something",
                     systemImage: "sidebar.left",
                     description: Text("Choose a smart list or component on the left.")
+                )
+            } else if isDraft {
+                ContentUnavailableView(
+                    "Editing draft",
+                    systemImage: "doc.text",
+                    description: Text("Configure the draft on the right.")
                 )
             } else if isLoading && bugs.isEmpty {
                 ProgressView().controlSize(.large)
@@ -571,11 +863,13 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                refreshButton
-            }
-            ToolbarItem(placement: .primaryAction) {
-                sortMenu
+            if !isDraft {
+                ToolbarItem(placement: .primaryAction) {
+                    refreshButton
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    sortMenu
+                }
             }
         }
         .searchable(
@@ -704,11 +998,17 @@ struct BugListView: View {
         case .smart(let s): return s.title
         case .component(let ref): return "\(ref.product) :: \(ref.component)"
         case .metaBug(let id): return "Meta \(id)"
+        case .draft: return "Draft"
         }
     }
 
     private func load() async {
         guard let selection else {
+            bugs = []
+            totalMatches = nil
+            return
+        }
+        if case .draft = selection {
             bugs = []
             totalMatches = nil
             return
@@ -765,6 +1065,7 @@ private struct BugListLoadKey: Hashable {
 }
 
 private struct BugRow: View {
+    @Environment(ViewedBugsStore.self) private var viewedBugs
     let bug: Bug
 
     var body: some View {
@@ -775,9 +1076,17 @@ private struct BugRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(bug.summary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if isUnseenAndRecent {
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 7, height: 7)
+                            .accessibilityLabel("New")
+                    }
+                    Text(bug.summary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
 
                 HStack(spacing: 6) {
                     BugTypePill(type: bug.type)
@@ -813,6 +1122,13 @@ private struct BugRow: View {
 
     private var isClosed: Bool {
         ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
+    }
+
+    private var isUnseenAndRecent: Bool {
+        guard !isClosed,
+              !viewedBugs.contains(bug.id),
+              let created = bug.creationTime else { return false }
+        return Date().timeIntervalSince(created) < 7 * 24 * 60 * 60
     }
 
     private var statusIcon: String {
@@ -880,4 +1196,5 @@ extension String {
     ContentView()
         .environment(Workspace.preview)
         .environment(AuthStore())
+        .environment(ViewedBugsStore())
 }
