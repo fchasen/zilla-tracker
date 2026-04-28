@@ -506,6 +506,7 @@ private struct DupeOfSheet: View {
                 }
                 Section("Comment (optional)") {
                     TextEditor(text: $comment)
+                        .scrollContentBackground(.hidden)
                         .frame(minHeight: 80)
                 }
             }
@@ -548,7 +549,8 @@ private struct CommentComposer: View {
 
             TextEditor(text: $text)
                 .font(.body)
-                .frame(minHeight: 80)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 96)
                 .padding(8)
                 .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(
