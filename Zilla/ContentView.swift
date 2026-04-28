@@ -440,7 +440,7 @@ struct ContentView: View {
             detailColumn
         }
         .toolbar {
-            ToolbarItem(placement: .navigation) {
+            ToolbarItem(placement: leadingToolbarPlacement) {
                 Button {
                     createDraft()
                 } label: {
@@ -448,7 +448,7 @@ struct ContentView: View {
                 }
                 .help(newBugHelpText)
             }
-            ToolbarItem(placement: .navigation) {
+            ToolbarItem(placement: leadingToolbarPlacement) {
                 Menu {
                     if let user = auth.currentUser {
                         Text(user.realName ?? user.name)
@@ -586,6 +586,14 @@ struct ContentView: View {
         } else {
             BugInspector()
         }
+    }
+
+    private var leadingToolbarPlacement: ToolbarItemPlacement {
+        #if os(macOS)
+        .navigation
+        #else
+        .topBarLeading
+        #endif
     }
 
     private var newBugHelpText: String {
