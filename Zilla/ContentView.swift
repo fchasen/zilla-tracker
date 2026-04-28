@@ -441,14 +441,6 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: leadingToolbarPlacement) {
-                Button {
-                    createDraft()
-                } label: {
-                    Label("New Bug", systemImage: "square.and.pencil")
-                }
-                .help(newBugHelpText)
-            }
-            ToolbarItem(placement: leadingToolbarPlacement) {
                 Menu {
                     if let user = auth.currentUser {
                         Text(user.realName ?? user.name)
@@ -560,7 +552,9 @@ struct ContentView: View {
             RevisionListView(list: list)
         default:
             BugListView(selection: workspace.sidebarSelection,
-                        selectedBugID: $workspace.selectedBugID)
+                        selectedBugID: $workspace.selectedBugID,
+                        onNewBug: createDraft,
+                        newBugHelp: newBugHelpText)
         }
     }
 
@@ -1211,6 +1205,8 @@ struct BugListView: View {
 
     let selection: SidebarSelection?
     @Binding var selectedBugID: Bug.ID?
+    var onNewBug: () -> Void = {}
+    var newBugHelp: String = "New bug…"
 
     @State private var bugs: [Bug] = []
     @State private var totalMatches: Int?
@@ -1299,6 +1295,14 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    onNewBug()
+                } label: {
+                    Label("New Bug", systemImage: "square.and.pencil")
+                }
+                .help(newBugHelp)
+            }
             if !isAllDrafts && auth.isSignedIn {
                 ToolbarItem(placement: .primaryAction) {
                     refreshButton
