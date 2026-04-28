@@ -700,7 +700,9 @@ private struct CommentComposer: View {
     }
 
     private func insertSearchfoxLink(_ hit: SearchHit) {
-        let fallbackLabel = "\(hit.path)#L\(hit.lineNumber)"
+        let fallbackLabel = hit.lineNumber > 0
+            ? "\(hit.path)#L\(hit.lineNumber)"
+            : hit.path
         if let range = singleSelectionRange() {
             if range.isEmpty {
                 text.replaceSubrange(range, with: "[\(fallbackLabel)](\(hit.url))")

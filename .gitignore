@@ -12,3 +12,6 @@ Package.resolved
 
 # macOS
 .DS_Store
+
+# searchfox-bridge build artifacts (regenerate via Tools/searchfox-bridge/README.md)
+Packages/SearchfoxKit/searchfox_bridgeFFI.xcframework/
