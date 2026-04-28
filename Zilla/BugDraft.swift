@@ -20,6 +20,7 @@ final class BugDraft {
     var priority: String?
     var assignedTo: String?
     var keywordsCSV: String = ""
+    var whiteboard: String = ""
     var blocks: [Int] = []
     var createdAt: Date = Date()
     var updatedAt: Date = Date()

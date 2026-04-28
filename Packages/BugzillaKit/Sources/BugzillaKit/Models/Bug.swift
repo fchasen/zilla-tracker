@@ -177,6 +177,7 @@ public struct BugCreate: Sendable, Equatable {
     public var priority: String?
     public var assignedTo: String?
     public var keywords: [String]
+    public var whiteboard: String?
     public var blocks: [Int]
     public var dependsOn: [Int]
     public var cc: [String]
@@ -192,6 +193,7 @@ public struct BugCreate: Sendable, Equatable {
         priority: String? = nil,
         assignedTo: String? = nil,
         keywords: [String] = [],
+        whiteboard: String? = nil,
         blocks: [Int] = [],
         dependsOn: [Int] = [],
         cc: [String] = []
@@ -206,6 +208,7 @@ public struct BugCreate: Sendable, Equatable {
         self.priority = priority
         self.assignedTo = assignedTo
         self.keywords = keywords
+        self.whiteboard = whiteboard
         self.blocks = blocks
         self.dependsOn = dependsOn
         self.cc = cc

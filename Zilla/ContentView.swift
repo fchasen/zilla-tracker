@@ -562,6 +562,7 @@ private struct DraftMetadata: View {
                 }
                 assigneeRow
                 keywordsRow
+                whiteboardRow
                 blocksRow
                 datesRow
             }
@@ -696,6 +697,16 @@ private struct DraftMetadata: View {
             TextField("comma-separated", text: $draft.keywordsCSV)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: draft.keywordsCSV) { draft.updatedAt = .now }
+        }
+    }
+
+    @ViewBuilder
+    private var whiteboardRow: some View {
+        GridRow {
+            Text("Whiteboard").foregroundStyle(.secondary)
+            TextField("[tag1][tag2]…", text: $draft.whiteboard)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: draft.whiteboard) { draft.updatedAt = .now }
         }
     }
 
@@ -1061,6 +1072,7 @@ struct BugListView: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(error)
                 )
+                .textSelection(.enabled)
             } else if bugs.isEmpty {
                 ContentUnavailableView(
                     "No bugs",

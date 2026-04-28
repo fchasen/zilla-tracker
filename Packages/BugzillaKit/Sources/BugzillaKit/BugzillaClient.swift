@@ -284,13 +284,14 @@ public extension BugzillaClient {
             let priority: String?
             let assignedTo: String?
             let keywords: [String]?
+            let whiteboard: String?
             let blocks: [Int]?
             let dependsOn: [Int]?
             let cc: [String]?
 
             enum CodingKeys: String, CodingKey {
                 case product, component, summary, version, description, type
-                case severity, priority, assignedTo, keywords, blocks, dependsOn, cc
+                case severity, priority, assignedTo, keywords, whiteboard, blocks, dependsOn, cc
             }
 
             func encode(to encoder: Encoder) throws {
@@ -305,6 +306,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(priority, forKey: .priority)
                 try c.encodeIfPresent(assignedTo, forKey: .assignedTo)
                 try c.encodeIfPresent(keywords, forKey: .keywords)
+                try c.encodeIfPresent(whiteboard, forKey: .whiteboard)
                 try c.encodeIfPresent(blocks, forKey: .blocks)
                 try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
                 try c.encodeIfPresent(cc, forKey: .cc)
@@ -322,6 +324,7 @@ public extension BugzillaClient {
             priority: create.priority,
             assignedTo: create.assignedTo,
             keywords: create.keywords.isEmpty ? nil : create.keywords,
+            whiteboard: create.whiteboard,
             blocks: create.blocks.isEmpty ? nil : create.blocks,
             dependsOn: create.dependsOn.isEmpty ? nil : create.dependsOn,
             cc: create.cc.isEmpty ? nil : create.cc

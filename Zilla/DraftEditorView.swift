@@ -152,6 +152,7 @@ struct DraftEditorView: View {
             priority: draft.priority,
             assignedTo: draft.assignedTo?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             keywords: draft.keywords,
+            whiteboard: draft.whiteboard.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             blocks: draft.blocks
         )
 
