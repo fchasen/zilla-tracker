@@ -39,9 +39,19 @@ final class FollowedMetaBug {
 
     init(bugId: Int, summary: String, component: FollowedComponent?, position: Int = 0, addedAt: Date = .now) {
         self.bugId = bugId
-        self.summary = summary
+        self.summary = Self.cleanedSummary(summary)
         self.component = component
         self.position = position
         self.addedAt = addedAt
+    }
+
+    /// Strips a leading `[meta]` tag (case-insensitive) and trims whitespace.
+    static func cleanedSummary(_ summary: String) -> String {
+        let stripped = summary.replacingOccurrences(
+            of: #"^\s*\[meta\]\s*"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
