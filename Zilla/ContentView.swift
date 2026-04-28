@@ -90,8 +90,8 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
 }
 
 enum ReviewList: String, CaseIterable, Hashable, Identifiable {
-    case active
     case review
+    case active
     case landed
 
     var id: String { rawValue }

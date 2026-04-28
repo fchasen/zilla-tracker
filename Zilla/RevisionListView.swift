@@ -40,7 +40,7 @@ struct RevisionListView: View {
             } else {
                 List(selection: revisionSelectionBinding) {
                     ForEach(revisions) { revision in
-                        RevisionRow(revision: revision)
+                        RevisionRow(revision: revision, showsUnseenIndicator: list == .review)
                             .tag(Optional(revision.id))
                     }
                 }
@@ -142,12 +142,13 @@ private struct RevisionRow: View {
     @Environment(Workspace.self) private var workspace
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
     let revision: Revision
+    let showsUnseenIndicator: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    if !viewedRevisions.contains(revision.id) {
+                    if showsUnseenIndicator && !viewedRevisions.contains(revision.id) {
                         Circle()
                             .fill(.blue)
                             .frame(width: 7, height: 7)
