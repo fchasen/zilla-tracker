@@ -92,6 +92,7 @@ final class Workspace {
     var selectedBugID: Bug.ID?
     var searchText: String = ""
     var bugListSort: BugListSort = .newest
+    var bugListRefreshToken: UUID = UUID()
 
     func loadProducts(using client: BugzillaClient) async {
         guard !isLoadingProducts else { return }
@@ -451,6 +452,20 @@ struct BugListView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button {
+                    workspace.bugListRefreshToken = UUID()
+                } label: {
+                    if isLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                }
+                .help("Refresh")
+                .disabled(isLoading)
+                .keyboardShortcut("r", modifiers: .command)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 sortMenu
             }
         }
@@ -536,7 +551,11 @@ struct BugListView: View {
     }
 
     private var loadKey: BugListLoadKey {
-        BugListLoadKey(selection: selection, search: workspace.searchText)
+        BugListLoadKey(
+            selection: selection,
+            search: workspace.searchText,
+            refresh: workspace.bugListRefreshToken
+        )
     }
 
     private var title: String {
@@ -597,6 +616,7 @@ struct BugListView: View {
 private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
+    let refresh: UUID
 }
 
 private struct BugRow: View {
