@@ -5,6 +5,7 @@
 
 import SwiftUI
 import BugzillaKit
+import SearchfoxKit
 import Textual
 #if canImport(AppKit)
 import AppKit
@@ -72,6 +73,15 @@ struct BugDetailView: View {
                 ToolbarItem(placement: .primaryAction) {
                     statusMenu(for: bug)
                 }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    workspace.showInspector.toggle()
+                } label: {
+                    Label("Inspector", systemImage: "sidebar.right")
+                }
+                .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
+                .disabled(workspace.loadedBug == nil)
             }
         }
         .alert(
@@ -541,6 +551,7 @@ private struct CommentComposer: View {
     let onPost: () -> Void
 
     @State private var showPreview = false
+    @State private var showingSearchfoxPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -584,6 +595,11 @@ private struct CommentComposer: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("Post comment (⌘↩)")
                 .disabled(trimmedIsEmpty || isPosting)
+            }
+        }
+        .sheet(isPresented: $showingSearchfoxPicker) {
+            SearchfoxPickerSheet { hit in
+                insertSearchfoxLink(hit)
             }
         }
     }
@@ -642,6 +658,9 @@ private struct CommentComposer: View {
             FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
                 wrapLink()
             }
+            FormatButton(systemImage: "magnifyingglass", help: "Insert Searchfox link") {
+                showingSearchfoxPicker = true
+            }
             FormatButton(systemImage: "list.bullet", help: "Bullet list") {
                 prefixLines("- ")
             }
@@ -677,6 +696,20 @@ private struct CommentComposer: View {
             text.replaceSubrange(range, with: "[\(selected)](https://)")
         } else {
             text += "[text](https://)"
+        }
+    }
+
+    private func insertSearchfoxLink(_ hit: SearchHit) {
+        let fallbackLabel = "\(hit.path)#L\(hit.lineNumber)"
+        if let range = singleSelectionRange() {
+            if range.isEmpty {
+                text.replaceSubrange(range, with: "[\(fallbackLabel)](\(hit.url))")
+            } else {
+                let selected = String(text[range])
+                text.replaceSubrange(range, with: "[\(selected)](\(hit.url))")
+            }
+        } else {
+            text += "[\(fallbackLabel)](\(hit.url))"
         }
     }
 

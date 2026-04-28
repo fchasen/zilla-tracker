@@ -306,15 +306,6 @@ struct ContentView: View {
                 }
                 .help("Account")
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    workspace.showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-                .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
-                .disabled(workspace.loadedBug == nil)
-            }
         }
         .sheet(isPresented: $showAddComponent) {
             ComponentPickerSheet()
