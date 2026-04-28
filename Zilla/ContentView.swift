@@ -57,13 +57,14 @@ enum SidebarSelection: Hashable {
 }
 
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
-    case newest, oldest, priority
+    case newest, recent, oldest, priority
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .newest: return "Newest"
+        case .recent: return "Recent"
         case .oldest: return "Oldest"
         case .priority: return "Priority"
         }
@@ -72,6 +73,7 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .newest: return "arrow.down.circle"
+        case .recent: return "clock"
         case .oldest: return "arrow.up.circle"
         case .priority: return "exclamationmark.triangle"
         }
@@ -474,6 +476,10 @@ struct BugListView: View {
         case .newest:
             return bugs.sorted {
                 ($0.creationTime ?? .distantPast) > ($1.creationTime ?? .distantPast)
+            }
+        case .recent:
+            return bugs.sorted {
+                ($0.lastChangeTime ?? .distantPast) > ($1.lastChangeTime ?? .distantPast)
             }
         case .oldest:
             return bugs.sorted {
