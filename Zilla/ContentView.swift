@@ -74,9 +74,31 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum ReviewList: String, CaseIterable, Hashable, Identifiable {
+    case active
+    case review
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .active: return "Active"
+        case .review: return "Review"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .active: return "doc.text"
+        case .review: return "checkmark.seal"
+        }
+    }
+}
+
 enum SidebarSelection: Hashable {
     case smart(SmartEndpoint)
     case allDrafts
+    case review(ReviewList)
     case component(ComponentRef)
     case metaBug(Int)
 }
@@ -124,9 +146,19 @@ final class Workspace {
     private(set) var isLoadingProducts = false
     private(set) var loadError: String?
 
-    var sidebarSelection: SidebarSelection? = .smart(.myBugs)
-    var selectedBugID: Bug.ID?
+    var sidebarSelection: SidebarSelection? = .smart(.myBugs) {
+        didSet {
+            if oldValue != sidebarSelection { activeRevisionID = nil }
+        }
+    }
+    var selectedBugID: Bug.ID? {
+        didSet {
+            if oldValue != selectedBugID { activeRevisionID = nil }
+        }
+    }
     var selectedDraftID: UUID?
+    var activeRevisionID: Int?
+    var phabricatorSettingsPresented: Bool = false
     var searchText: String = ""
     var smartSort: BugListSort = .recent
     var componentSort: BugListSort = .priority
@@ -183,6 +215,7 @@ final class Workspace {
         sidebarSelection = .smart(.myBugs)
         selectedBugID = nil
         selectedDraftID = nil
+        activeRevisionID = nil
         searchText = ""
         clearLoadedBug()
         showInspector = false
@@ -272,7 +305,7 @@ final class Workspace {
             return .openIn(component: ref)
         case .metaBug(let id):
             return .blockedBy(metaBug: id)
-        case .allDrafts:
+        case .allDrafts, .review:
             return BugQuery()
         }
     }
@@ -303,6 +336,7 @@ final class Workspace {
 struct ContentView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
+    @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(\.modelContext) private var modelContext
     @Query private var followedMetaBugs: [FollowedMetaBug]
 
@@ -312,8 +346,7 @@ struct ContentView: View {
         NavigationSplitView {
             Sidebar(selection: $workspace.sidebarSelection)
         } content: {
-            BugListView(selection: workspace.sidebarSelection,
-                        selectedBugID: $workspace.selectedBugID)
+            contentColumn
         } detail: {
             detailColumn
         }
@@ -335,6 +368,10 @@ struct ContentView: View {
                         }
                         Divider()
                     }
+                    Button("Phabricator…") {
+                        workspace.phabricatorSettingsPresented = true
+                    }
+                    Divider()
                     Button("Sign Out", role: .destructive) {
                         Task {
                             await auth.signOut()
@@ -351,6 +388,9 @@ struct ContentView: View {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
         }
+        .sheet(isPresented: $workspace.phabricatorSettingsPresented) {
+            PhabricatorSettingsView()
+        }
         .task {
             if workspace.products.isEmpty {
                 await workspace.loadProducts(using: auth.client)
@@ -359,8 +399,24 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var contentColumn: some View {
+        @Bindable var workspace = workspace
+        switch workspace.sidebarSelection {
+        case .review(let list):
+            RevisionListView(list: list)
+        default:
+            BugListView(selection: workspace.sidebarSelection,
+                        selectedBugID: $workspace.selectedBugID)
+        }
+    }
+
+    @ViewBuilder
     private var detailColumn: some View {
-        if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
+        if let id = workspace.activeRevisionID {
+            RevisionWebView(revisionID: id) {
+                workspace.activeRevisionID = nil
+            }
+        } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftEditorView(draftID: id)
         } else {
             BugDetailView(bugID: workspace.selectedBugID)
@@ -369,7 +425,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private var inspectorColumn: some View {
-        if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
+        if workspace.activeRevisionID != nil {
+            EmptyView()
+        } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftInspector(draftID: id)
         } else {
             BugInspector()
@@ -382,7 +440,7 @@ struct ContentView: View {
             return "New bug in \(ref.component)"
         case .metaBug(let id):
             return "New bug blocking #\(id)"
-        case .smart, .allDrafts, .none:
+        case .smart, .allDrafts, .review, .none:
             return "New bug…"
         }
     }
@@ -400,7 +458,7 @@ struct ContentView: View {
                 draft.componentName = parent.componentName
             }
             draft.blocks = [bugId]
-        case .smart, .allDrafts, .none:
+        case .smart, .allDrafts, .review, .none:
             break
         }
         modelContext.insert(draft)
@@ -696,6 +754,13 @@ struct Sidebar: View {
                         Image(systemName: "square.and.pencil")
                     }
                     .tag(SidebarSelection.allDrafts)
+                }
+
+                Section("Review") {
+                    ForEach(ReviewList.allCases) { item in
+                        Label(item.title, systemImage: item.systemImage)
+                            .tag(SidebarSelection.review(item))
+                    }
                 }
 
                 Section("Components") {
@@ -1167,6 +1232,7 @@ struct BugListView: View {
         case .component(let ref): return "\(ref.product) :: \(ref.component)"
         case .metaBug(let id): return "Meta \(id)"
         case .allDrafts: return "Drafts"
+        case .review(let r): return r.title
         }
     }
 
