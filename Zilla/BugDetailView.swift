@@ -352,6 +352,7 @@ private struct BugHeader: View {
             HStack(spacing: 8) {
                 BugTypePill(
                     type: bug.type,
+                    isMeta: bug.summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil,
                     linkTransfer: BugLinkTransfer(id: bug.id, summary: bug.summary)
                 )
 

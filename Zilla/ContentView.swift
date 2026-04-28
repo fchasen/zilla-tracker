@@ -17,6 +17,7 @@ import AppKit
 
 struct BugTypePill: View {
     let type: String?
+    var isMeta: Bool = false
     var linkTransfer: BugLinkTransfer? = nil
 
     var body: some View {
@@ -42,6 +43,9 @@ struct BugTypePill: View {
     }
 
     private var info: (symbol: String, color: Color, label: String)? {
+        if isMeta {
+            return ("square.stack.fill", .purple, "Meta bug")
+        }
         switch type?.lowercased() {
         case "defect": return ("ant.fill", .red, "Defect")
         case "enhancement": return ("sparkles", .indigo, "Enhancement")
@@ -193,6 +197,18 @@ final class Workspace {
         didSet {
             if oldValue != sidebarSelection { activeRevisionID = nil }
         }
+    }
+    var previousSidebarSelection: SidebarSelection?
+
+    func navigateToMetaBug(_ id: Bug.ID) {
+        previousSidebarSelection = sidebarSelection
+        sidebarSelection = .metaBug(id)
+    }
+
+    func navigateBackFromMetaBug() {
+        guard let previous = previousSidebarSelection else { return }
+        sidebarSelection = previous
+        previousSidebarSelection = nil
     }
     var selectedBugID: Bug.ID? {
         didSet {
@@ -1240,6 +1256,11 @@ struct BugListView: View {
         selection == .allDrafts
     }
 
+    private var isMetaBug: Bool {
+        if case .metaBug = selection { return true }
+        return false
+    }
+
     private var endpointKey: String? {
         if case let .smart(endpoint) = selection {
             return "smart.\(endpoint.rawValue)"
@@ -1314,6 +1335,26 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
+            if isMetaBug, workspace.previousSidebarSelection != nil {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        workspace.navigateBackFromMetaBug()
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                    }
+                    .help("Back to previous list")
+                }
+            }
+            if case let .metaBug(id) = selection {
+                ToolbarItem(placement: .principal) {
+                    Button {
+                        selectedBugID = id
+                    } label: {
+                        Label("Open Meta Bug #\(id)", systemImage: "info.circle")
+                    }
+                    .help("Open the meta bug's details")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     onNewBug()
@@ -1717,6 +1758,21 @@ private struct BugRow: View {
     let bug: Bug
 
     var body: some View {
+        if isMeta {
+            Button {
+                workspace.navigateToMetaBug(bug.id)
+            } label: {
+                rowContent
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .help("Show bugs blocked by #\(bug.id)")
+        } else {
+            rowContent
+        }
+    }
+
+    private var rowContent: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: statusIcon)
                 .foregroundStyle(statusColor)
@@ -1740,17 +1796,14 @@ private struct BugRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if isMeta {
-                Button {
-                    workspace.sidebarSelection = .metaBug(bug.id)
-                } label: {
+                VStack {
+                    Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 6)
-                        .contentShape(Rectangle())
+                    Spacer()
                 }
-                .buttonStyle(.plain)
-                .help("Show bugs blocked by #\(bug.id)")
+                .padding(.horizontal, 6)
             }
         }
         .padding(.vertical, 2)
@@ -1829,13 +1882,8 @@ private struct BugRow: View {
                     .frame(width: 7, height: 7)
                     .accessibilityLabel("New")
             }
-            BugTypePill(type: bug.type)
+            BugTypePill(type: bug.type, isMeta: isMeta)
             Text(verbatim: "\(bug.id)")
-            if isMeta {
-                Text(verbatim: "·")
-                Text("meta")
-                    .foregroundStyle(.purple)
-            }
             Text(verbatim: "·")
             Text(bug.status.bugzillaTitleCased)
             if level <= 2, let priority = displayPriority {
