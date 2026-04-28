@@ -23,6 +23,7 @@ final class AuthStore {
 
     var state: State = .unknown
     let client: BugzillaClient
+    var cacheClearHook: (@MainActor () -> Void)?
     private let keychain: Keychain
 
     init(baseURL: URL = AuthStore.defaultBaseURL) {
@@ -70,6 +71,7 @@ final class AuthStore {
         keychain.delete(account: Self.keychainAccount)
         await client.setAuthentication(.none)
         state = .signedOut
+        cacheClearHook?()
     }
 
     var currentUser: User? {

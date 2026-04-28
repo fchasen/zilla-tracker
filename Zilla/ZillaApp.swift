@@ -15,6 +15,7 @@ struct ZillaApp: App {
     @State private var workspace = Workspace()
     @State private var viewedBugs = ViewedBugsStore()
     @State private var viewedRevisions = ViewedRevisionsStore()
+    @State private var cache = ResourceCache()
 
     var body: some Scene {
         WindowGroup {
@@ -24,7 +25,11 @@ struct ZillaApp: App {
                 .environment(workspace)
                 .environment(viewedBugs)
                 .environment(viewedRevisions)
+                .environment(cache)
                 .task {
+                    workspace.cache = cache
+                    auth.cacheClearHook = { [weak cache] in cache?.clear() }
+                    phab.cacheClearHook = { [weak cache] in cache?.clear() }
                     await auth.bootstrap()
                     await phab.bootstrap()
                 }
@@ -41,14 +46,23 @@ struct ZillaApp: App {
 
 struct RootView: View {
     @Environment(AuthStore.self) private var auth
+    @Environment(Workspace.self) private var workspace
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        switch auth.state {
-        case .unknown:
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        default:
-            ContentView()
+        Group {
+            switch auth.state {
+            case .unknown:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            default:
+                ContentView()
+            }
+        }
+        .onChange(of: scenePhase) { previous, current in
+            guard current == .active, previous != .active else { return }
+            workspace.bugListRefreshToken = UUID()
+            workspace.revisionListRefreshToken = UUID()
         }
     }
 }

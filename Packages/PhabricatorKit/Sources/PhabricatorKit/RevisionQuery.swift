@@ -1,6 +1,6 @@
 import Foundation
 
-public struct RevisionQuery: Sendable, Encodable {
+public struct RevisionQuery: Sendable, Hashable, Encodable {
     public var queryKey: String?
     public var constraints: Constraints?
     public var attachments: Attachments?
@@ -27,7 +27,7 @@ public struct RevisionQuery: Sendable, Encodable {
         self.after = after
     }
 
-    public struct Constraints: Sendable, Encodable {
+    public struct Constraints: Sendable, Hashable, Encodable {
         public var ids: [Int]?
         public var phids: [String]?
         public var authorPHIDs: [String]?
@@ -61,7 +61,7 @@ public struct RevisionQuery: Sendable, Encodable {
         }
     }
 
-    public struct Attachments: Sendable, Encodable {
+    public struct Attachments: Sendable, Hashable, Encodable {
         public var reviewers: Bool?
         public var subscribers: Bool?
         public var projects: Bool?

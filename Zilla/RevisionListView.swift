@@ -9,6 +9,7 @@ import PhabricatorKit
 struct RevisionListView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(PhabricatorAuthStore.self) private var phab
+    @Environment(ResourceCache.self) private var cache
 
     let list: ReviewList
 
@@ -53,7 +54,7 @@ struct RevisionListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    Task { await load() }
+                    Task { await load(force: true) }
                 } label: {
                     if isLoading {
                         ProgressView().controlSize(.small)
@@ -65,8 +66,11 @@ struct RevisionListView: View {
                 .disabled(isLoading || !phab.isSignedIn)
             }
         }
-        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, tick: workspace.revisionListRefreshToken)) {
-            await load()
+        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn)) {
+            await load(force: false)
+        }
+        .onChange(of: workspace.revisionListRefreshToken) { _, _ in
+            Task { await load(force: true) }
         }
     }
 
@@ -98,7 +102,7 @@ struct RevisionListView: View {
         }
     }
 
-    private func load() async {
+    private func load(force: Bool) async {
         guard phab.isSignedIn, let phid = phab.currentUser?.phid else {
             revisions = []
             return
@@ -117,7 +121,7 @@ struct RevisionListView: View {
             }
         }()
         do {
-            let result = try await phab.client.searchRevisions(query)
+            let result = try await cache.revisionSearch(query, force: force, using: phab.client)
             if list == .review {
                 revisions = result.data.filter { $0.fields.authorPHID != phid }
             } else {
@@ -134,7 +138,6 @@ struct RevisionListView: View {
     private struct TaskKey: Hashable {
         let list: ReviewList
         let signedIn: Bool
-        let tick: UUID
     }
 }
 

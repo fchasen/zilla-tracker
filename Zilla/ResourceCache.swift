@@ -1,0 +1,267 @@
+//
+//  ResourceCache.swift
+//  Zilla
+//
+
+import Foundation
+import BugzillaKit
+import PhabricatorKit
+
+enum CacheKey: Hashable, Sendable {
+    case whoami
+    case selectableProducts
+    case bug(Bug.ID)
+    case comments(bugID: Bug.ID)
+    case bugSearch(BugQuery)
+    case dependencyMeta(Bug.ID)
+    case phabUser
+    case revisionSearch(RevisionQuery)
+}
+
+extension CacheKey {
+    var freshTTL: TimeInterval {
+        switch self {
+        case .whoami, .phabUser, .selectableProducts:
+            return 60 * 60
+        case .bug, .comments, .bugSearch, .revisionSearch:
+            return 60
+        case .dependencyMeta:
+            return 24 * 60 * 60
+        }
+    }
+
+    var hardTTL: TimeInterval {
+        switch self {
+        case .whoami, .phabUser, .selectableProducts:
+            return 24 * 60 * 60
+        case .bug, .comments, .bugSearch, .revisionSearch:
+            return 10 * 60
+        case .dependencyMeta:
+            return 7 * 24 * 60 * 60
+        }
+    }
+}
+
+enum CacheError: Error {
+    case typeMismatch
+}
+
+@MainActor
+@Observable
+final class ResourceCache {
+    private struct Entry {
+        let value: Any
+        let storedAt: Date
+    }
+
+    enum Freshness {
+        case missing, fresh, stale, expired
+    }
+
+    private(set) var version: UInt64 = 0
+    private var entries: [CacheKey: Entry] = [:]
+    private var inflight: [CacheKey: Task<Any, Error>] = [:]
+
+    func freshness(for key: CacheKey, now: Date = .now) -> Freshness {
+        guard let entry = entries[key] else { return .missing }
+        let age = now.timeIntervalSince(entry.storedAt)
+        if age < key.freshTTL { return .fresh }
+        if age < key.hardTTL { return .stale }
+        return .expired
+    }
+
+    func get<V>(_ key: CacheKey, as: V.Type = V.self) -> V? {
+        entries[key]?.value as? V
+    }
+
+    func storedAt(_ key: CacheKey) -> Date? {
+        entries[key]?.storedAt
+    }
+
+    func store<V>(_ value: V, for key: CacheKey) {
+        entries[key] = Entry(value: value, storedAt: .now)
+        version &+= 1
+    }
+
+    func invalidate(_ key: CacheKey) {
+        if entries.removeValue(forKey: key) != nil {
+            version &+= 1
+        }
+    }
+
+    func invalidateBug(id: Bug.ID) {
+        var changed = false
+        for key in [CacheKey.bug(id), .comments(bugID: id), .dependencyMeta(id)] {
+            if entries.removeValue(forKey: key) != nil { changed = true }
+        }
+        if changed { version &+= 1 }
+    }
+
+    func clear() {
+        for (_, task) in inflight { task.cancel() }
+        inflight.removeAll()
+        if !entries.isEmpty {
+            entries.removeAll()
+            version &+= 1
+        }
+    }
+}
+
+extension ResourceCache {
+    func fetch<V>(
+        key: CacheKey,
+        force: Bool,
+        onRefresh: ((V) -> Void)? = nil,
+        provider: @escaping () async throws -> V
+    ) async throws -> V {
+        if !force {
+            switch freshness(for: key) {
+            case .fresh:
+                if let cached: V = get(key) { return cached }
+            case .stale:
+                if let cached: V = get(key) {
+                    kickRevalidation(key: key, provider: provider, onRefresh: onRefresh)
+                    return cached
+                }
+            case .expired, .missing:
+                break
+            }
+        }
+
+        let task = startOrJoin(key: key, provider: provider)
+        let any = try await task.value
+        guard let typed = any as? V else { throw CacheError.typeMismatch }
+        return typed
+    }
+
+    private func startOrJoin<V>(
+        key: CacheKey,
+        provider: @escaping () async throws -> V
+    ) -> Task<Any, Error> {
+        if let existing = inflight[key] { return existing }
+
+        let task = Task<Any, Error> { @MainActor [weak self] in
+            do {
+                let value = try await provider()
+                if let self {
+                    self.entries[key] = Entry(value: value, storedAt: .now)
+                    self.version &+= 1
+                    self.inflight[key] = nil
+                }
+                return value as Any
+            } catch {
+                self?.inflight[key] = nil
+                throw error
+            }
+        }
+        inflight[key] = task
+        return task
+    }
+
+    private func kickRevalidation<V>(
+        key: CacheKey,
+        provider: @escaping () async throws -> V,
+        onRefresh: ((V) -> Void)?
+    ) {
+        let task = startOrJoin(key: key, provider: provider)
+        guard let onRefresh else { return }
+        Task { @MainActor in
+            if let any = try? await task.value, let typed = any as? V {
+                onRefresh(typed)
+            }
+        }
+    }
+}
+
+extension ResourceCache {
+    func bug(
+        id: Bug.ID,
+        force: Bool = false,
+        using client: BugzillaClient,
+        onRefresh: ((Bug) -> Void)? = nil
+    ) async throws -> Bug {
+        try await fetch(key: .bug(id), force: force, onRefresh: onRefresh) {
+            try await client.getBug(id: id)
+        }
+    }
+
+    func comments(
+        bugID: Bug.ID,
+        force: Bool = false,
+        using client: BugzillaClient,
+        onRefresh: (([Comment]) -> Void)? = nil
+    ) async throws -> [Comment] {
+        try await fetch(key: .comments(bugID: bugID), force: force, onRefresh: onRefresh) {
+            try await client.comments(bugID: bugID)
+        }
+    }
+
+    func bugList(
+        _ query: BugQuery,
+        force: Bool = false,
+        using client: BugzillaClient,
+        onRefresh: ((BugSearchResult) -> Void)? = nil
+    ) async throws -> BugSearchResult {
+        try await fetch(key: .bugSearch(query), force: force, onRefresh: onRefresh) {
+            try await client.searchBugs(query)
+        }
+    }
+
+    func selectableProducts(
+        force: Bool = false,
+        using client: BugzillaClient
+    ) async throws -> [Product] {
+        try await fetch(key: .selectableProducts, force: force) {
+            try await client.selectableProducts()
+        }
+    }
+
+    func revisionSearch(
+        _ query: RevisionQuery,
+        force: Bool = false,
+        using client: PhabricatorClient,
+        onRefresh: ((RevisionSearchResult) -> Void)? = nil
+    ) async throws -> RevisionSearchResult {
+        try await fetch(key: .revisionSearch(query), force: force, onRefresh: onRefresh) {
+            try await client.searchRevisions(query)
+        }
+    }
+
+    func whoami(force: Bool = false, using client: BugzillaClient) async throws -> User {
+        try await fetch(key: .whoami, force: force) {
+            try await client.whoami()
+        }
+    }
+
+    func phabUser(force: Bool = false, using client: PhabricatorClient) async throws -> PhabricatorUser {
+        try await fetch(key: .phabUser, force: force) {
+            try await client.whoami()
+        }
+    }
+}
+
+extension ResourceCache {
+    func dependencyMeta(for id: Bug.ID) -> DependencyMetadata? {
+        get(.dependencyMeta(id))
+    }
+
+    func loadDependencyMeta(ids: [Bug.ID], using client: BugzillaClient) async {
+        let needed = ids.filter {
+            switch freshness(for: .dependencyMeta($0)) {
+            case .missing, .expired: return true
+            case .fresh, .stale: return false
+            }
+        }
+        guard !needed.isEmpty else { return }
+        guard let bugs = try? await client.getBugs(ids: needed) else { return }
+        for bug in bugs {
+            let meta = DependencyMetadata(
+                id: bug.id,
+                summary: bug.summary,
+                status: bug.status,
+                resolution: bug.resolution
+            )
+            store(meta, for: .dependencyMeta(bug.id))
+        }
+    }
+}

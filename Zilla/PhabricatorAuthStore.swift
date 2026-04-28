@@ -23,6 +23,7 @@ final class PhabricatorAuthStore {
 
     var state: State = .unknown
     let client: PhabricatorClient
+    var cacheClearHook: (@MainActor () -> Void)?
     private let keychain: Keychain
 
     init(baseURL: URL = PhabricatorAuthStore.defaultBaseURL) {
@@ -76,6 +77,7 @@ final class PhabricatorAuthStore {
         keychain.delete(account: Self.keychainAccount)
         await client.setAuthentication(.none)
         state = .signedOut
+        cacheClearHook?()
     }
 
     var currentUser: PhabricatorUser? {
