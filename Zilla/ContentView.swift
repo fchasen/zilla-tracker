@@ -589,9 +589,6 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                searchField
-            }
             ToolbarItem(placement: .primaryAction) {
                 refreshButton
             }
@@ -599,21 +596,16 @@ struct BugListView: View {
                 sortMenu
             }
         }
+        .searchable(
+            text: searchBinding,
+            prompt: "Search bugs"
+        )
         .task(id: loadKey) { await load() }
     }
 
-    private var searchField: some View {
+    private var searchBinding: Binding<String> {
         @Bindable var workspace = workspace
-        return HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search bugs", text: $workspace.searchText)
-                .textFieldStyle(.plain)
-                .frame(width: 200)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        return $workspace.searchText
     }
 
     private var refreshButton: some View {
