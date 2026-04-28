@@ -186,7 +186,7 @@ public extension BugQuery {
     }
 
     static var needsReviewFromMe: BugQuery {
-        BugQuery(flagRequestee: me, flagNames: ["review", "needinfo"])
+        BugQuery(flagRequestee: me)
     }
 
     static func recentlyChanged(involving user: String, daysBack: Int = 7) -> BugQuery {

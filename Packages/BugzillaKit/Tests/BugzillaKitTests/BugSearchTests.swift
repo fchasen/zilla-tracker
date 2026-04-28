@@ -111,9 +111,7 @@ final class BugSearchTests: XCTestCase {
             XCTAssertTrue(items.contains(URLQueryItem(name: "f1", value: "requestees.login_name")))
             XCTAssertTrue(items.contains(URLQueryItem(name: "o1", value: "equals")))
             XCTAssertTrue(items.contains(URLQueryItem(name: "v1", value: "@me")))
-            XCTAssertTrue(items.contains(URLQueryItem(name: "f2", value: "flagtypes.name")))
-            XCTAssertTrue(items.contains(URLQueryItem(name: "o2", value: "anyexact")))
-            XCTAssertTrue(items.contains(URLQueryItem(name: "v2", value: "review,needinfo")))
+            XCTAssertFalse(items.contains { $0.value == "flagtypes.name" })
             return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
         }
         let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
