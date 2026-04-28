@@ -56,6 +56,28 @@ enum SidebarSelection: Hashable {
     case metaBug(Int)
 }
 
+enum BugListSort: String, CaseIterable, Identifiable, Hashable {
+    case newest, oldest, priority
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .newest: return "Newest"
+        case .oldest: return "Oldest"
+        case .priority: return "Priority"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .newest: return "arrow.down.circle"
+        case .oldest: return "arrow.up.circle"
+        case .priority: return "exclamationmark.triangle"
+        }
+    }
+}
+
 // MARK: - Workspace
 
 @Observable
@@ -67,6 +89,7 @@ final class Workspace {
     var sidebarSelection: SidebarSelection? = .smart(.myBugs)
     var selectedBugID: Bug.ID?
     var searchText: String = ""
+    var bugListSort: BugListSort = .newest
 
     func loadProducts(using client: BugzillaClient) async {
         guard !isLoadingProducts else { return }
@@ -400,7 +423,7 @@ struct BugListView: View {
                 )
             } else {
                 List(selection: $selectedBugID) {
-                    ForEach(bugs) { bug in
+                    ForEach(sortedBugs) { bug in
                         BugRow(bug: bug)
                             .tag(Optional(bug.id))
                             .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
@@ -424,7 +447,54 @@ struct BugListView: View {
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                sortMenu
+            }
+        }
         .task(id: loadKey) { await load() }
+    }
+
+    private var sortMenu: some View {
+        @Bindable var workspace = workspace
+        return Menu {
+            Picker("Sort", selection: $workspace.bugListSort) {
+                ForEach(BugListSort.allCases) { option in
+                    Label(option.label, systemImage: option.systemImage).tag(option)
+                }
+            }
+        } label: {
+            Label("Sort", systemImage: "arrow.up.arrow.down")
+        }
+        .help("Sort bug list")
+    }
+
+    private var sortedBugs: [Bug] {
+        switch workspace.bugListSort {
+        case .newest:
+            return bugs.sorted {
+                ($0.creationTime ?? .distantPast) > ($1.creationTime ?? .distantPast)
+            }
+        case .oldest:
+            return bugs.sorted {
+                ($0.creationTime ?? .distantFuture) < ($1.creationTime ?? .distantFuture)
+            }
+        case .priority:
+            return bugs.sorted {
+                priorityRank($0.priority) < priorityRank($1.priority)
+            }
+        }
+    }
+
+    private func priorityRank(_ priority: String?) -> Int {
+        switch priority?.uppercased() {
+        case "P1": return 1
+        case "P2": return 2
+        case "P3": return 3
+        case "P4": return 4
+        case "P5": return 5
+        default: return Int.max
+        }
     }
 
     @ViewBuilder
