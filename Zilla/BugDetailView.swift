@@ -472,12 +472,22 @@ struct BugMetadata: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 
+    @State private var showingAssignPicker = false
+
     static let priorityOptions = ["--", "P1", "P2", "P3", "P4", "P5"]
     static let severityOptions = ["--", "S1", "S2", "S3", "S4", "N/A"]
+    static let pointsOptions = ["---", "?", "1", "2", "3", "5", "8", "13"]
+    static let milestoneOptions = ["---", "Future"]
+    static let flagOptions: [(label: String, status: String)] = [
+        ("—", "X"),
+        ("?", "?"),
+        ("+", "+"),
+        ("-", "-")
+    ]
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
-            row("Assignee", bug.assignedTo ?? "—")
+            assigneeRow
             row("Reporter", bug.reporter ?? bug.creator ?? "—")
             row("Component", "\(bug.product) :: \(bug.component)")
             editableRow(
@@ -496,11 +506,110 @@ struct BugMetadata: View {
             ) { value in
                 onUpdate(BugUpdate(severity: value))
             }
+            editableRow(
+                label: "Points",
+                current: bug.points,
+                options: Self.pointsOptions,
+                color: nil
+            ) { value in
+                onUpdate(BugUpdate(points: value))
+            }
+            editableRow(
+                label: "Milestone",
+                current: bug.targetMilestone,
+                options: milestoneChoices,
+                color: nil
+            ) { value in
+                onUpdate(BugUpdate(targetMilestone: value))
+            }
+            flagRow(label: "QE Verify", flagName: "qe-verify")
+            flagRow(label: "A11y Review", flagName: "a11y-review")
             if !bug.keywords.isEmpty { row("Keywords", bug.keywords.joined(separator: ", ")) }
             if let when = bug.creationTime { dateRow("Created", when, relative: false) }
             if let when = bug.lastChangeTime { dateRow("Last change", when, relative: true) }
         }
         .font(.callout)
+    }
+
+    @ViewBuilder
+    private var assigneeRow: some View {
+        GridRow {
+            Text("Assignee").foregroundStyle(.secondary)
+            Button {
+                showingAssignPicker = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(bug.assignedTo ?? "—")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
+                UserSearchPopover { user in
+                    showingAssignPicker = false
+                    onUpdate(BugUpdate(assignedTo: user.name))
+                }
+            }
+        }
+    }
+
+    private var milestoneChoices: [String] {
+        var opts = Self.milestoneOptions
+        if let m = bug.targetMilestone?.trimmingCharacters(in: .whitespaces),
+           !m.isEmpty,
+           !opts.contains(m) {
+            opts.append(m)
+        }
+        return opts
+    }
+
+    @ViewBuilder
+    private func flagRow(label: String, flagName: String) -> some View {
+        let existing = bug.flags.first { $0.name == flagName }
+        let current = existing?.status
+        let displayed = (current.flatMap { $0.isEmpty ? nil : $0 }) ?? "—"
+        GridRow {
+            Text(label).foregroundStyle(.secondary)
+            Menu {
+                ForEach(Self.flagOptions, id: \.status) { option in
+                    Button {
+                        let update = FlagUpdate(
+                            id: existing?.id,
+                            name: existing == nil ? flagName : nil,
+                            status: option.status
+                        )
+                        onUpdate(BugUpdate(flags: [update]))
+                    } label: {
+                        let isSelected = option.status == (current?.isEmpty == false ? current : "X")
+                        if isSelected {
+                            Label(option.label, systemImage: "checkmark")
+                        } else {
+                            Text(option.label)
+                        }
+                    }
+                }
+            } label: {
+                Text(displayed).foregroundStyle(flagColor(current) ?? .primary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func flagColor(_ status: String?) -> Color? {
+        switch status {
+        case "+": return .green
+        case "-": return .red
+        case "?": return .orange
+        default: return nil
+        }
     }
 
     @ViewBuilder
@@ -592,13 +701,23 @@ struct BugInspectorContent: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
 
+    @State private var quickAddTarget: QuickAddTarget?
+
+    private enum QuickAddTarget: String, Identifiable {
+        case dependsOn, blocks, seeAlso
+        var id: String { rawValue }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             BugMetadata(bug: bug, onUpdate: onUpdate)
 
-            if !bug.flags.isEmpty {
+            Divider()
+            NeedinfoSection(bug: bug, onUpdate: onUpdate)
+
+            if !nonNeedinfoFlags.isEmpty {
                 Divider()
-                FlagsSection(flags: bug.flags)
+                FlagsSection(flags: nonNeedinfoFlags)
             }
 
             if let whiteboard = trimmedWhiteboard {
@@ -611,7 +730,11 @@ struct BugInspectorContent: View {
                 bugID: bug.id,
                 dependsOn: bug.dependsOn,
                 blocks: bug.blocks,
-                onOpenBug: onOpenBug
+                seeAlso: bug.seeAlso,
+                onOpenBug: onOpenBug,
+                onAddDependsOn: { quickAddTarget = .dependsOn },
+                onAddBlocks: { quickAddTarget = .blocks },
+                onAddSeeAlso: { quickAddTarget = .seeAlso }
             )
 
             if !bug.cc.isEmpty {
@@ -620,11 +743,42 @@ struct BugInspectorContent: View {
             }
         }
         .task(id: bug.id) {
-            let ids = Array(Set(bug.dependsOn + bug.blocks))
+            var ids = Set(bug.dependsOn + bug.blocks)
+            for url in bug.seeAlso {
+                if let id = bmoBugID(from: url) {
+                    ids.insert(id)
+                }
+            }
             if !ids.isEmpty {
-                await workspace.loadDependencyMetadata(ids: ids, using: auth.client)
+                await workspace.loadDependencyMetadata(ids: Array(ids), using: auth.client)
             }
         }
+        .sheet(item: $quickAddTarget) { target in
+            QuickSearchSheet { pickedID in
+                quickAddTarget = nil
+                guard pickedID != bug.id else { return }
+                switch target {
+                case .dependsOn:
+                    onUpdate(BugUpdate(dependsOn: .add([pickedID])))
+                case .blocks:
+                    onUpdate(BugUpdate(blocks: .add([pickedID])))
+                case .seeAlso:
+                    let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(pickedID)"
+                    onUpdate(BugUpdate(seeAlso: .add([url])))
+                }
+            }
+        }
+    }
+
+    private func bmoBugID(from url: String) -> Bug.ID? {
+        guard let comps = URLComponents(string: url),
+              let host = comps.host?.lowercased(),
+              host == "bugzilla.mozilla.org" else { return nil }
+        if let item = comps.queryItems?.first(where: { $0.name == "id" }),
+           let value = item.value {
+            return Int(value)
+        }
+        return nil
     }
 
     private var trimmedWhiteboard: String? {
@@ -632,11 +786,16 @@ struct BugInspectorContent: View {
               !raw.isEmpty else { return nil }
         return raw
     }
+
+    private var nonNeedinfoFlags: [Flag] {
+        bug.flags.filter { $0.name != "needinfo" }
+    }
 }
 
 private struct InspectorSectionHeader: View {
     let title: String
     var trailing: String? = nil
+    var onAdd: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -651,6 +810,15 @@ private struct InspectorSectionHeader: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if let onAdd {
+                Button(action: onAdd) {
+                    Image(systemName: "plus.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Add via quick search")
+            }
         }
     }
 }
@@ -666,6 +834,195 @@ private struct FlagsSection: View {
                     FlagPill(flag: flag)
                 }
             }
+        }
+    }
+}
+
+private struct NeedinfoSection: View {
+    let bug: Bug
+    let onUpdate: (BugUpdate) -> Void
+
+    @Environment(AuthStore.self) private var auth
+    @State private var showingPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            InspectorSectionHeader(
+                title: "Needinfo",
+                trailing: requests.count > 1 ? "\(requests.count)" : nil
+            )
+            if requests.isEmpty {
+                Text("No outstanding requests")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(requests) { flag in
+                        NeedinfoRow(
+                            flag: flag,
+                            isMe: isCurrentUser(flag.requestee)
+                        ) {
+                            onUpdate(BugUpdate(flags: [
+                                FlagUpdate(id: flag.id, status: "X")
+                            ]))
+                        }
+                    }
+                }
+            }
+
+            Button {
+                showingPicker = true
+            } label: {
+                Label("Request needinfo…", systemImage: "plus.circle")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
+                UserSearchPopover { user in
+                    showingPicker = false
+                    onUpdate(BugUpdate(flags: [
+                        FlagUpdate(name: "needinfo", status: "?", requestee: user.name)
+                    ]))
+                }
+            }
+        }
+    }
+
+    private var requests: [Flag] {
+        bug.flags.filter { $0.name == "needinfo" }
+    }
+
+    private func isCurrentUser(_ requestee: String?) -> Bool {
+        guard let requestee, !requestee.isEmpty else { return false }
+        let me = auth.currentUser
+        if let name = me?.name, name.caseInsensitiveCompare(requestee) == .orderedSame { return true }
+        if let email = me?.email, email.caseInsensitiveCompare(requestee) == .orderedSame { return true }
+        return false
+    }
+}
+
+private struct NeedinfoRow: View {
+    let flag: Flag
+    let isMe: Bool
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: isMe ? "person.crop.circle.badge.questionmark" : "person.crop.circle")
+                .font(.caption)
+                .foregroundStyle(isMe ? Color.orange : Color.secondary)
+            Text(displayName)
+                .font(.callout)
+                .foregroundStyle(isMe ? Color.primary : Color.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if isMe {
+                Button("Clear", action: onClear)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+            }
+        }
+        .help(tooltip)
+    }
+
+    private var displayName: String {
+        let target = flag.requestee ?? ""
+        if isMe { return "You" }
+        if target.isEmpty { return "—" }
+        return target
+    }
+
+    private var tooltip: String {
+        var parts: [String] = []
+        if let setter = flag.setter, !setter.isEmpty {
+            parts.append("Requested by \(setter)")
+        }
+        if let requestee = flag.requestee, !requestee.isEmpty {
+            parts.append("→ \(requestee)")
+        }
+        return parts.joined(separator: "  ·  ")
+    }
+}
+
+private struct UserSearchPopover: View {
+    let onPick: (User) -> Void
+
+    @Environment(AuthStore.self) private var auth
+    @State private var query = ""
+    @State private var matches: [User] = []
+    @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Search users…", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: query) { _, value in
+                    scheduleSearch(value)
+                }
+            if isSearching {
+                ProgressView().controlSize(.small)
+            } else if matches.isEmpty {
+                Text(query.count < 2 ? "Type at least 2 characters" : "No matches")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(matches) { user in
+                            Button {
+                                onPick(user)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(user.realName ?? user.name)
+                                        .font(.callout)
+                                    Text(user.name)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 4)
+                                .padding(.horizontal, 6)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+        .padding(12)
+        .frame(width: 280)
+    }
+
+    private func scheduleSearch(_ value: String) {
+        searchTask?.cancel()
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 2 else {
+            matches = []
+            isSearching = false
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            if Task.isCancelled { return }
+            await runSearch(trimmed)
+        }
+    }
+
+    private func runSearch(_ text: String) async {
+        isSearching = true
+        defer { isSearching = false }
+        do {
+            let users = try await auth.client.searchUsers(match: text, limit: 20)
+            if !Task.isCancelled {
+                matches = users
+            }
+        } catch is CancellationError {
+        } catch {
+            matches = []
         }
     }
 }
@@ -747,7 +1104,11 @@ private struct DependenciesSection: View {
     let bugID: Bug.ID
     let dependsOn: [Int]
     let blocks: [Int]
+    let seeAlso: [String]
     let onOpenBug: (Bug.ID) -> Void
+    let onAddDependsOn: () -> Void
+    let onAddBlocks: () -> Void
+    let onAddSeeAlso: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -756,16 +1117,127 @@ private struct DependenciesSection: View {
                 bugID: bugID,
                 ids: dependsOn,
                 direction: .dragBlocksTarget,
-                onOpenBug: onOpenBug
+                onOpenBug: onOpenBug,
+                onAdd: onAddDependsOn
             )
             DependencyList(
                 title: "Blocks",
                 bugID: bugID,
                 ids: blocks,
                 direction: .targetBlocksDrag,
-                onOpenBug: onOpenBug
+                onOpenBug: onOpenBug,
+                onAdd: onAddBlocks
+            )
+            SeeAlsoList(
+                urls: seeAlso,
+                onOpenBug: onOpenBug,
+                onAdd: onAddSeeAlso
             )
         }
+    }
+}
+
+private struct SeeAlsoList: View {
+    let urls: [String]
+    let onOpenBug: (Bug.ID) -> Void
+    let onAdd: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            InspectorSectionHeader(
+                title: "See also",
+                trailing: urls.count > 1 ? "\(urls.count)" : nil,
+                onAdd: onAdd
+            )
+            if urls.isEmpty {
+                Text("No related bugs")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(urls, id: \.self) { url in
+                        SeeAlsoRow(url: url, onOpenBug: onOpenBug)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct SeeAlsoRow: View {
+    @Environment(Workspace.self) private var workspace
+    @Environment(\.openURL) private var openURL
+    let url: String
+    let onOpenBug: (Bug.ID) -> Void
+
+    var body: some View {
+        Button {
+            if let id = bmoBugID {
+                onOpenBug(id)
+            } else if let resolved = URL(string: url) {
+                openURL(resolved)
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let id = bmoBugID {
+                    Text(verbatim: "#\(id)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    if let summary = workspace.dependencyMetadata[id]?.summary {
+                        Text(summary)
+                            .font(.callout)
+                            .foregroundStyle(isClosed(id) ? Color.secondary : Color.primary)
+                            .strikethrough(isClosed(id))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text(url)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(displayURL)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(url)
+    }
+
+    private var bmoBugID: Bug.ID? {
+        guard let comps = URLComponents(string: url),
+              let host = comps.host?.lowercased(),
+              host == "bugzilla.mozilla.org" else { return nil }
+        if let item = comps.queryItems?.first(where: { $0.name == "id" }),
+           let value = item.value, let id = Int(value) {
+            return id
+        }
+        return nil
+    }
+
+    private var displayURL: String {
+        if let comps = URLComponents(string: url), let host = comps.host {
+            return host + comps.path
+        }
+        return url
+    }
+
+    private func isClosed(_ id: Bug.ID) -> Bool {
+        workspace.dependencyMetadata[id]?.isClosed ?? false
     }
 }
 
@@ -775,10 +1247,15 @@ private struct DependencyList: View {
     let ids: [Int]
     let direction: BlockDirection
     let onOpenBug: (Bug.ID) -> Void
+    let onAdd: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            InspectorSectionHeader(title: title, trailing: ids.count > 1 ? "\(ids.count)" : nil)
+            InspectorSectionHeader(
+                title: title,
+                trailing: ids.count > 1 ? "\(ids.count)" : nil,
+                onAdd: onAdd
+            )
             VStack(alignment: .leading, spacing: 4) {
                 if ids.isEmpty {
                     Text("Drop bugs here to add")
