@@ -1239,7 +1239,7 @@ private struct PatchRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Open D\(id) in Zilla")
+                .help("Open D\(String(id)) in Zilla")
             } else {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))

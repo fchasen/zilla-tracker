@@ -27,7 +27,7 @@ struct RevisionWebView: View {
                 .buttonStyle(.borderless)
                 .help("Return to bug")
 
-                Text("D\(revisionID)")
+                Text(verbatim: "D\(revisionID)")
                     .font(.callout.weight(.semibold).monospaced())
                     .foregroundStyle(.secondary)
 
@@ -37,7 +37,7 @@ struct RevisionWebView: View {
                     Label("Open in Browser", systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(.borderless)
-                .help("Open D\(revisionID) in your browser")
+                .help("Open D\(String(revisionID)) in your browser")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
