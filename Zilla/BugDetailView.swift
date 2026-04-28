@@ -22,10 +22,6 @@ struct BugDetailView: View {
     @State private var isPostingComment = false
     @State private var composerError: String?
 
-    @State private var isUpdating = false
-    @State private var updateError: String?
-    @State private var dupePrompt: DupePromptIdentifier?
-
     private var bug: Bug? { workspace.loadedBug }
     private var comments: [Comment] { workspace.loadedComments }
     private var loadError: String? { workspace.bugLoadError }
@@ -55,7 +51,9 @@ struct BugDetailView: View {
                     isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
-                    onUpdate: { update in Task { await applyUpdate(update) } }
+                    onUpdate: { update in
+                        Task { _ = await workspace.applyBugUpdate(update, using: auth.client) }
+                    }
                 )
             } else if isLoading {
                 ProgressView()
@@ -65,80 +63,7 @@ struct BugDetailView: View {
                 Color.clear
             }
         }
-        .toolbar {
-            if isUpdating {
-                ToolbarItem(placement: .primaryAction) {
-                    ProgressView().controlSize(.small)
-                }
-            } else if let bug {
-                ToolbarItem(placement: .primaryAction) {
-                    statusMenu(for: bug)
-                }
-            }
-        }
         .task(id: bugID) { await reload() }
-        .alert(
-            "Couldn't update bug",
-            isPresented: Binding(
-                get: { updateError != nil },
-                set: { if !$0 { updateError = nil } }
-            )
-        ) {
-            Button("OK") { updateError = nil }
-        } message: {
-            Text(updateError ?? "")
-        }
-        .sheet(item: $dupePrompt) { _ in
-            DupeOfSheet { dupeOfID, comment in
-                Task { await applyUpdate(BugUpdate(
-                    status: "RESOLVED",
-                    resolution: "DUPLICATE",
-                    dupeOf: dupeOfID,
-                    comment: comment.isEmpty ? nil : comment
-                )) }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func statusMenu(for bug: Bug) -> some View {
-        let isClosed = ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
-
-        Menu {
-            if isClosed {
-                Button("Reopen") {
-                    Task { await applyUpdate(BugUpdate(status: "REOPENED", resolution: "")) }
-                }
-            } else {
-                ForEach(Self.resolveOptions, id: \.code) { option in
-                    Button("Resolve as \(option.label)") {
-                        Task { await applyUpdate(BugUpdate(status: "RESOLVED", resolution: option.code)) }
-                    }
-                }
-                Divider()
-                Button("Mark as Duplicate…") {
-                    dupePrompt = DupePromptIdentifier()
-                }
-            }
-        } label: {
-            Label("Change status", systemImage: "checkmark.circle")
-        }
-    }
-
-    private static let resolveOptions: [(code: String, label: String)] = [
-        ("FIXED", "Fixed"),
-        ("INVALID", "Invalid"),
-        ("WORKSFORME", "Works for Me"),
-        ("INCOMPLETE", "Incomplete"),
-        ("WONTFIX", "Won't Fix")
-    ]
-
-    private func applyUpdate(_ update: BugUpdate) async {
-        isUpdating = true
-        defer { isUpdating = false }
-        if let error = await workspace.applyBugUpdate(update, using: auth.client) {
-            updateError = error.localizedDescription
-        }
     }
 
     private func reload() async {
@@ -492,7 +417,7 @@ struct DupePromptIdentifier: Identifiable {
     let id = UUID()
 }
 
-private struct DupeOfSheet: View {
+struct DupeOfSheet: View {
     let onConfirm: (Int, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var bugIdText: String = ""

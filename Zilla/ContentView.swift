@@ -133,6 +133,12 @@ final class Workspace {
     private(set) var isLoadingBug = false
     private(set) var bugLoadError: String?
 
+    // Bug list loading flag, used by the (now centralized) refresh button.
+    var isLoadingBugList: Bool = false
+
+    // Bug-update flag, drives the toolbar progress indicator.
+    private(set) var isUpdatingBug = false
+
     var showInspector: Bool = false
 
     func loadProducts(using client: BugzillaClient) async {
@@ -190,6 +196,8 @@ final class Workspace {
     @MainActor
     func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
         guard let id = loadedBug?.id else { return nil }
+        isUpdatingBug = true
+        defer { isUpdatingBug = false }
         do {
             _ = try await client.updateBug(id: id, update)
             if let refreshed = try? await client.getBug(id: id) {
@@ -257,6 +265,8 @@ struct ContentView: View {
     @Environment(AuthStore.self) private var auth
 
     @State private var showAddComponent = false
+    @State private var dupePrompt: DupePromptIdentifier?
+    @State private var updateError: String?
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -279,37 +289,55 @@ struct ContentView: View {
                 .help("Add Component")
             }
             ToolbarItem(placement: .navigation) {
-                Menu {
-                    if let user = auth.currentUser {
-                        Text(user.realName ?? user.name)
-                        if let nick = user.nick {
-                            Text("@\(nick)")
-                        }
-                        Divider()
-                    }
-                    Button("Sign Out", role: .destructive) {
-                        Task {
-                            await auth.signOut()
-                            workspace.reset()
-                        }
-                    }
-                } label: {
-                    Image(systemName: "person.crop.circle")
-                }
-                .help("Account")
+                accountMenu
+            }
+            ToolbarItem(placement: .principal) {
+                searchField
             }
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    workspace.showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-                .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
-                .disabled(workspace.loadedBug == nil)
+                refreshButton
+            }
+            ToolbarItem(placement: .primaryAction) {
+                sortMenu
+            }
+            ToolbarItem(placement: .primaryAction) {
+                statusToolbar
+            }
+            ToolbarItem(placement: .primaryAction) {
+                inspectorToggle
             }
         }
         .sheet(isPresented: $showAddComponent) {
             ComponentPickerSheet()
+        }
+        .sheet(item: $dupePrompt) { _ in
+            DupeOfSheet { dupeOfID, comment in
+                Task {
+                    let result = await workspace.applyBugUpdate(
+                        BugUpdate(
+                            status: "RESOLVED",
+                            resolution: "DUPLICATE",
+                            dupeOf: dupeOfID,
+                            comment: comment.isEmpty ? nil : comment
+                        ),
+                        using: auth.client
+                    )
+                    if let error = result {
+                        updateError = error.localizedDescription
+                    }
+                }
+            }
+        }
+        .alert(
+            "Couldn't update bug",
+            isPresented: Binding(
+                get: { updateError != nil },
+                set: { if !$0 { updateError = nil } }
+            )
+        ) {
+            Button("OK") { updateError = nil }
+        } message: {
+            Text(updateError ?? "")
         }
         .inspector(isPresented: $workspace.showInspector) {
             BugInspector()
@@ -320,6 +348,143 @@ struct ContentView: View {
                 await workspace.loadProducts(using: auth.client)
             }
         }
+    }
+
+    // MARK: - Toolbar pieces
+
+    private var accountMenu: some View {
+        Menu {
+            if let user = auth.currentUser {
+                Text(user.realName ?? user.name)
+                if let nick = user.nick {
+                    Text("@\(nick)")
+                }
+                Divider()
+            }
+            Button("Sign Out", role: .destructive) {
+                Task {
+                    await auth.signOut()
+                    workspace.reset()
+                }
+            }
+        } label: {
+            Image(systemName: "person.crop.circle")
+        }
+        .help("Account")
+    }
+
+    private var searchField: some View {
+        @Bindable var workspace = workspace
+        return HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search bugs", text: $workspace.searchText)
+                .textFieldStyle(.plain)
+                .frame(width: 200)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
+    }
+
+    private var refreshButton: some View {
+        Button {
+            workspace.bugListRefreshToken = UUID()
+        } label: {
+            if workspace.isLoadingBugList {
+                ProgressView().controlSize(.small)
+            } else {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+        }
+        .help("Refresh")
+        .disabled(workspace.isLoadingBugList)
+        .keyboardShortcut("r", modifiers: .command)
+    }
+
+    private var sortMenu: some View {
+        @Bindable var workspace = workspace
+        return Menu {
+            Picker(selection: $workspace.bugListSort) {
+                ForEach(BugListSort.allCases) { option in
+                    Label(option.label, systemImage: option.systemImage).tag(option)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("Sort", systemImage: "arrow.up.arrow.down")
+        }
+        .help("Sort bug list")
+    }
+
+    @ViewBuilder
+    private var statusToolbar: some View {
+        if workspace.isUpdatingBug {
+            ProgressView().controlSize(.small)
+        } else if let bug = workspace.loadedBug {
+            statusMenu(for: bug)
+        }
+    }
+
+    @ViewBuilder
+    private func statusMenu(for bug: Bug) -> some View {
+        let isClosed = ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
+
+        Menu {
+            if isClosed {
+                Button("Reopen") {
+                    Task {
+                        let result = await workspace.applyBugUpdate(
+                            BugUpdate(status: "REOPENED", resolution: ""),
+                            using: auth.client
+                        )
+                        if let error = result {
+                            updateError = error.localizedDescription
+                        }
+                    }
+                }
+            } else {
+                ForEach(Self.resolveOptions, id: \.code) { option in
+                    Button("Resolve as \(option.label)") {
+                        Task {
+                            let result = await workspace.applyBugUpdate(
+                                BugUpdate(status: "RESOLVED", resolution: option.code),
+                                using: auth.client
+                            )
+                            if let error = result {
+                                updateError = error.localizedDescription
+                            }
+                        }
+                    }
+                }
+                Divider()
+                Button("Mark as Duplicate…") {
+                    dupePrompt = DupePromptIdentifier()
+                }
+            }
+        } label: {
+            Label("Change status", systemImage: "checkmark.circle")
+        }
+    }
+
+    private static let resolveOptions: [(code: String, label: String)] = [
+        ("FIXED", "Fixed"),
+        ("INVALID", "Invalid"),
+        ("WORKSFORME", "Works for Me"),
+        ("INCOMPLETE", "Incomplete"),
+        ("WONTFIX", "Won't Fix")
+    ]
+
+    private var inspectorToggle: some View {
+        Button {
+            workspace.showInspector.toggle()
+        } label: {
+            Label("Inspector", systemImage: "sidebar.right")
+        }
+        .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
+        .disabled(workspace.loadedBug == nil)
     }
 }
 
@@ -580,53 +745,7 @@ struct BugListView: View {
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                searchField
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    workspace.bugListRefreshToken = UUID()
-                } label: {
-                    if isLoading {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                }
-                .help("Refresh")
-                .disabled(isLoading)
-                .keyboardShortcut("r", modifiers: .command)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                sortMenu
-            }
-        }
         .task(id: loadKey) { await load() }
-    }
-
-    private var searchField: some View {
-        @Bindable var workspace = workspace
-        return TextField("Search bugs", text: $workspace.searchText)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 220)
-    }
-
-    private var sortMenu: some View {
-        @Bindable var workspace = workspace
-        return Menu {
-            Picker(selection: $workspace.bugListSort) {
-                ForEach(BugListSort.allCases) { option in
-                    Label(option.label, systemImage: option.systemImage).tag(option)
-                }
-            } label: {
-                EmptyView()
-            }
-            .pickerStyle(.inline)
-        } label: {
-            Label("Sort", systemImage: "arrow.up.arrow.down")
-        }
-        .help("Sort bug list")
     }
 
     private var sortedBugs: [Bug] {
@@ -737,8 +856,12 @@ struct BugListView: View {
         ]
 
         isLoading = true
+        workspace.isLoadingBugList = true
         loadError = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            workspace.isLoadingBugList = false
+        }
 
         do {
             let result = try await auth.client.searchBugs(query)
