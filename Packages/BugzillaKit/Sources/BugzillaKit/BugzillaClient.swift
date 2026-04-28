@@ -276,13 +276,19 @@ public extension BugzillaClient {
         return response.bugs[String(bugID)]?.comments ?? []
     }
 
-    func addComment(bugID: Bug.ID, text: String, isPrivate: Bool = false) async throws -> Comment.ID {
+    func addComment(
+        bugID: Bug.ID,
+        text: String,
+        isPrivate: Bool = false,
+        isMarkdown: Bool = false
+    ) async throws -> Comment.ID {
         struct Body: Encodable {
             let comment: String
             let isPrivate: Bool
+            let isMarkdown: Bool
         }
         struct Response: Decodable { let id: Int }
-        let body = try encoder.encode(Body(comment: text, isPrivate: isPrivate))
+        let body = try encoder.encode(Body(comment: text, isPrivate: isPrivate, isMarkdown: isMarkdown))
         let endpoint = Endpoint(
             path: "bug/\(bugID)/comment",
             method: .post,

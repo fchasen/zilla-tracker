@@ -76,6 +76,18 @@ final class CommentsTests: XCTestCase {
         XCTAssertEqual(id, 42)
     }
 
+    func testAddCommentSendsMarkdownFlag() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["is_markdown"] as? Bool, true)
+            XCTAssertEqual(json["comment"] as? String, "**bold** _italic_")
+            return (httpResponse(for: request, status: 201), #"{"id":1}"#.data(using: .utf8)!)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.addComment(bugID: 1, text: "**bold** _italic_", isMarkdown: true)
+    }
+
     func testAddCommentSendsPrivateFlag() async throws {
         MockURLProtocol.handler = { request in
             let body = request.bodyData ?? Data()
