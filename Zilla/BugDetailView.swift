@@ -84,7 +84,7 @@ struct BugDetailView: View {
                 ToolbarItem(placement: .primaryAction) {
                     resolveMenu(for: bug)
                 }
-            } else if workspace.isUpdatingBug {
+            } else if workspace.isUpdatingBug || isLoading {
                 ToolbarItem(placement: .primaryAction) {
                     ProgressView().controlSize(.small)
                 }
