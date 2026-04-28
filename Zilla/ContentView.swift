@@ -137,10 +137,6 @@ enum SidebarSelection: Hashable {
     case metaBug(Int)
 }
 
-enum DetailRoute: Hashable {
-    case bug(Int)
-}
-
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
     case ordered, newest, recent, oldest, priority
 
@@ -214,21 +210,14 @@ final class Workspace {
 
     var sidebarSelection: SidebarSelection? = .smart(.myBugs) {
         didSet {
-            if oldValue != sidebarSelection {
-                activeRevisionID = nil
-                detailPath = []
-            }
+            if oldValue != sidebarSelection { activeRevisionID = nil }
         }
     }
     var selectedBugID: Bug.ID? {
         didSet {
-            if oldValue != selectedBugID {
-                activeRevisionID = nil
-                detailPath = []
-            }
+            if oldValue != selectedBugID { activeRevisionID = nil }
         }
     }
-    var detailPath: [DetailRoute] = []
     var selectedDraftID: UUID?
     var activeRevisionID: Int?
     var bugzillaSettingsPresented: Bool = false
@@ -282,7 +271,11 @@ final class Workspace {
 
     var showInspector: Bool = false
 
-    private(set) var dependencyMetadata: [Bug.ID: DependencyMetadata] = [:]
+    var cache: ResourceCache?
+
+    func dependencyMetadata(for id: Bug.ID) -> DependencyMetadata? {
+        cache?.dependencyMeta(for: id)
+    }
 
     func loadProducts(using client: BugzillaClient) async {
         guard !isLoadingProducts else { return }
@@ -290,7 +283,12 @@ final class Workspace {
         loadError = nil
         defer { isLoadingProducts = false }
         do {
-            let fetched = try await client.selectableProducts()
+            let fetched: [Product]
+            if let cache {
+                fetched = try await cache.selectableProducts(using: client)
+            } else {
+                fetched = try await client.selectableProducts()
+            }
             products = fetched
                 .filter(\.isActive)
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -309,7 +307,7 @@ final class Workspace {
         searchText = ""
         clearLoadedBug()
         showInspector = false
-        dependencyMetadata = [:]
+        cache?.clear()
     }
 
     @MainActor
@@ -318,10 +316,21 @@ final class Workspace {
         bugLoadError = nil
         defer { isLoadingBug = false }
         do {
-            async let bugTask = client.getBug(id: id)
-            async let commentsTask = client.comments(bugID: id)
-            loadedBug = try await bugTask
-            loadedComments = try await commentsTask
+            if let cache {
+                async let bugTask = cache.bug(id: id, using: client) { [weak self] refreshed in
+                    if self?.loadedBug?.id == id { self?.loadedBug = refreshed }
+                }
+                async let commentsTask = cache.comments(bugID: id, using: client) { [weak self] refreshed in
+                    if self?.loadedBug?.id == id { self?.loadedComments = refreshed }
+                }
+                loadedBug = try await bugTask
+                loadedComments = try await commentsTask
+            } else {
+                async let bugTask = client.getBug(id: id)
+                async let commentsTask = client.comments(bugID: id)
+                loadedBug = try await bugTask
+                loadedComments = try await commentsTask
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -346,11 +355,17 @@ final class Workspace {
         defer { isUpdatingBug = false }
         do {
             _ = try await client.updateBug(id: id, update)
-            if let refreshed = try? await client.getBug(id: id) {
-                loadedBug = refreshed
-            }
-            if let refreshed = try? await client.comments(bugID: id) {
-                loadedComments = refreshed
+            cache?.invalidateBug(id: id)
+            if let cache {
+                if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
+                    loadedBug = refreshed
+                }
+                if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
+                    loadedComments = refreshed
+                }
+            } else {
+                if let refreshed = try? await client.getBug(id: id) { loadedBug = refreshed }
+                if let refreshed = try? await client.comments(bugID: id) { loadedComments = refreshed }
             }
             return nil
         } catch {
@@ -375,8 +390,14 @@ final class Workspace {
                 id: source,
                 BugUpdate(blocks: BugRelationUpdate(add: [target]))
             )
+            cache?.invalidateBug(id: source)
+            cache?.invalidateBug(id: target)
             if let id = loadedBug?.id, id == source || id == target {
-                if let refreshed = try? await client.getBug(id: id) {
+                if let cache {
+                    if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
+                        loadedBug = refreshed
+                    }
+                } else if let refreshed = try? await client.getBug(id: id) {
                     loadedBug = refreshed
                 }
             }
@@ -390,7 +411,11 @@ final class Workspace {
     @MainActor
     func refreshLoadedComments(using client: BugzillaClient) async {
         guard let id = loadedBug?.id else { return }
-        if let refreshed = try? await client.comments(bugID: id) {
+        if let cache {
+            if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
+                loadedComments = refreshed
+            }
+        } else if let refreshed = try? await client.comments(bugID: id) {
             loadedComments = refreshed
         }
     }
@@ -407,6 +432,7 @@ final class Workspace {
         defer { isUpdatingBug = false }
         do {
             try await client.updateComment(bugID: bugID, commentID: commentID, newText: newText)
+            cache?.invalidate(.comments(bugID: bugID))
             await refreshLoadedComments(using: client)
             return nil
         } catch {
@@ -416,16 +442,8 @@ final class Workspace {
 
     @MainActor
     func loadDependencyMetadata(ids: [Bug.ID], using client: BugzillaClient) async {
-        let needed = ids.filter { dependencyMetadata[$0] == nil }
-        guard !needed.isEmpty else { return }
-        guard let bugs = try? await client.getBugs(ids: needed) else { return }
-        for bug in bugs {
-            dependencyMetadata[bug.id] = DependencyMetadata(
-                id: bug.id,
-                summary: bug.summary,
-                status: bug.status,
-                resolution: bug.resolution
-            )
+        if let cache {
+            await cache.loadDependencyMeta(ids: ids, using: client)
         }
     }
 
@@ -559,20 +577,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        @Bindable var workspace = workspace
-        NavigationStack(path: $workspace.detailPath) {
-            detailRoot
-                .navigationDestination(for: DetailRoute.self) { route in
-                    switch route {
-                    case .bug(let id):
-                        BugDetailView(bugID: id)
-                    }
-                }
-        }
-    }
-
-    @ViewBuilder
-    private var detailRoot: some View {
         if let id = workspace.activeRevisionID {
             RevisionWebView(revisionID: id) {
                 workspace.activeRevisionID = nil
@@ -1235,9 +1239,25 @@ private struct FollowedMetaBugRow: View {
 
 // MARK: - Bug list
 
+struct BugNode: Identifiable, Hashable {
+    let bug: Bug
+    var children: [BugNode]?
+
+    var id: Bug.ID { bug.id }
+
+    static func == (lhs: BugNode, rhs: BugNode) -> Bool {
+        lhs.bug.id == rhs.bug.id && lhs.children == rhs.children
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(bug.id)
+    }
+}
+
 struct BugListView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
+    @Environment(ResourceCache.self) private var cache
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
@@ -1251,6 +1271,7 @@ struct BugListView: View {
     var newBugHelp: String = "New bug…"
 
     @State private var bugs: [Bug] = []
+    @State private var dependents: [Bug.ID: [Bug]] = [:]
     @State private var totalMatches: Int?
     @State private var isLoading = false
     @State private var isLoadingMore = false
@@ -1307,15 +1328,18 @@ struct BugListView: View {
                     description: Text("Nothing matches this filter.")
                 )
             } else {
+                let nodes = rootNodes
                 List(selection: $selectedBugID) {
-                    let sorted = sortedBugs
-                    ForEach(Array(sorted.enumerated()), id: \.element.id) { index, bug in
-                        row(for: bug, index: index, displayed: sorted)
-                            .onAppear {
-                                if index >= sorted.count - 5 {
-                                    Task { await loadMore() }
+                    ForEach(Array(nodes.enumerated()), id: \.element.id) { index, root in
+                        OutlineGroup(root, children: \.children) { node in
+                            let topIdx: Int? = node.id == root.id ? index : nil
+                            row(for: node.bug, topIndex: topIdx, displayed: sortedBugs)
+                                .onAppear {
+                                    if let topIdx, topIdx >= nodes.count - 5 {
+                                        Task { await loadMore() }
+                                    }
                                 }
-                            }
+                        }
                     }
                     if isLoadingMore {
                         HStack {
@@ -1358,9 +1382,13 @@ struct BugListView: View {
             text: searchBinding,
             prompt: "Search bugs"
         )
-        .task(id: loadKey) { await load() }
+        .task(id: loadKey) { await load(force: false) }
+        .onChange(of: workspace.bugListRefreshToken) { _, _ in
+            Task { await load(force: true) }
+        }
         .onChange(of: selection) { _, _ in
             bugs = []
+            dependents = [:]
             totalMatches = nil
             canLoadMore = false
             loadError = nil
@@ -1441,7 +1469,7 @@ struct BugListView: View {
     }
 
     @ViewBuilder
-    private func row(for bug: Bug, index: Int, displayed: [Bug]) -> some View {
+    private func row(for bug: Bug, topIndex: Int?, displayed: [Bug]) -> some View {
         BugRow(bug: bug)
             .tag(Optional(bug.id))
             .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
@@ -1452,15 +1480,32 @@ struct BugListView: View {
             .bugLinkDrop(target: bug.id)
             .bugReorderDrop(
                 bugID: bug.id,
-                indexInList: index,
+                indexInList: topIndex ?? 0,
                 endpointKey: endpointKey,
                 displayed: displayed,
                 entries: orderEntries,
-                isEnabled: isOrdered
+                isEnabled: topIndex != nil && isOrdered
             )
             .contextMenu {
                 addAsMetaMenu(for: bug)
             }
+    }
+
+    private var rootNodes: [BugNode] {
+        sortedBugs.map { bug in
+            guard Self.isMetaSummary(bug.summary),
+                  let deps = dependents[bug.id], !deps.isEmpty else {
+                return BugNode(bug: bug, children: nil)
+            }
+            return BugNode(
+                bug: bug,
+                children: deps.map { BugNode(bug: $0, children: nil) }
+            )
+        }
+    }
+
+    static func isMetaSummary(_ summary: String) -> Bool {
+        summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     @ViewBuilder
@@ -1497,7 +1542,6 @@ struct BugListView: View {
             selection: selection,
             search: workspace.searchText,
             sort: workspace.bugListSort,
-            refresh: workspace.bugListRefreshToken,
             signedIn: auth.isSignedIn
         )
     }
@@ -1542,7 +1586,7 @@ struct BugListView: View {
         return query
     }
 
-    private func load() async {
+    private func load(force: Bool) async {
         guard let selection else {
             bugs = []
             totalMatches = nil
@@ -1563,10 +1607,12 @@ struct BugListView: View {
             return
         }
 
-        do {
-            try await Task.sleep(for: .milliseconds(250))
-        } catch {
-            return
+        if !force {
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
         }
 
         guard let query = makeQuery(offset: 0) else { return }
@@ -1580,10 +1626,12 @@ struct BugListView: View {
         }
 
         do {
-            let result = try await auth.client.searchBugs(query)
+            let result = try await cache.bugList(query, force: force, using: auth.client)
             bugs = result.bugs
+            dependents = [:]
             totalMatches = result.totalMatches
             canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
+            await fetchDependents(for: result.bugs.filter { Self.isMetaSummary($0.summary) }.map(\.id))
         } catch is CancellationError {
             return
         } catch {
@@ -1608,11 +1656,44 @@ struct BugListView: View {
             bugs.append(contentsOf: appended)
             if let total = result.totalMatches { totalMatches = total }
             canLoadMore = hasMore(loaded: bugs.count, fetched: result.bugs.count, total: result.totalMatches ?? totalMatches)
+            await fetchDependents(for: appended.filter { Self.isMetaSummary($0.summary) }.map(\.id))
         } catch is CancellationError {
             return
         } catch {
             loadError = error.localizedDescription
             canLoadMore = false
+        }
+    }
+
+    private func fetchDependents(for metaIDs: [Bug.ID]) async {
+        guard !metaIDs.isEmpty else { return }
+        let login = auth.currentUser?.name
+        let client = auth.client
+        let fields = Self.bugIncludeFields
+
+        let results = await withTaskGroup(of: (Bug.ID, [Bug])?.self) { group in
+            for id in metaIDs {
+                group.addTask {
+                    var query = BugQuery.blockedBy(metaBug: id)
+                    if let login {
+                        query = query.substitutingMe(with: login)
+                    }
+                    query.limit = 100
+                    query.includeFields = fields
+                    guard let result = try? await client.searchBugs(query) else {
+                        return nil
+                    }
+                    return (id, result.bugs)
+                }
+            }
+            var collected: [(Bug.ID, [Bug])] = []
+            for await result in group {
+                if let result { collected.append(result) }
+            }
+            return collected
+        }
+        for (id, bugs) in results {
+            dependents[id] = bugs
         }
     }
 
@@ -1626,7 +1707,6 @@ private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
     let sort: BugListSort
-    let refresh: UUID
     let signedIn: Bool
 }
 
@@ -1730,89 +1810,6 @@ extension View {
             entries: entries,
             isEnabled: isEnabled
         ))
-    }
-}
-
-struct BlockedBugsSection: View {
-    @Environment(AuthStore.self) private var auth
-    let metaBugID: Int
-
-    @State private var bugs: [Bug] = []
-    @State private var isLoading = false
-    @State private var loadError: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text("Blocked Bugs")
-                    .font(.headline)
-                if !bugs.isEmpty {
-                    Text("\(bugs.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if isLoading {
-                    ProgressView().controlSize(.small)
-                }
-            }
-
-            if let error = loadError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .textSelection(.enabled)
-            } else if !isLoading && bugs.isEmpty {
-                Text("Nothing currently blocked.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if !bugs.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(bugs.enumerated()), id: \.element.id) { index, bug in
-                        NavigationLink(value: DetailRoute.bug(bug.id)) {
-                            BugRow(bug: bug)
-                                .padding(.vertical, 6)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        if index < bugs.count - 1 {
-                            Divider()
-                        }
-                    }
-                }
-            }
-        }
-        .task(id: metaBugID) { await load() }
-    }
-
-    private static let includeFields = [
-        "id", "summary", "status", "resolution", "product", "component",
-        "assigned_to", "priority", "severity", "keywords", "type",
-        "last_change_time", "creation_time",
-        "attachments.id", "attachments.content_type", "attachments.is_obsolete"
-    ]
-
-    private func load() async {
-        guard auth.isSignedIn else { return }
-        isLoading = true
-        loadError = nil
-        defer { isLoading = false }
-
-        var query = BugQuery.blockedBy(metaBug: metaBugID)
-        if let login = auth.currentUser?.name {
-            query = query.substitutingMe(with: login)
-        }
-        query.limit = 100
-        query.includeFields = Self.includeFields
-
-        do {
-            let result = try await auth.client.searchBugs(query)
-            bugs = result.bugs
-        } catch is CancellationError {
-            return
-        } catch {
-            loadError = error.localizedDescription
-        }
     }
 }
 
@@ -1953,4 +1950,5 @@ extension String {
         .environment(Workspace.preview)
         .environment(AuthStore())
         .environment(ViewedBugsStore())
+        .environment(ResourceCache())
 }

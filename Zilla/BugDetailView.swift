@@ -208,10 +208,6 @@ struct BugDetailView: View {
         }
     }
 
-    static func isMeta(_ bug: Bug) -> Bool {
-        bug.summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
     private func reload() async {
         composerText = ""
         composerSelection = nil
@@ -276,22 +272,18 @@ private struct BugContent: View {
                 if !bug.attachments.isEmpty {
                     AttachmentsSection(attachments: bug.attachments)
                 }
-                if BugDetailView.isMeta(bug) {
-                    BlockedBugsSection(metaBugID: bug.id)
-                } else {
-                    BugCommentsSection(
-                        comments: threadComments,
-                        attachmentsByID: attachmentsByID
-                    )
-                    Divider()
-                    CommentComposer(
-                        text: $composerText,
-                        selection: $composerSelection,
-                        isPosting: isPosting,
-                        error: composerError,
-                        onPost: onPost
-                    )
-                }
+                BugCommentsSection(
+                    comments: threadComments,
+                    attachmentsByID: attachmentsByID
+                )
+                Divider()
+                CommentComposer(
+                    text: $composerText,
+                    selection: $composerSelection,
+                    isPosting: isPosting,
+                    error: composerError,
+                    onPost: onPost
+                )
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1264,7 +1256,7 @@ private struct SeeAlsoRow: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .fixedSize()
-                    if let summary = workspace.dependencyMetadata[id]?.summary {
+                    if let summary = workspace.dependencyMetadata(for: id)?.summary {
                         Text(summary)
                             .font(.callout)
                             .foregroundStyle(isClosed(id) ? Color.secondary : Color.primary)
@@ -1316,7 +1308,7 @@ private struct SeeAlsoRow: View {
     }
 
     private func isClosed(_ id: Bug.ID) -> Bool {
-        workspace.dependencyMetadata[id]?.isClosed ?? false
+        workspace.dependencyMetadata(for: id)?.isClosed ?? false
     }
 }
 
@@ -1387,7 +1379,7 @@ private struct DependencyRow: View {
     }
 
     private var metadata: DependencyMetadata? {
-        workspace.dependencyMetadata[id]
+        workspace.dependencyMetadata(for: id)
     }
 
     private var isClosed: Bool {
