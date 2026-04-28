@@ -1169,6 +1169,8 @@ private struct FollowedComponentEntry: View {
                     .contextMenu { componentMenu }
             } else {
                 DisclosureGroup(isExpanded: $isExpanded) {
+                    Label("Open Bugs", systemImage: "tray.full")
+                        .tag(SidebarSelection.component(followed.ref))
                     ForEach(metas) { meta in
                         FollowedMetaBugRow(meta: meta)
                             .tag(SidebarSelection.metaBug(meta.bugId))
@@ -1183,7 +1185,6 @@ private struct FollowedComponentEntry: View {
                     }
                 } label: {
                     FollowedComponentRow(followed: followed)
-                        .tag(SidebarSelection.component(followed.ref))
                         .contextMenu { componentMenu }
                 }
             }
