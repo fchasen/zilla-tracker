@@ -11,11 +11,12 @@ public actor PhabricatorClient {
     public init(
         baseURL: URL,
         authentication: PhabricatorAuthentication = .none,
-        session: URLSession = .shared
+        session: URLSession? = nil
     ) {
         self.baseURL = baseURL
         self.authentication = authentication
-        self.transport = URLSessionTransport(session: session)
+        let resolvedSession = session ?? URLSession(configuration: .ephemeral)
+        self.transport = URLSessionTransport(session: resolvedSession)
         self.decoder = Self.makeDecoder()
         self.encoder = Self.makeEncoder()
     }
@@ -66,7 +67,7 @@ public actor PhabricatorClient {
 extension PhabricatorClient {
     func call<P: Encodable, T: Decodable>(method: String, params: P, as type: T.Type = T.self) async throws -> T {
         let paramsJSON = try Self.wrapParams(params, token: authentication.token, encoder: encoder)
-        let body = ConduitFormBody.encode(paramsJSON: paramsJSON)
+        let body = ConduitFormBody.encode(token: authentication.token, paramsJSON: paramsJSON)
         let endpoint = ConduitEndpoint(method: method, body: body)
         let request = try endpoint.request(relativeTo: baseURL)
         let (data, response) = try await transport.send(request)

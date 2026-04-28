@@ -94,16 +94,21 @@ final class RevisionDecodingTests: XCTestCase {
         XCTAssertEqual(query.constraints?.modifiedStart, 1_700_000_000)
     }
 
-    func testFormBodyEncodesParamsJSON() throws {
-        let body = ConduitFormBody.encode(paramsJSON: "{\"order\":\"updated\"}")
+    func testFormBodyEncodesTokenAndParams() throws {
+        let body = ConduitFormBody.encode(token: "api-xyz", paramsJSON: "{\"order\":\"updated\"}")
         let s = String(data: body, encoding: .utf8) ?? ""
-        XCTAssertEqual(s, "params=%7B%22order%22%3A%22updated%22%7D")
+        XCTAssertTrue(s.contains("api.token=api-xyz"))
+        XCTAssertTrue(s.contains("params=%7B%22order%22%3A%22updated%22%7D"))
     }
 
-    func testFormBodyOmitsEmptyParams() throws {
-        XCTAssertEqual(ConduitFormBody.encode(paramsJSON: "{}"), Data())
-        XCTAssertEqual(ConduitFormBody.encode(paramsJSON: nil), Data())
-        XCTAssertEqual(ConduitFormBody.encode(paramsJSON: ""), Data())
+    func testFormBodyOmitsEmptyParamsButKeepsToken() throws {
+        let body = ConduitFormBody.encode(token: "api-xyz", paramsJSON: "{}")
+        XCTAssertEqual(String(data: body, encoding: .utf8) ?? "", "api.token=api-xyz")
+    }
+
+    func testFormBodyOmitsBothWhenAbsent() throws {
+        XCTAssertEqual(ConduitFormBody.encode(token: nil, paramsJSON: nil), Data())
+        XCTAssertEqual(ConduitFormBody.encode(token: nil, paramsJSON: "{}"), Data())
     }
 
     func testWrapParamsInjectsConduitToken() throws {

@@ -18,17 +18,22 @@ struct ConduitEndpoint {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpShouldHandleCookies = false
         request.httpBody = body
         return request
     }
 }
 
 enum ConduitFormBody {
-    static func encode(paramsJSON: String?) -> Data {
-        guard let paramsJSON, !paramsJSON.isEmpty, paramsJSON != "{}" else {
-            return Data()
+    static func encode(token: String?, paramsJSON: String?) -> Data {
+        var pairs: [(String, String)] = []
+        if let token { pairs.append(("api.token", token)) }
+        if let paramsJSON, !paramsJSON.isEmpty, paramsJSON != "{}" {
+            pairs.append(("params", paramsJSON))
         }
-        let encoded = "params=\(percentEncode(paramsJSON))"
+        let encoded = pairs.map { name, value in
+            "\(percentEncode(name))=\(percentEncode(value))"
+        }.joined(separator: "&")
         return Data(encoded.utf8)
     }
 
