@@ -46,6 +46,29 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(resolved.assignedTo, ["bob@example.com"])
     }
 
+    func testPhabricatorPatchDetection() {
+        let phab = Attachment(id: 1, contentType: "text/x-phabricator-request", isObsolete: false)
+        let phabObsolete = Attachment(id: 2, contentType: "text/x-phabricator-request", isObsolete: true)
+        let other = Attachment(id: 3, contentType: "text/plain", isObsolete: false)
+
+        let bug = Bug(
+            id: 1, summary: "x", status: "NEW", resolution: "",
+            product: "P", component: "C",
+            attachments: [phabObsolete, other, phab]
+        )
+        XCTAssertTrue(bug.hasPhabricatorPatch)
+
+        let bugNoPatch = Bug(
+            id: 2, summary: "y", status: "NEW", resolution: "",
+            product: "P", component: "C",
+            attachments: [phabObsolete, other]
+        )
+        XCTAssertFalse(bugNoPatch.hasPhabricatorPatch)
+
+        let bare = Bug(id: 3, summary: "z", status: "NEW", resolution: "", product: "P", component: "C")
+        XCTAssertFalse(bare.hasPhabricatorPatch)
+    }
+
     func testMetaBugDetection() {
         let bug = Bug(
             id: 1,

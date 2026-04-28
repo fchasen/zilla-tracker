@@ -22,6 +22,8 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
     public let dependsOn: [Int]
     public let cc: [String]
     public let flags: [Flag]
+    public let type: String?
+    public let attachments: [Attachment]
 
     public init(
         id: ID,
@@ -42,7 +44,9 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         blocks: [Int] = [],
         dependsOn: [Int] = [],
         cc: [String] = [],
-        flags: [Flag] = []
+        flags: [Flag] = [],
+        type: String? = nil,
+        attachments: [Attachment] = []
     ) {
         self.id = id
         self.summary = summary
@@ -63,6 +67,8 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.dependsOn = dependsOn
         self.cc = cc
         self.flags = flags
+        self.type = type
+        self.attachments = attachments
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -71,6 +77,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         case creationTime, lastChangeTime
         case priority, severity, keywords, whiteboard
         case blocks, dependsOn, cc, flags
+        case type, attachments
     }
 
     public init(from decoder: Decoder) throws {
@@ -94,10 +101,16 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.dependsOn = try c.decodeIfPresent([Int].self, forKey: .dependsOn) ?? []
         self.cc = try c.decodeIfPresent([String].self, forKey: .cc) ?? []
         self.flags = try c.decodeIfPresent([Flag].self, forKey: .flags) ?? []
+        self.type = try c.decodeIfPresent(String.self, forKey: .type)
+        self.attachments = try c.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
     }
 
     public var isMeta: Bool {
         keywords.contains("meta")
+    }
+
+    public var hasPhabricatorPatch: Bool {
+        attachments.contains { $0.contentType == "text/x-phabricator-request" && !$0.isObsolete }
     }
 }
 
@@ -192,6 +205,59 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
     public let isPatch: Bool
     public let isPrivate: Bool
     public let data: String?
+
+    public init(
+        id: ID,
+        bugId: Bug.ID = 0,
+        fileName: String = "",
+        summary: String = "",
+        contentType: String = "",
+        creator: String = "",
+        creationTime: Date = .distantPast,
+        lastChangeTime: Date? = nil,
+        size: Int? = nil,
+        isObsolete: Bool = false,
+        isPatch: Bool = false,
+        isPrivate: Bool = false,
+        data: String? = nil
+    ) {
+        self.id = id
+        self.bugId = bugId
+        self.fileName = fileName
+        self.summary = summary
+        self.contentType = contentType
+        self.creator = creator
+        self.creationTime = creationTime
+        self.lastChangeTime = lastChangeTime
+        self.size = size
+        self.isObsolete = isObsolete
+        self.isPatch = isPatch
+        self.isPrivate = isPrivate
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, bugId, fileName, summary, contentType, creator
+        case creationTime, lastChangeTime, size
+        case isObsolete, isPatch, isPrivate, data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.bugId = try c.decodeIfPresent(Int.self, forKey: .bugId) ?? 0
+        self.fileName = try c.decodeIfPresent(String.self, forKey: .fileName) ?? ""
+        self.summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        self.contentType = try c.decodeIfPresent(String.self, forKey: .contentType) ?? ""
+        self.creator = try c.decodeIfPresent(String.self, forKey: .creator) ?? ""
+        self.creationTime = try c.decodeIfPresent(Date.self, forKey: .creationTime) ?? .distantPast
+        self.lastChangeTime = try c.decodeIfPresent(Date.self, forKey: .lastChangeTime)
+        self.size = try c.decodeIfPresent(Int.self, forKey: .size)
+        self.isObsolete = try c.decodeIfPresent(Bool.self, forKey: .isObsolete) ?? false
+        self.isPatch = try c.decodeIfPresent(Bool.self, forKey: .isPatch) ?? false
+        self.isPrivate = try c.decodeIfPresent(Bool.self, forKey: .isPrivate) ?? false
+        self.data = try c.decodeIfPresent(String.self, forKey: .data)
+    }
 }
 
 public struct HistoryEntry: Codable, Sendable, Hashable {
