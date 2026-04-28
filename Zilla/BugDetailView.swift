@@ -5,6 +5,11 @@
 
 import SwiftUI
 import BugzillaKit
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 struct BugDetailView: View {
     @Environment(AuthStore.self) private var auth
@@ -56,13 +61,6 @@ struct BugDetailView: View {
             }
         }
         .toolbar {
-            if let bugID, let url = bmoURL(for: bugID) {
-                ToolbarItem(placement: .secondaryAction) {
-                    Link(destination: url) {
-                        Label("Open in Bugzilla", systemImage: "safari")
-                    }
-                }
-            }
             if isUpdating {
                 ToolbarItem(placement: .primaryAction) {
                     ProgressView().controlSize(.small)
@@ -148,10 +146,6 @@ struct BugDetailView: View {
         } catch {
             updateError = error.localizedDescription
         }
-    }
-
-    private func bmoURL(for id: Int) -> URL? {
-        URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(id)")
     }
 
     private func load(id: Int?) async {
@@ -246,18 +240,58 @@ private struct BugContent: View {
 
 private struct BugHeader: View {
     let bug: Bug
+    @State private var didCopy = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("#\(bug.id)")
-                    .font(.headline.monospaced())
-                    .foregroundStyle(.secondary)
+                Button(action: copyID) {
+                    Text(verbatim: "#\(bug.id)")
+                        .font(.headline.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(didCopy ? "Copied" : "Click to copy bug number")
+
+                if let url = bmoURL {
+                    Link(destination: url) {
+                        Image(systemName: "arrow.up.forward.square")
+                            .foregroundStyle(.secondary)
+                    }
+                    .help("Open in Bugzilla")
+                }
+
                 StatusPill(bug: bug)
+
+                if didCopy {
+                    Text("Copied")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
+                }
             }
             Text(bug.summary)
                 .font(.title2)
                 .textSelection(.enabled)
+        }
+    }
+
+    private var bmoURL: URL? {
+        URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bug.id)")
+    }
+
+    private func copyID() {
+        let value = String(bug.id)
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = value
+        #endif
+        withAnimation { didCopy = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation { didCopy = false }
         }
     }
 }
