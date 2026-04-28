@@ -49,6 +49,7 @@ struct PhabricatorSettingsView: View {
                     Label("Get a token", systemImage: "arrow.up.right.square")
                         .font(.caption)
                 }
+                .buttonStyle(.borderless)
                 .pointerStyle(.link)
             }
 

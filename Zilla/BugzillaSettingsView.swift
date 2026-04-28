@@ -49,6 +49,7 @@ struct BugzillaSettingsView: View {
                     Label("Get a key", systemImage: "arrow.up.right.square")
                         .font(.caption)
                 }
+                .buttonStyle(.borderless)
                 .pointerStyle(.link)
             }
 
