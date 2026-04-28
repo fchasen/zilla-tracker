@@ -124,7 +124,7 @@ func makeFootprintShapes(canvas s: CGFloat) -> [CGPath] {
     var shapes: [CGPath] = []
 
     let baseX = 512 * scale
-    let baseY = (1024 - 540) * scale
+    let baseY = (1024 - 780) * scale
 
     addToeShapes(to: &shapes,
                  baseX: baseX, baseY: baseY,
