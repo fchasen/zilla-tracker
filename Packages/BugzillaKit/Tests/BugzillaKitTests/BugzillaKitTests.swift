@@ -21,6 +21,31 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(q.resolution, ["---"])
     }
 
+    func testSubstitutingMeReplacesSentinelInAllUserFields() {
+        var q = BugQuery(
+            assignedTo: [BugQuery.me],
+            reporter: [BugQuery.me, "someone@example.com"],
+            cc: [BugQuery.me],
+            flagRequestee: BugQuery.me,
+            userInvolved: BugQuery.me
+        )
+        q.flagName = "review"
+
+        let resolved = q.substitutingMe(with: "alice@example.com")
+        XCTAssertEqual(resolved.assignedTo, ["alice@example.com"])
+        XCTAssertEqual(resolved.reporter, ["alice@example.com", "someone@example.com"])
+        XCTAssertEqual(resolved.cc, ["alice@example.com"])
+        XCTAssertEqual(resolved.flagRequestee, "alice@example.com")
+        XCTAssertEqual(resolved.userInvolved, "alice@example.com")
+        XCTAssertEqual(resolved.flagName, "review", "non-user fields untouched")
+    }
+
+    func testSubstitutingMeNoOpWhenNoSentinel() {
+        let q = BugQuery(assignedTo: ["bob@example.com"])
+        let resolved = q.substitutingMe(with: "alice@example.com")
+        XCTAssertEqual(resolved.assignedTo, ["bob@example.com"])
+    }
+
     func testMetaBugDetection() {
         let bug = Bug(
             id: 1,

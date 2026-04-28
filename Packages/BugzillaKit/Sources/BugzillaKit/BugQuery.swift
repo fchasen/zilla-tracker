@@ -157,6 +157,20 @@ extension BugQuery {
 public extension BugQuery {
     static let me = "@me"
 
+    /// Returns a copy of this query with the `@me` sentinel replaced by `login`
+    /// in every user-valued field. BMO's REST search does not interpret `@me`
+    /// the way the web UI does, so callers must resolve it client-side.
+    func substitutingMe(with login: String) -> BugQuery {
+        var copy = self
+        let swap: (String) -> String = { $0 == BugQuery.me ? login : $0 }
+        copy.assignedTo = copy.assignedTo.map(swap)
+        copy.reporter = copy.reporter.map(swap)
+        copy.cc = copy.cc.map(swap)
+        if copy.flagRequestee == BugQuery.me { copy.flagRequestee = login }
+        if copy.userInvolved == BugQuery.me { copy.userInvolved = login }
+        return copy
+    }
+
     static var myOpenBugs: BugQuery {
         BugQuery(resolution: ["---"], assignedTo: [me])
     }
