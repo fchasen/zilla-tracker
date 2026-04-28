@@ -122,6 +122,48 @@ public struct Flag: Codable, Sendable, Hashable, Identifiable {
     public let modificationDate: Date?
 }
 
+public struct BugUpdate: Sendable, Equatable {
+    public var status: String?
+    public var resolution: String?
+    public var dupeOf: Bug.ID?
+    public var assignedTo: String?
+    public var priority: String?
+    public var severity: String?
+    public var comment: String?
+    public var commentIsPrivate: Bool?
+
+    public init(
+        status: String? = nil,
+        resolution: String? = nil,
+        dupeOf: Bug.ID? = nil,
+        assignedTo: String? = nil,
+        priority: String? = nil,
+        severity: String? = nil,
+        comment: String? = nil,
+        commentIsPrivate: Bool? = nil
+    ) {
+        self.status = status
+        self.resolution = resolution
+        self.dupeOf = dupeOf
+        self.assignedTo = assignedTo
+        self.priority = priority
+        self.severity = severity
+        self.comment = comment
+        self.commentIsPrivate = commentIsPrivate
+    }
+}
+
+public struct BugChangeResult: Codable, Sendable, Hashable, Identifiable {
+    public let id: Bug.ID
+    public let lastChangeTime: Date?
+    public let changes: [String: BugFieldChange]
+}
+
+public struct BugFieldChange: Codable, Sendable, Hashable {
+    public let removed: String
+    public let added: String
+}
+
 public struct Comment: Codable, Sendable, Hashable, Identifiable {
     public typealias ID = Int
 

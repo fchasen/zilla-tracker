@@ -216,6 +216,58 @@ public extension BugzillaClient {
         return try await execute(endpoint)
     }
 
+    func updateBug(id: Bug.ID, _ update: BugUpdate) async throws -> [BugChangeResult] {
+        struct CommentBody: Encodable {
+            let body: String
+            let isPrivate: Bool?
+        }
+        struct Body: Encodable {
+            let status: String?
+            let resolution: String?
+            let dupeOf: Bug.ID?
+            let assignedTo: String?
+            let priority: String?
+            let severity: String?
+            let comment: CommentBody?
+
+            enum CodingKeys: String, CodingKey {
+                case status, resolution, dupeOf
+                case assignedTo, priority, severity, comment
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encodeIfPresent(status, forKey: .status)
+                try c.encodeIfPresent(resolution, forKey: .resolution)
+                try c.encodeIfPresent(dupeOf, forKey: .dupeOf)
+                try c.encodeIfPresent(assignedTo, forKey: .assignedTo)
+                try c.encodeIfPresent(priority, forKey: .priority)
+                try c.encodeIfPresent(severity, forKey: .severity)
+                try c.encodeIfPresent(comment, forKey: .comment)
+            }
+        }
+
+        let payload = Body(
+            status: update.status,
+            resolution: update.resolution,
+            dupeOf: update.dupeOf,
+            assignedTo: update.assignedTo,
+            priority: update.priority,
+            severity: update.severity,
+            comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) }
+        )
+        let body = try encoder.encode(payload)
+
+        struct Response: Decodable { let bugs: [BugChangeResult] }
+        let endpoint = Endpoint(
+            path: "bug/\(id)",
+            method: .put,
+            body: body
+        )
+        let response: Response = try await execute(endpoint)
+        return response.bugs
+    }
+
     func comments(bugID: Bug.ID) async throws -> [Comment] {
         struct Response: Decodable { let bugs: [String: BugComments] }
         struct BugComments: Decodable { let comments: [Comment] }
