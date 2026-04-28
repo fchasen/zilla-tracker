@@ -19,6 +19,7 @@ public struct BugQuery: Sendable, Hashable {
     public var userInvolved: String?
     public var limit: Int?
     public var offset: Int?
+    public var order: String?
     public var includeFields: [String]
     public var excludeFields: [String]
     public var extra: [String: [String]]
@@ -42,6 +43,7 @@ public struct BugQuery: Sendable, Hashable {
         userInvolved: String? = nil,
         limit: Int? = nil,
         offset: Int? = nil,
+        order: String? = nil,
         includeFields: [String] = [],
         excludeFields: [String] = [],
         extra: [String: [String]] = [:]
@@ -64,6 +66,7 @@ public struct BugQuery: Sendable, Hashable {
         self.userInvolved = userInvolved
         self.limit = limit
         self.offset = offset
+        self.order = order
         self.includeFields = includeFields
         self.excludeFields = excludeFields
         self.extra = extra
@@ -113,6 +116,9 @@ extension BugQuery {
         }
         if let offset {
             items.append(URLQueryItem(name: "offset", value: String(offset)))
+        }
+        if let order, !order.isEmpty {
+            items.append(URLQueryItem(name: "order", value: order))
         }
         if !includeFields.isEmpty {
             items.append(URLQueryItem(name: "include_fields", value: includeFields.joined(separator: ",")))

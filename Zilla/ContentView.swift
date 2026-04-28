@@ -154,6 +154,17 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
         case .priority: return "exclamationmark.triangle"
         }
     }
+
+    /// BMO REST `order` clause. `ordered` falls through to recent activity since
+    /// the user-defined order is reapplied client-side on top of the server result.
+    var bmoOrder: String {
+        switch self {
+        case .ordered, .recent: return "changeddate DESC"
+        case .newest: return "opendate DESC"
+        case .oldest: return "opendate ASC"
+        case .priority: return "priority,bug_id"
+        }
+    }
 }
 
 // MARK: - Workspace
@@ -1137,6 +1148,8 @@ struct BugListView: View {
     @State private var bugs: [Bug] = []
     @State private var totalMatches: Int?
     @State private var isLoading = false
+    @State private var isLoadingMore = false
+    @State private var canLoadMore = false
     @State private var loadError: String?
 
     private static let pageLimit = 50
@@ -1193,11 +1206,23 @@ struct BugListView: View {
                     let sorted = sortedBugs
                     ForEach(Array(sorted.enumerated()), id: \.element.id) { index, bug in
                         row(for: bug, index: index, displayed: sorted)
+                            .onAppear {
+                                if index >= sorted.count - 5 {
+                                    Task { await loadMore() }
+                                }
+                            }
                     }
-                    if let total = totalMatches, total > bugs.count {
-                        Text("Showing \(bugs.count) of \(total). Refine the search to narrow.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if isLoadingMore {
+                        HStack {
+                            Spacer()
+                            ProgressView().controlSize(.small)
+                            Spacer()
+                        }
+                    } else if canLoadMore {
+                        Button("Load more") {
+                            Task { await loadMore() }
+                        }
+                        .buttonStyle(.borderless)
                     }
                 }
             }
@@ -1224,6 +1249,7 @@ struct BugListView: View {
         .onChange(of: selection) { _, _ in
             bugs = []
             totalMatches = nil
+            canLoadMore = false
             loadError = nil
         }
     }
@@ -1283,46 +1309,19 @@ struct BugListView: View {
     }
 
     private var sortedBugs: [Bug] {
-        switch workspace.bugListSort {
-        case .ordered:
+        if workspace.bugListSort == .ordered {
             return orderedBugs
-        case .newest:
-            return bugs.sorted {
-                ($0.creationTime ?? .distantPast) > ($1.creationTime ?? .distantPast)
-            }
-        case .recent:
-            return bugs.sorted {
-                ($0.lastChangeTime ?? .distantPast) > ($1.lastChangeTime ?? .distantPast)
-            }
-        case .oldest:
-            return bugs.sorted {
-                ($0.creationTime ?? .distantFuture) < ($1.creationTime ?? .distantFuture)
-            }
-        case .priority:
-            return bugs.sorted { lhs, rhs in
-                let lhsClosed = isClosed(lhs)
-                let rhsClosed = isClosed(rhs)
-                if lhsClosed != rhsClosed { return !lhsClosed }
-                return priorityRank(lhs.priority) < priorityRank(rhs.priority)
-            }
         }
+        return bugs
     }
 
     private var orderedBugs: [Bug] {
-        guard let key = endpointKey else {
-            return bugs.sorted {
-                ($0.lastChangeTime ?? .distantPast) > ($1.lastChangeTime ?? .distantPast)
-            }
-        }
+        guard let key = endpointKey else { return bugs }
         var positions: [Bug.ID: Int] = [:]
         for entry in orderEntries where entry.endpointKey == key {
             positions[entry.bugId] = entry.position
         }
-        let unpositioned = bugs
-            .filter { positions[$0.id] == nil }
-            .sorted {
-                ($0.lastChangeTime ?? .distantPast) > ($1.lastChangeTime ?? .distantPast)
-            }
+        let unpositioned = bugs.filter { positions[$0.id] == nil }
         let positioned = bugs
             .filter { positions[$0.id] != nil }
             .sorted { (positions[$0.id] ?? 0) < (positions[$1.id] ?? 0) }
@@ -1350,21 +1349,6 @@ struct BugListView: View {
             .contextMenu {
                 addAsMetaMenu(for: bug)
             }
-    }
-
-    private func isClosed(_ bug: Bug) -> Bool {
-        ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
-    }
-
-    private func priorityRank(_ priority: String?) -> Int {
-        switch priority?.uppercased() {
-        case "P1": return 1
-        case "P2": return 2
-        case "P3": return 3
-        case "P4": return 4
-        case "P5": return 5
-        default: return Int.max
-        }
     }
 
     @ViewBuilder
@@ -1400,6 +1384,7 @@ struct BugListView: View {
         BugListLoadKey(
             selection: selection,
             search: workspace.searchText,
+            sort: workspace.bugListSort,
             refresh: workspace.bugListRefreshToken,
             signedIn: auth.isSignedIn
         )
@@ -1416,20 +1401,47 @@ struct BugListView: View {
         }
     }
 
+    private static let bugIncludeFields = [
+        "id", "summary", "status", "resolution", "product", "component",
+        "assigned_to", "priority", "severity", "keywords", "type",
+        "last_change_time", "creation_time",
+        "attachments.id", "attachments.content_type", "attachments.is_obsolete"
+    ]
+
+    private func makeQuery(offset: Int) -> BugQuery? {
+        guard let selection else { return nil }
+        var query = workspace.bugQuery(for: selection)
+        if let login = auth.currentUser?.name {
+            query = query.substitutingMe(with: login)
+        }
+        let trimmed = workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            query.quicksearch = trimmed
+        }
+        query.limit = Self.pageLimit
+        query.offset = offset
+        query.order = workspace.bugListSort.bmoOrder
+        query.includeFields = Self.bugIncludeFields
+        return query
+    }
+
     private func load() async {
         guard let selection else {
             bugs = []
             totalMatches = nil
+            canLoadMore = false
             return
         }
         if selection == .allDrafts {
             bugs = []
             totalMatches = nil
+            canLoadMore = false
             return
         }
         guard auth.isSignedIn else {
             bugs = []
             totalMatches = nil
+            canLoadMore = false
             loadError = nil
             return
         }
@@ -1440,21 +1452,7 @@ struct BugListView: View {
             return
         }
 
-        var query = workspace.bugQuery(for: selection)
-        if let login = auth.currentUser?.name {
-            query = query.substitutingMe(with: login)
-        }
-        let trimmed = workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            query.quicksearch = trimmed
-        }
-        query.limit = Self.pageLimit
-        query.includeFields = [
-            "id", "summary", "status", "resolution", "product", "component",
-            "assigned_to", "priority", "severity", "keywords", "type",
-            "last_change_time", "creation_time",
-            "attachments.id", "attachments.content_type", "attachments.is_obsolete"
-        ]
+        guard let query = makeQuery(offset: 0) else { return }
 
         isLoading = true
         workspace.isLoadingBugList = true
@@ -1468,19 +1466,49 @@ struct BugListView: View {
             let result = try await auth.client.searchBugs(query)
             bugs = result.bugs
             totalMatches = result.totalMatches
+            canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
         } catch is CancellationError {
             return
         } catch {
             loadError = error.localizedDescription
             bugs = []
             totalMatches = nil
+            canLoadMore = false
         }
+    }
+
+    private func loadMore() async {
+        guard !isLoading, !isLoadingMore, canLoadMore else { return }
+        guard let query = makeQuery(offset: bugs.count) else { return }
+
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        do {
+            let result = try await auth.client.searchBugs(query)
+            let existing = Set(bugs.map(\.id))
+            let appended = result.bugs.filter { !existing.contains($0.id) }
+            bugs.append(contentsOf: appended)
+            if let total = result.totalMatches { totalMatches = total }
+            canLoadMore = hasMore(loaded: bugs.count, fetched: result.bugs.count, total: result.totalMatches ?? totalMatches)
+        } catch is CancellationError {
+            return
+        } catch {
+            loadError = error.localizedDescription
+            canLoadMore = false
+        }
+    }
+
+    private func hasMore(loaded: Int, fetched: Int, total: Int?) -> Bool {
+        if let total { return loaded < total }
+        return fetched == Self.pageLimit
     }
 }
 
 private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
+    let sort: BugListSort
     let refresh: UUID
     let signedIn: Bool
 }
