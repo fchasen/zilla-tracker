@@ -14,7 +14,7 @@ public struct BugQuery: Sendable, Hashable {
     public var blocks: [Int]
     public var dependsOn: [Int]
     public var flagRequestee: String?
-    public var flagName: String?
+    public var flagNames: [String]
     public var changedAfter: Date?
     public var userInvolved: String?
     public var limit: Int?
@@ -37,7 +37,7 @@ public struct BugQuery: Sendable, Hashable {
         blocks: [Int] = [],
         dependsOn: [Int] = [],
         flagRequestee: String? = nil,
-        flagName: String? = nil,
+        flagNames: [String] = [],
         changedAfter: Date? = nil,
         userInvolved: String? = nil,
         limit: Int? = nil,
@@ -59,7 +59,7 @@ public struct BugQuery: Sendable, Hashable {
         self.blocks = blocks
         self.dependsOn = dependsOn
         self.flagRequestee = flagRequestee
-        self.flagName = flagName
+        self.flagNames = flagNames
         self.changedAfter = changedAfter
         self.userInvolved = userInvolved
         self.limit = limit
@@ -131,10 +131,10 @@ extension BugQuery {
             items.append(URLQueryItem(name: "v\(chartIndex)", value: flagRequestee))
             chartIndex += 1
         }
-        if let flagName {
+        if !flagNames.isEmpty {
             items.append(URLQueryItem(name: "f\(chartIndex)", value: "flagtypes.name"))
-            items.append(URLQueryItem(name: "o\(chartIndex)", value: "equals"))
-            items.append(URLQueryItem(name: "v\(chartIndex)", value: flagName))
+            items.append(URLQueryItem(name: "o\(chartIndex)", value: "anyexact"))
+            items.append(URLQueryItem(name: "v\(chartIndex)", value: flagNames.joined(separator: ",")))
             chartIndex += 1
         }
         if let userInvolved {
@@ -180,7 +180,7 @@ public extension BugQuery {
     }
 
     static var needsReviewFromMe: BugQuery {
-        BugQuery(flagRequestee: me, flagName: "review")
+        BugQuery(flagRequestee: me, flagNames: ["review", "needinfo"])
     }
 
     static func recentlyChanged(involving user: String, daysBack: Int = 7) -> BugQuery {

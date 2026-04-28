@@ -29,7 +29,7 @@ final class BugzillaKitTests: XCTestCase {
             flagRequestee: BugQuery.me,
             userInvolved: BugQuery.me
         )
-        q.flagName = "review"
+        q.flagNames = ["review"]
 
         let resolved = q.substitutingMe(with: "alice@example.com")
         XCTAssertEqual(resolved.assignedTo, ["alice@example.com"])
@@ -37,7 +37,7 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(resolved.cc, ["alice@example.com"])
         XCTAssertEqual(resolved.flagRequestee, "alice@example.com")
         XCTAssertEqual(resolved.userInvolved, "alice@example.com")
-        XCTAssertEqual(resolved.flagName, "review", "non-user fields untouched")
+        XCTAssertEqual(resolved.flagNames, ["review"], "non-user fields untouched")
     }
 
     func testSubstitutingMeNoOpWhenNoSentinel() {
