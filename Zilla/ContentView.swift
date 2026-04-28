@@ -137,6 +137,11 @@ enum SidebarSelection: Hashable {
     case metaBug(Int)
 }
 
+enum DetailRoute: Hashable {
+    case bug(Int)
+    case blockedBugs(metaBugID: Int, summary: String)
+}
+
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
     case ordered, newest, recent, oldest, priority
 
@@ -210,30 +215,21 @@ final class Workspace {
 
     var sidebarSelection: SidebarSelection? = .smart(.myBugs) {
         didSet {
-            if oldValue != sidebarSelection { activeRevisionID = nil }
+            if oldValue != sidebarSelection {
+                activeRevisionID = nil
+                detailPath = []
+            }
         }
-    }
-    var previousSidebarSelection: SidebarSelection?
-    var metaBugTitleHints: [Bug.ID: String] = [:]
-
-    func navigateToMetaBug(_ id: Bug.ID, summary: String? = nil) {
-        previousSidebarSelection = sidebarSelection
-        sidebarSelection = .metaBug(id)
-        if let summary, !summary.isEmpty {
-            metaBugTitleHints[id] = summary
-        }
-    }
-
-    func navigateBackFromMetaBug() {
-        guard let previous = previousSidebarSelection else { return }
-        sidebarSelection = previous
-        previousSidebarSelection = nil
     }
     var selectedBugID: Bug.ID? {
         didSet {
-            if oldValue != selectedBugID { activeRevisionID = nil }
+            if oldValue != selectedBugID {
+                activeRevisionID = nil
+                detailPath = []
+            }
         }
     }
+    var detailPath: [DetailRoute] = []
     var selectedDraftID: UUID?
     var activeRevisionID: Int?
     var bugzillaSettingsPresented: Bool = false
@@ -564,6 +560,22 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
+        @Bindable var workspace = workspace
+        NavigationStack(path: $workspace.detailPath) {
+            detailRoot
+                .navigationDestination(for: DetailRoute.self) { route in
+                    switch route {
+                    case .bug(let id):
+                        BugDetailView(bugID: id)
+                    case .blockedBugs(let metaID, let summary):
+                        BlockedBugsListView(metaBugID: metaID, metaBugSummary: summary)
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var detailRoot: some View {
         if let id = workspace.activeRevisionID {
             RevisionWebView(revisionID: id) {
                 workspace.activeRevisionID = nil
@@ -1254,11 +1266,6 @@ struct BugListView: View {
         selection == .allDrafts
     }
 
-    private var isMetaBug: Bool {
-        if case .metaBug = selection { return true }
-        return false
-    }
-
     private var endpointKey: String? {
         if case let .smart(endpoint) = selection {
             return "smart.\(endpoint.rawValue)"
@@ -1333,16 +1340,6 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
-            if isMetaBug, workspace.previousSidebarSelection != nil {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        workspace.navigateBackFromMetaBug()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                    }
-                    .help("Back to previous list")
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     onNewBug()
@@ -1350,16 +1347,6 @@ struct BugListView: View {
                     Label("New Bug", systemImage: "plus")
                 }
                 .help(newBugHelp)
-            }
-            if case let .metaBug(id) = selection {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        selectedBugID = id
-                    } label: {
-                        Label("Open Meta Bug #\(id)", systemImage: "square.and.pencil")
-                    }
-                    .help("Open the meta bug's details")
-                }
             }
             if !isAllDrafts && auth.isSignedIn {
                 ToolbarItem(placement: .primaryAction) {
@@ -1381,17 +1368,6 @@ struct BugListView: View {
             canLoadMore = false
             loadError = nil
         }
-        .onChange(of: selectedBugID) { _, newID in
-            guard let id = newID,
-                  let bug = bugs.first(where: { $0.id == id }),
-                  Self.isMetaSummary(bug.summary) else { return }
-            selectedBugID = nil
-            workspace.navigateToMetaBug(id, summary: bug.summary)
-        }
-    }
-
-    private static func isMetaSummary(_ summary: String) -> Bool {
-        summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     private var searchBinding: Binding<String> {
@@ -1538,9 +1514,6 @@ struct BugListView: View {
             if let meta = followedMetaBugs.first(where: { $0.bugId == id }),
                !meta.summary.isEmpty {
                 return meta.summary
-            }
-            if let hint = workspace.metaBugTitleHints[id], !hint.isEmpty {
-                return FollowedMetaBug.cleanedSummary(hint)
             }
             return "Meta \(id)"
         case .allDrafts: return "Drafts"
@@ -1763,6 +1736,76 @@ extension View {
     }
 }
 
+private struct BlockedBugsListView: View {
+    @Environment(AuthStore.self) private var auth
+    let metaBugID: Int
+    let metaBugSummary: String
+
+    @State private var bugs: [Bug] = []
+    @State private var isLoading = false
+    @State private var loadError: String?
+
+    var body: some View {
+        Group {
+            if isLoading && bugs.isEmpty {
+                ProgressView().controlSize(.large)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ContentUnavailableView(
+                    "Couldn't load bugs",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error)
+                )
+                .textSelection(.enabled)
+            } else if bugs.isEmpty {
+                ContentUnavailableView(
+                    "No blocked bugs",
+                    systemImage: "tray",
+                    description: Text("Nothing is currently blocked by #\(metaBugID).")
+                )
+            } else {
+                List(bugs) { bug in
+                    NavigationLink(value: DetailRoute.bug(bug.id)) {
+                        BugRow(bug: bug)
+                    }
+                }
+            }
+        }
+        .navigationTitle(FollowedMetaBug.cleanedSummary(metaBugSummary))
+        .task(id: metaBugID) { await load() }
+    }
+
+    private static let includeFields = [
+        "id", "summary", "status", "resolution", "product", "component",
+        "assigned_to", "priority", "severity", "keywords", "type",
+        "last_change_time", "creation_time",
+        "attachments.id", "attachments.content_type", "attachments.is_obsolete"
+    ]
+
+    private func load() async {
+        guard auth.isSignedIn else { return }
+        isLoading = true
+        loadError = nil
+        defer { isLoading = false }
+
+        var query = BugQuery.blockedBy(metaBug: metaBugID)
+        if let login = auth.currentUser?.name {
+            query = query.substitutingMe(with: login)
+        }
+        query.limit = 100
+        query.includeFields = Self.includeFields
+
+        do {
+            let result = try await auth.client.searchBugs(query)
+            bugs = result.bugs
+        } catch is CancellationError {
+            return
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+}
+
 private struct BugRow: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
     let bug: Bug
@@ -1789,17 +1832,6 @@ private struct BugRow: View {
                 .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            if isMeta {
-                VStack {
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                }
-                .padding(.horizontal, 6)
-            }
         }
         .padding(.vertical, 2)
     }

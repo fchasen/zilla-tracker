@@ -93,6 +93,14 @@ struct BugDetailView: View {
             }
         }
         .toolbar {
+            if let bug, BugDetailView.isMeta(bug) {
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink(value: DetailRoute.blockedBugs(metaBugID: bug.id, summary: bug.summary)) {
+                        Label("Blocked Bugs", systemImage: "list.bullet.rectangle")
+                    }
+                    .help("Show bugs blocked by this meta bug")
+                }
+            }
             if let bug {
                 if !BugStatuses.isClosed(bug.status) {
                     ToolbarItem(placement: .primaryAction) {
@@ -206,6 +214,10 @@ struct BugDetailView: View {
         if let error = await workspace.applyBugUpdate(update, using: auth.client) {
             updateError = error.localizedDescription
         }
+    }
+
+    static func isMeta(_ bug: Bug) -> Bool {
+        bug.summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     private func reload() async {
