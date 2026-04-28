@@ -549,26 +549,20 @@ private struct CommentComposer: View {
     let error: String?
     let onPost: () -> Void
 
+    @State private var showPreview = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Add a comment")
                     .font(.headline)
                 Spacer()
-                formattingBar
+                if !showPreview {
+                    formattingBar
+                }
             }
 
-            TextEditor(text: $text, selection: $selection)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 96)
-                .padding(8)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                )
-                .disabled(isPosting)
+            editorOrPreview
 
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
@@ -577,9 +571,16 @@ private struct CommentComposer: View {
             }
 
             HStack {
-                Text("Markdown · ⌘↩ to post")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button {
+                    showPreview.toggle()
+                } label: {
+                    Label(
+                        showPreview ? "Edit" : "Preview",
+                        systemImage: showPreview ? "pencil" : "eye"
+                    )
+                }
+                .buttonStyle(.borderless)
+                .disabled(isPosting || (trimmedIsEmpty && !showPreview))
                 Spacer()
                 Button(action: onPost) {
                     if isPosting {
@@ -590,8 +591,46 @@ private struct CommentComposer: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return, modifiers: .command)
+                .help("Post comment (⌘↩)")
                 .disabled(trimmedIsEmpty || isPosting)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var editorOrPreview: some View {
+        if showPreview {
+            ScrollView {
+                Group {
+                    if trimmedIsEmpty {
+                        Text("Nothing to preview yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        StructuredText(markdown: text)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(minHeight: 96)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+            )
+        } else {
+            TextEditor(text: $text, selection: $selection)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.hidden)
+                .frame(minHeight: 96)
+                .padding(8)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                )
+                .disabled(isPosting)
         }
     }
 
