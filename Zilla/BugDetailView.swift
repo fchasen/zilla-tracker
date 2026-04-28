@@ -6,20 +6,38 @@
 import SwiftUI
 import BugzillaKit
 import Textual
-#if canImport(AppKit)
-import AppKit
-#elseif canImport(UIKit)
-import UIKit
-#endif
 
-@MainActor
-private func copyToPasteboard(_ value: String) {
-    #if canImport(AppKit)
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(value, forType: .string)
-    #elseif canImport(UIKit)
-    UIPasteboard.general.string = value
-    #endif
+struct BugStatusOption: Hashable {
+    let code: String
+    let label: String
+}
+
+enum BugStatuses {
+    static let open: [BugStatusOption] = [
+        .init(code: "NEW", label: "New"),
+        .init(code: "ASSIGNED", label: "Assigned"),
+        .init(code: "IN_PROGRESS", label: "In Progress")
+    ]
+
+    static let resolutions: [BugStatusOption] = [
+        .init(code: "FIXED", label: "Fixed"),
+        .init(code: "INVALID", label: "Invalid"),
+        .init(code: "WORKSFORME", label: "Works for Me"),
+        .init(code: "INCOMPLETE", label: "Incomplete"),
+        .init(code: "WONTFIX", label: "Won't Fix")
+    ]
+
+    static let closedStatuses: Set<String> = ["RESOLVED", "VERIFIED", "CLOSED"]
+
+    static func isClosed(_ status: String) -> Bool {
+        closedStatuses.contains(status.uppercased())
+    }
+
+    static func isUnassigned(_ assignee: String?) -> Bool {
+        guard let raw = assignee?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return true }
+        return raw.lowercased().contains("nobody")
+    }
 }
 
 struct BugDetailView: View {
@@ -76,7 +94,7 @@ struct BugDetailView: View {
         }
         .toolbar {
             if let bug {
-                if !isClosed(bug) {
+                if !BugStatuses.isClosed(bug.status) {
                     ToolbarItem(placement: .primaryAction) {
                         statusMenu(for: bug)
                     }
@@ -120,18 +138,26 @@ struct BugDetailView: View {
                 )) }
             }
         }
+        .onChange(of: workspace.dupePromptRequested) { _, requested in
+            if requested {
+                workspace.dupePromptRequested = false
+                if workspace.loadedBug != nil, !BugStatuses.isClosed(workspace.loadedBug?.status ?? "") {
+                    dupePrompt = DupePromptIdentifier()
+                }
+            }
+        }
         .task(id: bugID) { await reload() }
     }
 
     @ViewBuilder
     private func resolveMenu(for bug: Bug) -> some View {
         Menu {
-            if isClosed(bug) {
+            if BugStatuses.isClosed(bug.status) {
                 Button("Reopen") {
                     Task { await applyUpdate(BugUpdate(status: "REOPENED", resolution: "")) }
                 }
             } else {
-                ForEach(Self.resolveOptions, id: \.code) { option in
+                ForEach(BugStatuses.resolutions, id: \.code) { option in
                     Button("Resolve as \(option.label)") {
                         Task { await applyUpdate(BugUpdate(status: "RESOLVED", resolution: option.code)) }
                     }
@@ -149,7 +175,7 @@ struct BugDetailView: View {
     @ViewBuilder
     private func statusMenu(for bug: Bug) -> some View {
         Menu {
-            ForEach(Self.statusOptions, id: \.code) { option in
+            ForEach(BugStatuses.open, id: \.code) { option in
                 Button {
                     Task { await applyUpdate(BugUpdate(status: option.code)) }
                 } label: {
@@ -160,7 +186,7 @@ struct BugDetailView: View {
                     }
                 }
             }
-            if isUnassigned(bug), let me = auth.currentUser?.name {
+            if BugStatuses.isUnassigned(bug.assignedTo), let me = auth.currentUser?.name {
                 Divider()
                 Button("Take") {
                     Task { await applyUpdate(BugUpdate(assignedTo: me)) }
@@ -175,30 +201,6 @@ struct BugDetailView: View {
         }
         .disabled(workspace.isUpdatingBug)
     }
-
-    private func isClosed(_ bug: Bug) -> Bool {
-        ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
-    }
-
-    private func isUnassigned(_ bug: Bug) -> Bool {
-        guard let raw = bug.assignedTo?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else { return true }
-        return raw.lowercased().contains("nobody")
-    }
-
-    private static let resolveOptions: [(code: String, label: String)] = [
-        ("FIXED", "Fixed"),
-        ("INVALID", "Invalid"),
-        ("WORKSFORME", "Works for Me"),
-        ("INCOMPLETE", "Incomplete"),
-        ("WONTFIX", "Won't Fix")
-    ]
-
-    private static let statusOptions: [(code: String, label: String)] = [
-        ("NEW", "New"),
-        ("ASSIGNED", "Assigned"),
-        ("IN_PROGRESS", "In Progress")
-    ]
 
     private func applyUpdate(_ update: BugUpdate) async {
         if let error = await workspace.applyBugUpdate(update, using: auth.client) {

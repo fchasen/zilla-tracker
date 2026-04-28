@@ -63,10 +63,9 @@ struct RevisionListView: View {
                 }
                 .help("Refresh")
                 .disabled(isLoading || !phab.isSignedIn)
-                .keyboardShortcut("r", modifiers: .command)
             }
         }
-        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn)) {
+        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, tick: workspace.revisionListRefreshToken)) {
             await load()
         }
     }
@@ -135,6 +134,7 @@ struct RevisionListView: View {
     private struct TaskKey: Hashable {
         let list: ReviewList
         let signedIn: Bool
+        let tick: UUID
     }
 }
 

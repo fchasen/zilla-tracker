@@ -174,6 +174,21 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Type size
+
+enum TypeSizeSettings {
+    static let storageKey = "dynamicTypeSizeIndex"
+    static let options: [DynamicTypeSize] = [
+        .xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge,
+        .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5
+    ]
+    static let defaultIndex = 3
+
+    static func clamp(_ index: Int) -> Int {
+        min(max(index, 0), options.count - 1)
+    }
+}
+
 // MARK: - Workspace
 
 struct DependencyMetadata: Sendable, Hashable {
@@ -223,10 +238,15 @@ final class Workspace {
     var activeRevisionID: Int?
     var bugzillaSettingsPresented: Bool = false
     var phabricatorSettingsPresented: Bool = false
+    var quickSearchPresented: Bool = false
+    var lastUpdateError: String?
+    var dupePromptRequested: Bool = false
+    var newDraftRequested: Bool = false
     var searchText: String = ""
     var smartSorts: [SmartEndpoint: BugListSort] = [:]
     var componentSort: BugListSort = .priority
     var bugListRefreshToken: UUID = UUID()
+    var revisionListRefreshToken: UUID = UUID()
 
     var bugListSort: BugListSort {
         get {
@@ -463,22 +483,10 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var followedMetaBugs: [FollowedMetaBug]
 
-    @State private var quickSearchPresented = false
-    #if os(macOS)
-    @State private var quickSearchMonitor: Any?
-    #endif
-
-    @AppStorage("dynamicTypeSizeIndex") private var typeSizeIndex: Int = Self.defaultTypeSizeIndex
-
-    private static let typeSizeOptions: [DynamicTypeSize] = [
-        .xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge,
-        .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5
-    ]
-    private static let defaultTypeSizeIndex = 3
+    @AppStorage(TypeSizeSettings.storageKey) private var typeSizeIndex: Int = TypeSizeSettings.defaultIndex
 
     private var currentTypeSize: DynamicTypeSize {
-        let clamped = min(max(typeSizeIndex, 0), Self.typeSizeOptions.count - 1)
-        return Self.typeSizeOptions[clamped]
+        TypeSizeSettings.options[TypeSizeSettings.clamp(typeSizeIndex)]
     }
 
     var body: some View {
@@ -492,7 +500,6 @@ struct ContentView: View {
             detailColumn
         }
         .dynamicTypeSize(currentTypeSize)
-        .background(fontSizeShortcuts)
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
@@ -503,7 +510,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.phabricatorSettingsPresented) {
             PhabricatorSettingsView()
         }
-        .sheet(isPresented: $quickSearchPresented) {
+        .sheet(isPresented: $workspace.quickSearchPresented) {
             QuickSearchSheet { bugID in
                 workspace.selectedBugID = bugID
             }
@@ -517,6 +524,15 @@ struct ContentView: View {
             actions: { Button("OK") { workspace.lastLinkError = nil } },
             message: { Text(workspace.lastLinkError ?? "") }
         )
+        .alert(
+            "Couldn't update bug",
+            isPresented: Binding(
+                get: { workspace.lastUpdateError != nil },
+                set: { if !$0 { workspace.lastUpdateError = nil } }
+            ),
+            actions: { Button("OK") { workspace.lastUpdateError = nil } },
+            message: { Text(workspace.lastUpdateError ?? "") }
+        )
         .task(id: auth.isSignedIn) {
             if auth.isSignedIn, workspace.products.isEmpty {
                 await workspace.loadProducts(using: auth.client)
@@ -524,60 +540,12 @@ struct ContentView: View {
                 workspace.bugzillaSettingsPresented = true
             }
         }
-        #if os(macOS)
-        .onAppear { installQuickSearchMonitor() }
-        .onDisappear { removeQuickSearchMonitor() }
-        #endif
-    }
-
-    #if os(macOS)
-    private func installQuickSearchMonitor() {
-        guard quickSearchMonitor == nil else { return }
-        quickSearchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard !quickSearchPresented else { return event }
-            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard mods == .shift, event.charactersIgnoringModifiers == " " else {
-                return event
+        .onChange(of: workspace.newDraftRequested) { _, requested in
+            if requested {
+                workspace.newDraftRequested = false
+                createDraft()
             }
-            if isEditingText() { return event }
-            DispatchQueue.main.async {
-                quickSearchPresented = true
-            }
-            return nil
         }
-    }
-
-    private func removeQuickSearchMonitor() {
-        if let monitor = quickSearchMonitor {
-            NSEvent.removeMonitor(monitor)
-            quickSearchMonitor = nil
-        }
-    }
-
-    private func isEditingText() -> Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
-        if responder is NSTextView { return true }
-        if let text = responder as? NSText, text.isEditable { return true }
-        return false
-    }
-    #endif
-
-    private var fontSizeShortcuts: some View {
-        Group {
-            Button("Increase Font Size") { adjustTypeSize(by: 1) }
-                .keyboardShortcut("+", modifiers: .command)
-            Button("Increase Font Size") { adjustTypeSize(by: 1) }
-                .keyboardShortcut("=", modifiers: .command)
-            Button("Decrease Font Size") { adjustTypeSize(by: -1) }
-                .keyboardShortcut("-", modifiers: .command)
-        }
-        .hidden()
-        .accessibilityHidden(true)
-    }
-
-    private func adjustTypeSize(by delta: Int) {
-        let maxIndex = Self.typeSizeOptions.count - 1
-        typeSizeIndex = min(max(typeSizeIndex + delta, 0), maxIndex)
     }
 
     @ViewBuilder
@@ -1464,7 +1432,6 @@ struct BugListView: View {
         }
         .help("Refresh")
         .disabled(isLoading)
-        .keyboardShortcut("r", modifiers: .command)
     }
 
     private var sortMenu: some View {
