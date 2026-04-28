@@ -1416,6 +1416,17 @@ struct BugListView: View {
             canLoadMore = false
             loadError = nil
         }
+        .onChange(of: selectedBugID) { _, newID in
+            guard let id = newID,
+                  let bug = bugs.first(where: { $0.id == id }),
+                  Self.isMetaSummary(bug.summary) else { return }
+            selectedBugID = nil
+            workspace.navigateToMetaBug(id)
+        }
+    }
+
+    private static func isMetaSummary(_ summary: String) -> Bool {
+        summary.range(of: #"^\s*\[meta\]"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     private var searchBinding: Binding<String> {
@@ -1787,25 +1798,9 @@ extension View {
 
 private struct BugRow: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
-    @Environment(Workspace.self) private var workspace
     let bug: Bug
 
     var body: some View {
-        if isMeta {
-            Button {
-                workspace.navigateToMetaBug(bug.id)
-            } label: {
-                rowContent
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .help("Show bugs blocked by #\(bug.id)")
-        } else {
-            rowContent
-        }
-    }
-
-    private var rowContent: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: statusIcon)
                 .foregroundStyle(statusColor)
