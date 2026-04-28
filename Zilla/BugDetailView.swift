@@ -219,10 +219,7 @@ private struct BugContent: View {
                         .foregroundStyle(.orange)
                 }
 
-                if !comments.isEmpty {
-                    Divider()
-                    BugCommentsSection(comments: comments)
-                }
+                BugCommentsSection(comments: comments)
 
                 Divider()
                 CommentComposer(
@@ -371,11 +368,18 @@ private struct BugCommentsSection: View {
     let comments: [Comment]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Comments")
-                .font(.headline)
-            ForEach(comments) { comment in
-                CommentBlock(comment: comment)
+        let visible = comments.filter {
+            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        if !visible.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Divider()
+                Text("Comments")
+                    .font(.headline)
+                ForEach(visible) { comment in
+                    CommentBlock(comment: comment)
+                }
             }
         }
     }
