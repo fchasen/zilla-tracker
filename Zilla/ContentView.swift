@@ -115,7 +115,7 @@ final class Workspace {
     var sidebarSelection: SidebarSelection? = .smart(.myBugs)
     var selectedBugID: Bug.ID?
     var searchText: String = ""
-    var bugListSort: BugListSort = .newest
+    var bugListSort: BugListSort = .priority
     var bugListRefreshToken: UUID = UUID()
 
     // Active bug (loaded once per selection; shared with the inspector).
@@ -637,10 +637,17 @@ struct BugListView: View {
                 ($0.creationTime ?? .distantFuture) < ($1.creationTime ?? .distantFuture)
             }
         case .priority:
-            return bugs.sorted {
-                priorityRank($0.priority) < priorityRank($1.priority)
+            return bugs.sorted { lhs, rhs in
+                let lhsClosed = isClosed(lhs)
+                let rhsClosed = isClosed(rhs)
+                if lhsClosed != rhsClosed { return !lhsClosed }
+                return priorityRank(lhs.priority) < priorityRank(rhs.priority)
             }
         }
+    }
+
+    private func isClosed(_ bug: Bug) -> Bool {
+        ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
     }
 
     private func priorityRank(_ priority: String?) -> Int {
