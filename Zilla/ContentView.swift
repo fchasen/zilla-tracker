@@ -344,7 +344,7 @@ private struct FollowedMetaBugRow: View {
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 1) {
-                Text(meta.summary).lineLimit(1)
+                Text(FollowedMetaBug.cleanedSummary(meta.summary)).lineLimit(1)
                 Text(verbatim: "#\(meta.bugId)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
