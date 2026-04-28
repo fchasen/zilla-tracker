@@ -58,6 +58,7 @@ struct PhabricatorSettingsView: View {
                 Text(error)
                     .font(.callout)
                     .foregroundStyle(.red)
+                    .textSelection(.enabled)
             }
 
             HStack {

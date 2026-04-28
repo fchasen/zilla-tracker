@@ -30,6 +30,7 @@ struct RevisionListView: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(error)
                 )
+                .textSelection(.enabled)
             } else if revisions.isEmpty {
                 ContentUnavailableView(
                     "No revisions",
