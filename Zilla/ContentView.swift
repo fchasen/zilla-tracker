@@ -122,12 +122,13 @@ enum SidebarSelection: Hashable {
 }
 
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
-    case newest, recent, oldest, priority
+    case ordered, newest, recent, oldest, priority
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
+        case .ordered: return "Ordered"
         case .newest: return "Newest"
         case .recent: return "Recent"
         case .oldest: return "Oldest"
@@ -137,6 +138,7 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .ordered: return "list.number"
         case .newest: return "arrow.down.circle"
         case .recent: return "clock"
         case .oldest: return "arrow.up.circle"
@@ -178,21 +180,30 @@ final class Workspace {
     var activeRevisionID: Int?
     var phabricatorSettingsPresented: Bool = false
     var searchText: String = ""
-    var smartSort: BugListSort = .recent
+    var smartSorts: [SmartEndpoint: BugListSort] = [:]
     var componentSort: BugListSort = .priority
     var bugListRefreshToken: UUID = UUID()
 
     var bugListSort: BugListSort {
         get {
-            if case .smart = sidebarSelection { return smartSort }
+            if case let .smart(endpoint) = sidebarSelection {
+                return smartSorts[endpoint] ?? Self.defaultSort(for: endpoint)
+            }
             return componentSort
         }
         set {
-            if case .smart = sidebarSelection {
-                smartSort = newValue
+            if case let .smart(endpoint) = sidebarSelection {
+                smartSorts[endpoint] = newValue
             } else {
                 componentSort = newValue
             }
+        }
+    }
+
+    private static func defaultSort(for endpoint: SmartEndpoint) -> BugListSort {
+        switch endpoint {
+        case .myBugs: return .ordered
+        default: return .recent
         }
     }
 
@@ -1093,6 +1104,7 @@ struct BugListView: View {
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
+    @Query private var orderEntries: [BugOrderEntry]
 
     let selection: SidebarSelection?
     @Binding var selectedBugID: Bug.ID?
@@ -1106,6 +1118,21 @@ struct BugListView: View {
 
     private var isAllDrafts: Bool {
         selection == .allDrafts
+    }
+
+    private var endpointKey: String? {
+        if case let .smart(endpoint) = selection {
+            return "smart.\(endpoint.rawValue)"
+        }
+        return nil
+    }
+
+    private var supportsOrdered: Bool {
+        endpointKey != nil
+    }
+
+    private var isOrdered: Bool {
+        supportsOrdered && workspace.bugListSort == .ordered
     }
 
     var body: some View {
@@ -1136,18 +1163,27 @@ struct BugListView: View {
                 )
             } else {
                 List(selection: $selectedBugID) {
-                    ForEach(sortedBugs) { bug in
-                        BugRow(bug: bug)
-                            .tag(Optional(bug.id))
-                            .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
-                                Label("#\(bug.id) \(bug.summary)", systemImage: "ant")
-                                    .padding(8)
-                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                            }
-                            .bugBlockDrop(target: bug.id)
-                            .contextMenu {
-                                addAsMetaMenu(for: bug)
-                            }
+                    if isOrdered, let key = endpointKey {
+                        let sorted = sortedBugs
+                        ReorderZone(
+                            endpointKey: key,
+                            zoneIndex: 0,
+                            displayed: sorted,
+                            entries: orderEntries
+                        )
+                        ForEach(Array(sorted.enumerated()), id: \.element.id) { index, bug in
+                            row(for: bug)
+                            ReorderZone(
+                                endpointKey: key,
+                                zoneIndex: index + 1,
+                                displayed: sorted,
+                                entries: orderEntries
+                            )
+                        }
+                    } else {
+                        ForEach(sortedBugs) { bug in
+                            row(for: bug)
+                        }
                     }
                     if let total = totalMatches, total > bugs.count {
                         Text("Showing \(bugs.count) of \(total). Refine the search to narrow.")
@@ -1183,6 +1219,21 @@ struct BugListView: View {
         }
     }
 
+    @ViewBuilder
+    private func row(for bug: Bug) -> some View {
+        BugRow(bug: bug)
+            .tag(Optional(bug.id))
+            .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
+                Label("#\(bug.id) \(bug.summary)", systemImage: "ant")
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .bugBlockDrop(target: bug.id)
+            .contextMenu {
+                addAsMetaMenu(for: bug)
+            }
+    }
+
     private var searchBinding: Binding<String> {
         @Bindable var workspace = workspace
         return $workspace.searchText
@@ -1207,7 +1258,7 @@ struct BugListView: View {
         @Bindable var workspace = workspace
         return Menu {
             Picker(selection: $workspace.bugListSort) {
-                ForEach(BugListSort.allCases) { option in
+                ForEach(availableSorts) { option in
                     Label(option.label, systemImage: option.systemImage).tag(option)
                 }
             } label: {
@@ -1220,8 +1271,14 @@ struct BugListView: View {
         .help("Sort bug list")
     }
 
+    private var availableSorts: [BugListSort] {
+        BugListSort.allCases.filter { $0 != .ordered || supportsOrdered }
+    }
+
     private var sortedBugs: [Bug] {
         switch workspace.bugListSort {
+        case .ordered:
+            return orderedBugs
         case .newest:
             return bugs.sorted {
                 ($0.creationTime ?? .distantPast) > ($1.creationTime ?? .distantPast)
@@ -1242,6 +1299,27 @@ struct BugListView: View {
                 return priorityRank(lhs.priority) < priorityRank(rhs.priority)
             }
         }
+    }
+
+    private var orderedBugs: [Bug] {
+        guard let key = endpointKey else {
+            return bugs.sorted {
+                ($0.lastChangeTime ?? .distantPast) > ($1.lastChangeTime ?? .distantPast)
+            }
+        }
+        var positions: [Bug.ID: Int] = [:]
+        for entry in orderEntries where entry.endpointKey == key {
+            positions[entry.bugId] = entry.position
+        }
+        let unpositioned = bugs
+            .filter { positions[$0.id] == nil }
+            .sorted {
+                ($0.lastChangeTime ?? .distantPast) > ($1.lastChangeTime ?? .distantPast)
+            }
+        let positioned = bugs
+            .filter { positions[$0.id] != nil }
+            .sorted { (positions[$0.id] ?? 0) < (positions[$1.id] ?? 0) }
+        return unpositioned + positioned
     }
 
     private func isClosed(_ bug: Bug) -> Bool {
@@ -1367,6 +1445,82 @@ private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
     let refresh: UUID
+}
+
+private struct ReorderZone: View {
+    @Environment(\.modelContext) private var modelContext
+
+    let endpointKey: String
+    let zoneIndex: Int
+    let displayed: [Bug]
+    let entries: [BugOrderEntry]
+
+    @State private var isTargeted = false
+
+    var body: some View {
+        Color.clear
+            .frame(height: 6)
+            .overlay(alignment: .center) {
+                if isTargeted {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
+                        .padding(.horizontal, 4)
+                }
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .selectionDisabled()
+            .dropDestination(for: BugTransfer.self) { transfers, _ in
+                guard let transfer = transfers.first else { return false }
+                reorder(bugID: transfer.id)
+                return true
+            } isTargeted: { isTargeted = $0 }
+    }
+
+    private func reorder(bugID: Bug.ID) {
+        let removeIdx = displayed.firstIndex(where: { $0.id == bugID })
+        var newOrder = displayed
+        if let idx = removeIdx {
+            newOrder.remove(at: idx)
+        }
+        let insertIdx: Int
+        if let removeIdx, removeIdx < zoneIndex {
+            insertIdx = max(0, zoneIndex - 1)
+        } else {
+            insertIdx = min(zoneIndex, newOrder.count)
+        }
+        guard let bug = displayed.first(where: { $0.id == bugID }) else { return }
+        if let removeIdx, removeIdx == insertIdx {
+            return
+        }
+        newOrder.insert(bug, at: insertIdx)
+
+        let preexisting: Set<Bug.ID> = Set(
+            entries.filter { $0.endpointKey == endpointKey }.map(\.bugId)
+        )
+        let firstManualIdx = newOrder.firstIndex { $0.id == bugID || preexisting.contains($0.id) }
+            ?? newOrder.count
+
+        for i in firstManualIdx..<newOrder.count {
+            let candidate = newOrder[i]
+            let position = i - firstManualIdx
+            if let entry = entries.first(where: {
+                $0.endpointKey == endpointKey && $0.bugId == candidate.id
+            }) {
+                if entry.position != position {
+                    entry.position = position
+                }
+            } else {
+                modelContext.insert(BugOrderEntry(
+                    endpointKey: endpointKey,
+                    bugId: candidate.id,
+                    position: position
+                ))
+            }
+        }
+        try? modelContext.save()
+    }
 }
 
 private struct BugRow: View {

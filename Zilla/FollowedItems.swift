@@ -55,3 +55,16 @@ final class FollowedMetaBug {
         return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+@Model
+final class BugOrderEntry {
+    var endpointKey: String = ""
+    var bugId: Int = 0
+    var position: Int = 0
+
+    init(endpointKey: String, bugId: Int, position: Int) {
+        self.endpointKey = endpointKey
+        self.bugId = bugId
+        self.position = position
+    }
+}
