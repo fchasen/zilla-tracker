@@ -1220,6 +1220,7 @@ struct BugListView: View {
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
     @Query private var orderEntries: [BugOrderEntry]
+    @Query private var followedMetaBugs: [FollowedMetaBug]
 
     let selection: SidebarSelection?
     @Binding var selectedBugID: Bug.ID?
@@ -1484,7 +1485,12 @@ struct BugListView: View {
         switch selection {
         case .smart(let s): return s.title
         case .component(let ref): return "\(ref.product) :: \(ref.component)"
-        case .metaBug(let id): return "Meta \(id)"
+        case .metaBug(let id):
+            if let meta = followedMetaBugs.first(where: { $0.bugId == id }),
+               !meta.summary.isEmpty {
+                return meta.summary
+            }
+            return "Meta \(id)"
         case .allDrafts: return "Drafts"
         case .review(let r): return r.title
         }
