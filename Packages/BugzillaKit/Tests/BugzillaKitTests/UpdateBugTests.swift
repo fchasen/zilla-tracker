@@ -85,6 +85,27 @@ final class UpdateBugTests: XCTestCase {
         )
     }
 
+    func testUpdateSummaryEncodesField() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/rest/bug/1234567")
+            XCTAssertEqual(request.httpMethod, "PUT")
+
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["summary"] as? String, "Tab bar disappears in private windows")
+            XCTAssertNil(json["status"])
+            XCTAssertNil(json["resolution"])
+
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(
+            id: 1234567,
+            BugUpdate(summary: "Tab bar disappears in private windows")
+        )
+    }
+
     func testEmptyUpdateOmitsAllFields() async throws {
         MockURLProtocol.handler = { request in
             let body = request.bodyData ?? Data()

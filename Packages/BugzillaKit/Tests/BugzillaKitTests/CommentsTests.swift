@@ -100,6 +100,43 @@ final class CommentsTests: XCTestCase {
         _ = try await client.addComment(bugID: 1, text: "secret", isPrivate: true)
     }
 
+    func testUpdateCommentSendsNewComment() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/rest/bug/1/comment/42")
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["new_comment"] as? String, "Updated description.")
+            XCTAssertEqual(json["is_markdown"] as? Bool, true)
+
+            let responseBody = #"{"comments":{"42":{"id":42}}}"#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 200), responseBody)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        try await client.updateComment(bugID: 1, commentID: 42, newText: "Updated description.")
+    }
+
+    func testUpdateCommentSurfacesPermissionError() async {
+        MockURLProtocol.handler = { request in
+            let body = #"{"error":true,"code":115,"message":"You are not allowed to edit this comment"}"#
+                .data(using: .utf8)!
+            return (httpResponse(for: request, status: 403), body)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        do {
+            try await client.updateComment(bugID: 1, commentID: 42, newText: "x")
+            XCTFail("Expected error")
+        } catch BugzillaError.api(let code, _) {
+            XCTAssertEqual(code, 115)
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+
     func testAddCommentSurfacesApiError() async {
         MockURLProtocol.handler = { request in
             let body = #"{"error":true,"code":105,"message":"You did not specify a comment"}"#.data(using: .utf8)!

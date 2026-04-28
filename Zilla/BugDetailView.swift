@@ -252,14 +252,14 @@ private struct BugContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                BugHeader(bug: bug)
+                BugHeader(bug: bug, onUpdate: onUpdate)
                 if let loadError {
                     Label(loadError, systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
                 if let description = descriptionComment {
-                    DescriptionBlock(comment: description, attachments: bug.attachments)
+                    DescriptionBlock(bug: bug, comment: description, attachments: bug.attachments)
                 }
                 if !phabricatorPatches.isEmpty {
                     PhabricatorSection(patches: phabricatorPatches)
@@ -339,8 +339,13 @@ private func attachmentURL(_ attachment: BugzillaKit.Attachment) -> URL? {
 
 private struct BugHeader: View {
     let bug: Bug
+    let onUpdate: (BugUpdate) -> Void
     @Environment(\.openURL) private var openURL
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
     @State private var didCopy = false
+    @State private var editedSummary: String = ""
+    @FocusState private var summaryFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -395,10 +400,66 @@ private struct BugHeader: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .bugBlockDrop(target: bug.id)
-            Text(bug.summary)
-                .font(.title2)
-                .textSelection(.enabled)
+            if isReporter {
+                TextField("Summary", text: $editedSummary)
+                    .textFieldStyle(.plain)
+                    .font(.title2)
+                    .focused($summaryFocused)
+                    .lineLimit(1...3)
+                    .accessibilityLabel("Bug summary")
+                    .accessibilityHint("Press Return to save, Escape to cancel.")
+                    .onSubmit { commitSummary() }
+                    .onKeyPress(.escape) {
+                        revertSummary()
+                        summaryFocused = false
+                        return .handled
+                    }
+                    .onChange(of: summaryFocused) { _, focused in
+                        if !focused { commitSummary() }
+                    }
+                    .onAppear { editedSummary = bug.summary }
+                    .onChange(of: bug.id) { _, _ in
+                        revertSummary()
+                        summaryFocused = false
+                    }
+                    .onChange(of: bug.summary) { _, new in
+                        guard !summaryFocused, !workspace.isUpdatingBug else { return }
+                        editedSummary = new
+                    }
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(
+                                Color.secondary.opacity(summaryFocused ? 0.35 : 0),
+                                lineWidth: 1
+                            )
+                    )
+            } else {
+                Text(bug.summary)
+                    .font(.title2)
+                    .textSelection(.enabled)
+            }
         }
+    }
+
+    private var isReporter: Bool {
+        guard let me = auth.currentUser?.name else { return false }
+        return bug.creator == me || bug.reporter == me
+    }
+
+    private func revertSummary() {
+        editedSummary = bug.summary
+    }
+
+    private func commitSummary() {
+        let trimmed = editedSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            revertSummary()
+            return
+        }
+        guard trimmed != bug.summary else { return }
+        onUpdate(BugUpdate(summary: trimmed))
     }
 
     private var displayPriority: String? {
@@ -1462,8 +1523,16 @@ private struct BugCommentsSection: View {
 }
 
 private struct DescriptionBlock: View {
+    let bug: Bug
     let comment: Comment
     let attachments: [BugzillaKit.Attachment]
+
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+    @State private var isEditing = false
+    @State private var editedText = ""
+    @State private var editorSelection: TextSelection?
+    @State private var saveError: String?
 
     var body: some View {
         let stripped = stripAttachmentHeader(comment.text, hasAttachment: comment.attachmentId != nil)
@@ -1473,13 +1542,55 @@ private struct DescriptionBlock: View {
         if !stripped.isEmpty || attachment != nil {
             VStack(alignment: .leading, spacing: 10) {
                 Divider()
-                Text("Description")
-                    .font(.headline)
+                HStack {
+                    Text("Description")
+                        .font(.headline)
+                    Spacer()
+                    if isReporter, !isEditing {
+                        Button {
+                            editedText = comment.text
+                            saveError = nil
+                            isEditing = true
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                                .labelStyle(.iconOnly)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Edit description")
+                    }
+                }
                 VStack(alignment: .leading, spacing: 10) {
                     if let attachment, isImageAttachment(attachment) {
                         AttachmentImagePreview(attachment: attachment)
                     }
-                    if !stripped.isEmpty {
+                    if isEditing {
+                        MarkdownEditor(
+                            text: $editedText,
+                            selection: $editorSelection,
+                            minHeight: 160,
+                            isDisabled: workspace.isUpdatingBug
+                        )
+                        HStack(spacing: 8) {
+                            if let saveError {
+                                Label(saveError, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            Spacer()
+                            Button("Cancel") {
+                                isEditing = false
+                                saveError = nil
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(workspace.isUpdatingBug)
+                            Button("Save") {
+                                Task { await save() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(workspace.isUpdatingBug || !canSave)
+                        }
+                    } else if !stripped.isEmpty {
                         StructuredText(markdown: stripped)
                             .font(.body)
                             .textSelection(.enabled)
@@ -1490,6 +1601,36 @@ private struct DescriptionBlock: View {
                 .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
         }
+    }
+
+    private var isReporter: Bool {
+        guard let me = auth.currentUser?.name else { return false }
+        return bug.creator == me || bug.reporter == me
+    }
+
+    private var canSave: Bool {
+        let trimmed = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+            && trimmed != comment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func save() async {
+        let trimmed = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            saveError = "Description can't be empty."
+            return
+        }
+        if let error = await workspace.updateComment(
+            bugID: bug.id,
+            commentID: comment.id,
+            newText: trimmed,
+            using: auth.client
+        ) {
+            saveError = error.localizedDescription
+            return
+        }
+        isEditing = false
+        saveError = nil
     }
 }
 

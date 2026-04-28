@@ -245,6 +245,7 @@ public extension BugzillaClient {
             let isPrivate: Bool?
         }
         struct Body: Encodable {
+            let summary: String?
             let status: String?
             let resolution: String?
             let dupeOf: Bug.ID?
@@ -260,7 +261,7 @@ public extension BugzillaClient {
             let flags: [FlagUpdate]?
 
             enum CodingKeys: String, CodingKey {
-                case status, resolution, dupeOf
+                case summary, status, resolution, dupeOf
                 case assignedTo, priority, severity, comment
                 case targetMilestone
                 case blocks, dependsOn, seeAlso, flags
@@ -269,6 +270,7 @@ public extension BugzillaClient {
 
             func encode(to encoder: Encoder) throws {
                 var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encodeIfPresent(summary, forKey: .summary)
                 try c.encodeIfPresent(status, forKey: .status)
                 try c.encodeIfPresent(resolution, forKey: .resolution)
                 try c.encodeIfPresent(dupeOf, forKey: .dupeOf)
@@ -286,6 +288,7 @@ public extension BugzillaClient {
         }
 
         let payload = Body(
+            summary: update.summary,
             status: update.status,
             resolution: update.resolution,
             dupeOf: update.dupeOf,
@@ -409,6 +412,26 @@ public extension BugzillaClient {
         )
         let response: Response = try await execute(endpoint)
         return response.id
+    }
+
+    func updateComment(
+        bugID: Bug.ID,
+        commentID: Comment.ID,
+        newText: String,
+        isMarkdown: Bool = true
+    ) async throws {
+        struct Body: Encodable {
+            let newComment: String
+            let isMarkdown: Bool
+        }
+        struct Empty: Decodable {}
+        let body = try encoder.encode(Body(newComment: newText, isMarkdown: isMarkdown))
+        let endpoint = Endpoint(
+            path: "bug/\(bugID)/comment/\(commentID)",
+            method: .put,
+            body: body
+        )
+        let _: Empty = try await execute(endpoint)
     }
 
     func history(bugID: Bug.ID) async throws -> [HistoryEntry] {

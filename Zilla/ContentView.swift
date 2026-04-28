@@ -360,6 +360,25 @@ final class Workspace {
         }
     }
 
+    @discardableResult
+    @MainActor
+    func updateComment(
+        bugID: Bug.ID,
+        commentID: Comment.ID,
+        newText: String,
+        using client: BugzillaClient
+    ) async -> Error? {
+        isUpdatingBug = true
+        defer { isUpdatingBug = false }
+        do {
+            try await client.updateComment(bugID: bugID, commentID: commentID, newText: newText)
+            await refreshLoadedComments(using: client)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
     @MainActor
     func loadDependencyMetadata(ids: [Bug.ID], using client: BugzillaClient) async {
         let needed = ids.filter { dependencyMetadata[$0] == nil }

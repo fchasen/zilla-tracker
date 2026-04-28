@@ -248,6 +248,7 @@ public struct FlagUpdate: Sendable, Equatable, Encodable {
 }
 
 public struct BugUpdate: Sendable, Equatable {
+    public var summary: String?
     public var status: String?
     public var resolution: String?
     public var dupeOf: Bug.ID?
@@ -264,6 +265,7 @@ public struct BugUpdate: Sendable, Equatable {
     public var flags: [FlagUpdate]?
 
     public init(
+        summary: String? = nil,
         status: String? = nil,
         resolution: String? = nil,
         dupeOf: Bug.ID? = nil,
@@ -279,6 +281,7 @@ public struct BugUpdate: Sendable, Equatable {
         seeAlso: SeeAlsoUpdate? = nil,
         flags: [FlagUpdate]? = nil
     ) {
+        self.summary = summary
         self.status = status
         self.resolution = resolution
         self.dupeOf = dupeOf
