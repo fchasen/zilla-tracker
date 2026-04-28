@@ -1299,7 +1299,7 @@ struct BugListView: View {
                 Button {
                     onNewBug()
                 } label: {
-                    Label("New Bug", systemImage: "square.and.pencil")
+                    Label("New Bug", systemImage: "plus")
                 }
                 .help(newBugHelp)
             }
