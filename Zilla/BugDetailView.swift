@@ -603,11 +603,14 @@ private struct CommentComposer: View {
             FormatButton(systemImage: "italic", help: "Italic (⌘I)", shortcut: KeyboardShortcut("i", modifiers: .command)) {
                 wrap("*", "*", placeholder: "italic")
             }
-            FormatButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
-                wrap("`", "`", placeholder: "code")
+            FormatButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Code block") {
+                wrapCodeBlock()
             }
             FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
                 wrapLink()
+            }
+            FormatButton(systemImage: "list.bullet", help: "Bullet list") {
+                prefixLines("- ")
             }
             FormatButton(systemImage: "text.quote", help: "Blockquote") {
                 prefixLines("> ")
@@ -638,6 +641,20 @@ private struct CommentComposer: View {
             text.replaceSubrange(range, with: "[\(selected)](https://)")
         } else {
             text += "[text](https://)"
+        }
+    }
+
+    /// Wraps the selection in a fenced code block, ensuring the fences sit on
+    /// their own lines.
+    private func wrapCodeBlock() {
+        let leadIn = text.hasSuffix("\n") || text.isEmpty ? "" : "\n"
+        if let range = singleSelectionRange(), !range.isEmpty {
+            var selected = String(text[range])
+            if selected.hasSuffix("\n") { selected.removeLast() }
+            let opening = (range.lowerBound == text.startIndex || text[text.index(before: range.lowerBound)] == "\n") ? "" : "\n"
+            text.replaceSubrange(range, with: "\(opening)```\n\(selected)\n```\n")
+        } else {
+            text += "\(leadIn)```\ncode\n```\n"
         }
     }
 
