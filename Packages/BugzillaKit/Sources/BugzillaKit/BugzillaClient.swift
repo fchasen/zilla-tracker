@@ -268,6 +268,72 @@ public extension BugzillaClient {
         return response.bugs
     }
 
+    func createBug(_ create: BugCreate) async throws -> Bug.ID {
+        struct Body: Encodable {
+            let product: String
+            let component: String
+            let summary: String
+            let version: String
+            let description: String?
+            let type: String?
+            let severity: String?
+            let priority: String?
+            let assignedTo: String?
+            let keywords: [String]?
+            let blocks: [Int]?
+            let dependsOn: [Int]?
+            let cc: [String]?
+
+            enum CodingKeys: String, CodingKey {
+                case product, component, summary, version, description, type
+                case severity, priority, assignedTo, keywords, blocks, dependsOn, cc
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(product, forKey: .product)
+                try c.encode(component, forKey: .component)
+                try c.encode(summary, forKey: .summary)
+                try c.encode(version, forKey: .version)
+                try c.encodeIfPresent(description, forKey: .description)
+                try c.encodeIfPresent(type, forKey: .type)
+                try c.encodeIfPresent(severity, forKey: .severity)
+                try c.encodeIfPresent(priority, forKey: .priority)
+                try c.encodeIfPresent(assignedTo, forKey: .assignedTo)
+                try c.encodeIfPresent(keywords, forKey: .keywords)
+                try c.encodeIfPresent(blocks, forKey: .blocks)
+                try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
+                try c.encodeIfPresent(cc, forKey: .cc)
+            }
+        }
+
+        let payload = Body(
+            product: create.product,
+            component: create.component,
+            summary: create.summary,
+            version: create.version,
+            description: create.description,
+            type: create.type,
+            severity: create.severity,
+            priority: create.priority,
+            assignedTo: create.assignedTo,
+            keywords: create.keywords.isEmpty ? nil : create.keywords,
+            blocks: create.blocks.isEmpty ? nil : create.blocks,
+            dependsOn: create.dependsOn.isEmpty ? nil : create.dependsOn,
+            cc: create.cc.isEmpty ? nil : create.cc
+        )
+        let body = try encoder.encode(payload)
+
+        struct Response: Decodable { let id: Bug.ID }
+        let endpoint = Endpoint(
+            path: "bug",
+            method: .post,
+            body: body
+        )
+        let response: Response = try await execute(endpoint)
+        return response.id
+    }
+
     func comments(bugID: Bug.ID) async throws -> [Comment] {
         struct Response: Decodable { let bugs: [String: BugComments] }
         struct BugComments: Decodable { let comments: [Comment] }

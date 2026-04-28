@@ -166,6 +166,52 @@ public struct BugUpdate: Sendable, Equatable {
     }
 }
 
+public struct BugCreate: Sendable, Equatable {
+    public var product: String
+    public var component: String
+    public var summary: String
+    public var version: String
+    public var description: String?
+    public var type: String?
+    public var severity: String?
+    public var priority: String?
+    public var assignedTo: String?
+    public var keywords: [String]
+    public var blocks: [Int]
+    public var dependsOn: [Int]
+    public var cc: [String]
+
+    public init(
+        product: String,
+        component: String,
+        summary: String,
+        version: String = "unspecified",
+        description: String? = nil,
+        type: String? = nil,
+        severity: String? = nil,
+        priority: String? = nil,
+        assignedTo: String? = nil,
+        keywords: [String] = [],
+        blocks: [Int] = [],
+        dependsOn: [Int] = [],
+        cc: [String] = []
+    ) {
+        self.product = product
+        self.component = component
+        self.summary = summary
+        self.version = version
+        self.description = description
+        self.type = type
+        self.severity = severity
+        self.priority = priority
+        self.assignedTo = assignedTo
+        self.keywords = keywords
+        self.blocks = blocks
+        self.dependsOn = dependsOn
+        self.cc = cc
+    }
+}
+
 public struct BugChangeResult: Codable, Sendable, Hashable, Identifiable {
     public let id: Bug.ID
     public let lastChangeTime: Date?
