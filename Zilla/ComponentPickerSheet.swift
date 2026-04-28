@@ -14,6 +14,8 @@ struct ComponentPickerSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var existing: [FollowedComponent]
 
+    var onPick: ((Product, Component) -> Void)? = nil
+
     @State private var selectedProduct: Product?
     @State private var search: String = ""
 
@@ -30,7 +32,7 @@ struct ComponentPickerSheet: View {
                     productPane
                 }
             }
-            .navigationTitle(selectedProduct?.name ?? "Add Component")
+            .navigationTitle(selectedProduct?.name ?? (onPick == nil ? "Add Component" : "Pick Component"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if selectedProduct != nil {
@@ -106,17 +108,23 @@ struct ComponentPickerSheet: View {
     }
 
     private var alreadyFollowed: Set<ComponentRef> {
-        Set(existing.map(\.ref))
+        // For draft picking, every component is pickable (we're not following).
+        guard onPick == nil else { return [] }
+        return Set(existing.map(\.ref))
     }
 
     private func addComponent(_ product: Product, _ component: Component) {
-        let nextPosition = (existing.map(\.position).max() ?? -1) + 1
-        let f = FollowedComponent(
-            product: product.name,
-            componentName: component.name,
-            position: nextPosition
-        )
-        modelContext.insert(f)
+        if let onPick {
+            onPick(product, component)
+        } else {
+            let nextPosition = (existing.map(\.position).max() ?? -1) + 1
+            let f = FollowedComponent(
+                product: product.name,
+                componentName: component.name,
+                position: nextPosition
+            )
+            modelContext.insert(f)
+        }
         dismiss()
     }
 }
