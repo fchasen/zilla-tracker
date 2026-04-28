@@ -21,7 +21,7 @@ struct BugDetailView: View {
     @State private var isLoading = false
     @State private var loadError: String?
 
-    @State private var composerText: String = ""
+    @State private var composerText: AttributedString = AttributedString()
     @State private var isPostingComment = false
     @State private var composerError: String?
 
@@ -151,7 +151,7 @@ struct BugDetailView: View {
     }
 
     private func load(id: Int?) async {
-        composerText = ""
+        composerText = AttributedString()
         composerError = nil
         guard let id else {
             bug = nil
@@ -179,8 +179,8 @@ struct BugDetailView: View {
     }
 
     private func postComment() async {
-        let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let id = bugID else { return }
+        let markdown = composerText.toMarkdown().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !markdown.isEmpty, let id = bugID else { return }
 
         isPostingComment = true
         composerError = nil
@@ -188,8 +188,8 @@ struct BugDetailView: View {
 
         let client = auth.client
         do {
-            _ = try await client.addComment(bugID: id, text: trimmed)
-            composerText = ""
+            _ = try await client.addComment(bugID: id, text: markdown, isMarkdown: true)
+            composerText = AttributedString()
             if let refreshed = try? await client.comments(bugID: id) {
                 comments = refreshed
             }
@@ -203,7 +203,7 @@ private struct BugContent: View {
     let bug: Bug
     let comments: [Comment]
     let loadError: String?
-    @Binding var composerText: String
+    @Binding var composerText: AttributedString
     let isPosting: Bool
     let composerError: String?
     let onPost: () -> Void
@@ -537,7 +537,7 @@ private struct DupeOfSheet: View {
 }
 
 private struct CommentComposer: View {
-    @Binding var text: String
+    @Binding var text: AttributedString
     let isPosting: Bool
     let error: String?
     let onPost: () -> Void
@@ -566,7 +566,7 @@ private struct CommentComposer: View {
             }
 
             HStack {
-                Text("⌘↩ to post")
+                Text("⌘B bold · ⌘I italic · ⌘↩ post")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -585,6 +585,56 @@ private struct CommentComposer: View {
     }
 
     private var trimmedIsEmpty: Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+// MARK: - AttributedString → Markdown
+
+private extension AttributedString {
+    func toMarkdown() -> String {
+        var output = ""
+        for run in self.runs {
+            let segment = String(self.characters[run.range])
+            output += format(segment: segment, run: run)
+        }
+        return output
+    }
+
+    private func format(segment: String, run: AttributedString.Runs.Run) -> String {
+        let intent = run.inlinePresentationIntent ?? InlinePresentationIntent()
+        var bold = intent.contains(.stronglyEmphasized)
+        var italic = intent.contains(.emphasized)
+        let code = intent.contains(.code)
+        let strike = intent.contains(.strikethrough)
+
+        #if canImport(AppKit)
+        if let font = run.appKit.font {
+            let traits = font.fontDescriptor.symbolicTraits
+            if traits.contains(.bold) { bold = true }
+            if traits.contains(.italic) { italic = true }
+        }
+        #endif
+
+        let trailing = trailingWhitespace(of: segment)
+        let core = String(segment.dropLast(trailing.count))
+        if core.isEmpty { return segment }
+
+        var s = core
+        if code { s = "`\(s)`" }
+        if strike { s = "~~\(s)~~" }
+        if bold { s = "**\(s)**" }
+        if italic { s = "*\(s)*" }
+
+        if let url = run.link {
+            s = "[\(s)](\(url.absoluteString))"
+        }
+
+        return s + trailing
+    }
+
+    private func trailingWhitespace(of text: String) -> String {
+        let suffix = text.reversed().prefix { $0.isWhitespace || $0.isNewline }
+        return String(suffix.reversed())
     }
 }
