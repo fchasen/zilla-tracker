@@ -75,11 +75,7 @@ struct BugDetailView: View {
             }
         }
         .toolbar {
-            if workspace.isUpdatingBug {
-                ToolbarItem(placement: .primaryAction) {
-                    ProgressView().controlSize(.small)
-                }
-            } else if let bug {
+            if let bug {
                 if !isClosed(bug) {
                     ToolbarItem(placement: .primaryAction) {
                         statusMenu(for: bug)
@@ -87,6 +83,10 @@ struct BugDetailView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     resolveMenu(for: bug)
+                }
+            } else if workspace.isUpdatingBug {
+                ToolbarItem(placement: .primaryAction) {
+                    ProgressView().controlSize(.small)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -167,8 +167,13 @@ struct BugDetailView: View {
                 }
             }
         } label: {
-            Label("Status", systemImage: "arrow.triangle.2.circlepath")
+            if workspace.isUpdatingBug {
+                ProgressView().controlSize(.small)
+            } else {
+                Label("Status", systemImage: "arrow.triangle.2.circlepath")
+            }
         }
+        .disabled(workspace.isUpdatingBug)
     }
 
     private func isClosed(_ bug: Bug) -> Bool {
