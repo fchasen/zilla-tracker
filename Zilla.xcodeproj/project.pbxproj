@@ -9,9 +9,8 @@
 /* Begin PBXBuildFile section */
 		3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5BE2FA0098A003FB395 /* BugzillaKit */; };
 		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
-		3339A5C52FA0AAAA003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C42FA0AAAA003FB395 /* SearchfoxKit */; };
 		3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7082FA06FFF003FB395 /* SearchfoxKit */; };
-		3339A8B32FB2AAAA003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A8B22FB2AAAA003FB395 /* PhabricatorKit */; };
+		3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7FF2FA15288003FB395 /* PhabricatorKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,9 +61,8 @@
 			files = (
 				3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */,
 				3339A5C22FA00C00003FB395 /* Textual in Frameworks */,
-				3339A5C52FA0AAAA003FB395 /* SearchfoxKit in Frameworks */,
 				3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */,
-				3339A8B32FB2AAAA003FB395 /* PhabricatorKit in Frameworks */,
+				3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,9 +125,8 @@
 			packageProductDependencies = (
 				3339A5BE2FA0098A003FB395 /* BugzillaKit */,
 				3339A5C12FA00C00003FB395 /* Textual */,
-				3339A5C42FA0AAAA003FB395 /* SearchfoxKit */,
 				3339A7082FA06FFF003FB395 /* SearchfoxKit */,
-				3339A8B22FB2AAAA003FB395 /* PhabricatorKit */,
+				3339A7FF2FA15288003FB395 /* PhabricatorKit */,
 			);
 			productName = Zilla;
 			productReference = 3339A5902FA001FC003FB395 /* Zilla.app */;
@@ -217,7 +214,7 @@
 				3339A5BD2FA0098A003FB395 /* XCLocalSwiftPackageReference "Packages/BugzillaKit" */,
 				3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */,
 				3339A7072FA06FFF003FB395 /* XCLocalSwiftPackageReference "Packages/SearchfoxKit" */,
-				3339A8B12FB2AAAA003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
+				3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -641,7 +638,7 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SearchfoxKit;
 		};
-		3339A8B12FB2AAAA003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */ = {
+		3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/PhabricatorKit;
 		};
@@ -668,15 +665,11 @@
 			package = 3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */;
 			productName = Textual;
 		};
-		3339A5C42FA0AAAA003FB395 /* SearchfoxKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = SearchfoxKit;
-		};
 		3339A7082FA06FFF003FB395 /* SearchfoxKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SearchfoxKit;
 		};
-		3339A8B22FB2AAAA003FB395 /* PhabricatorKit */ = {
+		3339A7FF2FA15288003FB395 /* PhabricatorKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PhabricatorKit;
 		};
