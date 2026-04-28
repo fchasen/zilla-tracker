@@ -86,4 +86,9 @@ final class AuthStore {
         if case .error(let message) = state { return message }
         return nil
     }
+
+    var isSignedIn: Bool {
+        if case .signedIn = state { return true }
+        return false
+    }
 }

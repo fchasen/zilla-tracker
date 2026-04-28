@@ -42,10 +42,8 @@ struct RootView: View {
         case .unknown:
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .signedIn:
+        default:
             ContentView()
-        case .signedOut, .signingIn, .error:
-            SignInView()
         }
     }
 }

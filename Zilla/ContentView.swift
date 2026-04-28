@@ -187,6 +187,7 @@ final class Workspace {
     }
     var selectedDraftID: UUID?
     var activeRevisionID: Int?
+    var bugzillaSettingsPresented: Bool = false
     var phabricatorSettingsPresented: Bool = false
     var searchText: String = ""
     var smartSorts: [SmartEndpoint: BugListSort] = [:]
@@ -436,15 +437,25 @@ struct ContentView: View {
                             Text("@\(nick)")
                         }
                         Divider()
-                    }
-                    Button("Phabricator…") {
-                        workspace.phabricatorSettingsPresented = true
-                    }
-                    Divider()
-                    Button("Sign Out", role: .destructive) {
-                        Task {
-                            await auth.signOut()
-                            workspace.reset()
+                        Button("Bugzilla…") {
+                            workspace.bugzillaSettingsPresented = true
+                        }
+                        Button("Phabricator…") {
+                            workspace.phabricatorSettingsPresented = true
+                        }
+                        Divider()
+                        Button("Sign Out", role: .destructive) {
+                            Task {
+                                await auth.signOut()
+                                workspace.reset()
+                            }
+                        }
+                    } else {
+                        Button("Sign In to Bugzilla…") {
+                            workspace.bugzillaSettingsPresented = true
+                        }
+                        Button("Phabricator…") {
+                            workspace.phabricatorSettingsPresented = true
                         }
                     }
                 } label: {
@@ -456,6 +467,9 @@ struct ContentView: View {
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
+        }
+        .sheet(isPresented: $workspace.bugzillaSettingsPresented) {
+            BugzillaSettingsView()
         }
         .sheet(isPresented: $workspace.phabricatorSettingsPresented) {
             PhabricatorSettingsView()
@@ -469,9 +483,11 @@ struct ContentView: View {
             actions: { Button("OK") { workspace.lastLinkError = nil } },
             message: { Text(workspace.lastLinkError ?? "") }
         )
-        .task {
-            if workspace.products.isEmpty {
+        .task(id: auth.isSignedIn) {
+            if auth.isSignedIn, workspace.products.isEmpty {
                 await workspace.loadProducts(using: auth.client)
+            } else if !auth.isSignedIn {
+                workspace.bugzillaSettingsPresented = true
             }
         }
     }
@@ -1146,7 +1162,9 @@ struct BugListView: View {
 
     var body: some View {
         Group {
-            if selection == nil {
+            if !auth.isSignedIn && !isAllDrafts {
+                signedOutPlaceholder
+            } else if selection == nil {
                 ContentUnavailableView(
                     "Pick something",
                     systemImage: "sidebar.left",
@@ -1203,7 +1221,7 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .toolbar {
-            if !isAllDrafts {
+            if !isAllDrafts && auth.isSignedIn {
                 ToolbarItem(placement: .primaryAction) {
                     refreshButton
                 }
@@ -1224,24 +1242,22 @@ struct BugListView: View {
         }
     }
 
-    @ViewBuilder
-    private func row(for bug: Bug) -> some View {
-        BugRow(bug: bug)
-            .tag(Optional(bug.id))
-            .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
-                Label("#\(bug.id) \(bug.summary)", systemImage: "ant")
-                    .padding(8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-            }
-            .bugLinkDrop(target: bug.id)
-            .contextMenu {
-                addAsMetaMenu(for: bug)
-            }
-    }
-
     private var searchBinding: Binding<String> {
         @Bindable var workspace = workspace
         return $workspace.searchText
+    }
+
+    private var signedOutPlaceholder: some View {
+        ContentUnavailableView {
+            Label("Bugzilla not connected", systemImage: "key")
+        } description: {
+            Text("Add your Bugzilla API key to load and update bugs.")
+        } actions: {
+            Button("Sign In to Bugzilla…") {
+                workspace.bugzillaSettingsPresented = true
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 
     private var refreshButton: some View {
@@ -1327,6 +1343,21 @@ struct BugListView: View {
         return unpositioned + positioned
     }
 
+    @ViewBuilder
+    private func row(for bug: Bug) -> some View {
+        BugRow(bug: bug)
+            .tag(Optional(bug.id))
+            .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
+                Label("#\(bug.id) \(bug.summary)", systemImage: "ant")
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .bugLinkDrop(target: bug.id)
+            .contextMenu {
+                addAsMetaMenu(for: bug)
+            }
+    }
+
     private func isClosed(_ bug: Bug) -> Bool {
         ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
     }
@@ -1375,7 +1406,8 @@ struct BugListView: View {
         BugListLoadKey(
             selection: selection,
             search: workspace.searchText,
-            refresh: workspace.bugListRefreshToken
+            refresh: workspace.bugListRefreshToken,
+            signedIn: auth.isSignedIn
         )
     }
 
@@ -1399,6 +1431,12 @@ struct BugListView: View {
         if selection == .allDrafts {
             bugs = []
             totalMatches = nil
+            return
+        }
+        guard auth.isSignedIn else {
+            bugs = []
+            totalMatches = nil
+            loadError = nil
             return
         }
 
@@ -1450,6 +1488,7 @@ private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
     let refresh: UUID
+    let signedIn: Bool
 }
 
 private struct ReorderZone: View {
