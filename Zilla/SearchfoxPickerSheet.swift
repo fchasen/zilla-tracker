@@ -33,12 +33,9 @@ struct SearchfoxPickerSheet: View {
                     .padding(.top)
                     .submitLabel(.search)
                     .focused($focused, equals: .search)
-                    .onSubmit { commitSelection() }
+                    .onSubmit { focusList() }
                     .onKeyPress(.tab) {
-                        guard !results.isEmpty else { return .ignored }
-                        if selectedURL == nil { selectedURL = results.first?.url }
-                        focused = .list
-                        return .handled
+                        focusList() ? .handled : .ignored
                     }
 
                 content
@@ -136,6 +133,14 @@ struct SearchfoxPickerSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @discardableResult
+    private func focusList() -> Bool {
+        guard !results.isEmpty else { return false }
+        if selectedURL == nil { selectedURL = results.first?.url }
+        focused = .list
+        return true
     }
 
     @discardableResult
