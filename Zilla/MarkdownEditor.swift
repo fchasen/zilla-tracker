@@ -28,26 +28,10 @@ struct MarkdownEditor: View {
                         .font(.headline)
                 }
                 Spacer()
-                if !showPreview {
-                    formattingBar
-                }
+                formattingBar
             }
 
             editorOrPreview
-
-            HStack {
-                Button {
-                    showPreview.toggle()
-                } label: {
-                    Label(
-                        showPreview ? "Edit" : "Preview",
-                        systemImage: showPreview ? "pencil" : "eye"
-                    )
-                }
-                .buttonStyle(.borderless)
-                .disabled(isDisabled || (trimmedIsEmpty && !showPreview))
-                Spacer()
-            }
         }
         .sheet(isPresented: $showingSearchfoxPicker) {
             SearchfoxPickerSheet { hit, symbol in
@@ -104,29 +88,40 @@ struct MarkdownEditor: View {
 
     private var formattingBar: some View {
         HStack(spacing: 2) {
-            FormatButton(systemImage: "bold", help: "Bold (⌘B)", shortcut: KeyboardShortcut("b", modifiers: .command)) {
-                wrap("**", "**", placeholder: "bold")
+            FormatButton(
+                systemImage: showPreview ? "pencil" : "eye",
+                help: showPreview ? "Edit" : "Preview"
+            ) {
+                showPreview.toggle()
             }
-            FormatButton(systemImage: "italic", help: "Italic (⌘I)", shortcut: KeyboardShortcut("i", modifiers: .command)) {
-                wrap("*", "*", placeholder: "italic")
-            }
-            FormatButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Code block") {
-                wrapCodeBlock()
-            }
-            FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
-                showingLinkPicker = true
-            }
-            FormatButton(systemImage: "list.bullet", help: "Bullet list") {
-                prefixLines("- ")
-            }
-            FormatButton(systemImage: "list.number", help: "Numbered list") {
-                numberedList()
-            }
-            FormatButton(systemImage: "text.quote", help: "Blockquote") {
-                prefixLines("> ")
-            }
-            FormatButton(systemImage: "magnifyingglass", help: "Insert Searchfox link (⌘F)", shortcut: KeyboardShortcut("f", modifiers: .command)) {
-                showingSearchfoxPicker = true
+            .disabled(trimmedIsEmpty && !showPreview)
+
+            if !showPreview {
+                Divider().frame(height: 16)
+                FormatButton(systemImage: "bold", help: "Bold (⌘B)", shortcut: KeyboardShortcut("b", modifiers: .command)) {
+                    wrap("**", "**", placeholder: "bold")
+                }
+                FormatButton(systemImage: "italic", help: "Italic (⌘I)", shortcut: KeyboardShortcut("i", modifiers: .command)) {
+                    wrap("*", "*", placeholder: "italic")
+                }
+                FormatButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Code block") {
+                    wrapCodeBlock()
+                }
+                FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
+                    showingLinkPicker = true
+                }
+                FormatButton(systemImage: "list.bullet", help: "Bullet list") {
+                    prefixLines("- ")
+                }
+                FormatButton(systemImage: "list.number", help: "Numbered list") {
+                    numberedList()
+                }
+                FormatButton(systemImage: "text.quote", help: "Blockquote") {
+                    prefixLines("> ")
+                }
+                FormatButton(systemImage: "magnifyingglass", help: "Insert Searchfox link (⌘F)", shortcut: KeyboardShortcut("f", modifiers: .command)) {
+                    showingSearchfoxPicker = true
+                }
             }
         }
         .disabled(isDisabled)
