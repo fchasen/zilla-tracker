@@ -19,7 +19,6 @@ struct DraftEditorView: View {
     @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var showDiscardConfirm = false
-    @State private var showComponentPicker = false
     @FocusState private var summaryFocused: Bool
 
     init(draftID: UUID) {
@@ -45,8 +44,6 @@ struct DraftEditorView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                componentHeader(for: draft)
-
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Summary").font(.headline)
                     TextField("What's the bug?", text: $draft.summary, axis: .vertical)
@@ -115,13 +112,6 @@ struct DraftEditorView: View {
                 .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
             }
         }
-        .sheet(isPresented: $showComponentPicker) {
-            ComponentPickerSheet(onPick: { product, component in
-                draft.product = product.name
-                draft.componentName = component.name
-                draft.updatedAt = .now
-            })
-        }
         .confirmationDialog(
             "Discard this draft?",
             isPresented: $showDiscardConfirm,
@@ -141,45 +131,6 @@ struct DraftEditorView: View {
         }
         .onChange(of: draft.summary) { draft.updatedAt = .now }
         .onChange(of: draft.bugDescription) { draft.updatedAt = .now }
-    }
-
-    @ViewBuilder
-    private func componentHeader(for draft: BugDraft) -> some View {
-        let isMetaSeeded = !draft.blocks.isEmpty
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Component").font(.headline)
-            if let ref = draft.componentRef {
-                HStack {
-                    Image(systemName: "shippingbox")
-                        .foregroundStyle(.secondary)
-                    Text("\(ref.product) :: \(ref.component)")
-                        .font(.callout)
-                    Spacer()
-                    if !isMetaSeeded {
-                        Button("Change…") { showComponentPicker = true }
-                            .buttonStyle(.borderless)
-                            .disabled(isSubmitting)
-                    }
-                }
-                .padding(10)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            } else {
-                Button {
-                    showComponentPicker = true
-                } label: {
-                    Label("Pick component…", systemImage: "shippingbox")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSubmitting)
-            }
-            if isMetaSeeded, let id = draft.blocks.first {
-                Text("Will block #\(id)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private func submit(_ draft: BugDraft) async {
@@ -209,6 +160,7 @@ struct DraftEditorView: View {
             let destination = postSubmitDestination(for: draft)
             let metaToOpen = draft.blocks.first
             modelContext.delete(draft)
+            workspace.selectedDraftID = nil
             workspace.sidebarSelection = destination
             if metaToOpen == nil {
                 workspace.selectedBugID = newID
@@ -238,7 +190,7 @@ struct DraftEditorView: View {
 
     private func discard(_ draft: BugDraft) {
         modelContext.delete(draft)
-        workspace.sidebarSelection = .smart(.myBugs)
+        workspace.selectedDraftID = nil
     }
 }
 
