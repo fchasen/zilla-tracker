@@ -1694,17 +1694,9 @@ private struct BugRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if isUnseenAndRecent {
-                        Circle()
-                            .fill(.blue)
-                            .frame(width: 7, height: 7)
-                            .accessibilityLabel("New")
-                    }
-                    Text(bug.summary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
+                Text(bug.summary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
 
                 ViewThatFits(in: .horizontal) {
                     metadataLine(level: 0)
@@ -1778,6 +1770,12 @@ private struct BugRow: View {
     @ViewBuilder
     private func metadataLine(level: Int) -> some View {
         HStack(spacing: 6) {
+            if isUnseenAndRecent {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 7, height: 7)
+                    .accessibilityLabel("New")
+            }
             BugTypePill(type: bug.type)
             Text(verbatim: "\(bug.id)")
             Text(verbatim: "·")
