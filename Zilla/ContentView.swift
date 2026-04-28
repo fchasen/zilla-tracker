@@ -7,7 +7,19 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import BugzillaKit
+
+// MARK: - Drag payload
+
+struct BugTransfer: Codable, Transferable {
+    let id: Int
+    let summary: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .json)
+    }
+}
 
 // MARK: - Sidebar selection
 
@@ -239,6 +251,8 @@ private struct FollowedComponentEntry: View {
     let followed: FollowedComponent
     let onAddMetaBug: () -> Void
 
+    @State private var isDropTarget = false
+
     var body: some View {
         let metas = followed.metaBugs.sorted {
             ($0.position, $0.addedAt) < ($1.position, $1.addedAt)
@@ -268,6 +282,12 @@ private struct FollowedComponentEntry: View {
                 }
             }
         }
+        .background(
+            isDropTarget
+                ? Color.accentColor.opacity(0.18)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
         .contextMenu {
             Button("Add Meta Bug…") { onAddMetaBug() }
             Divider()
@@ -275,6 +295,21 @@ private struct FollowedComponentEntry: View {
                 modelContext.delete(followed)
             }
         }
+        .dropDestination(for: BugTransfer.self) { transfers, _ in
+            var inserted = false
+            for transfer in transfers where !followed.metaBugs.contains(where: { $0.bugId == transfer.id }) {
+                let nextPosition = (followed.metaBugs.map(\.position).max() ?? -1) + 1 + (inserted ? 1 : 0)
+                let meta = FollowedMetaBug(
+                    bugId: transfer.id,
+                    summary: transfer.summary,
+                    component: followed,
+                    position: nextPosition
+                )
+                modelContext.insert(meta)
+                inserted = true
+            }
+            return inserted
+        } isTargeted: { isDropTarget = $0 }
     }
 
     private func moveMetas(_ metas: [FollowedMetaBug], from source: IndexSet, to destination: Int) {
@@ -368,6 +403,11 @@ struct BugListView: View {
                     ForEach(bugs) { bug in
                         BugRow(bug: bug)
                             .tag(Optional(bug.id))
+                            .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
+                                Label("#\(bug.id) \(bug.summary)", systemImage: "ant")
+                                    .padding(8)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                            }
                             .contextMenu {
                                 addAsMetaMenu(for: bug)
                             }
