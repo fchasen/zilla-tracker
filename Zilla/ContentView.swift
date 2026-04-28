@@ -123,6 +123,8 @@ struct ContentView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
 
+    @State private var showAddComponent = false
+
     var body: some View {
         @Bindable var workspace = workspace
 
@@ -136,7 +138,15 @@ struct ContentView: View {
             BugDetailView(bugID: workspace.selectedBugID)
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    showAddComponent = true
+                } label: {
+                    Label("Add Component", systemImage: "plus")
+                }
+                .help("Add Component")
+            }
+            ToolbarItem(placement: .navigation) {
                 Menu {
                     if let user = auth.currentUser {
                         Text(user.realName ?? user.name)
@@ -154,7 +164,11 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "person.crop.circle")
                 }
+                .help("Account")
             }
+        }
+        .sheet(isPresented: $showAddComponent) {
+            ComponentPickerSheet()
         }
         .task {
             if workspace.products.isEmpty {
@@ -168,10 +182,12 @@ struct ContentView: View {
 
 struct Sidebar: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \FollowedComponent.addedAt) private var followedComponents: [FollowedComponent]
+    @Query(sort: [SortDescriptor(\FollowedComponent.position),
+                  SortDescriptor(\FollowedComponent.addedAt)])
+    private var followedComponents: [FollowedComponent]
+
     @Binding var selection: SidebarSelection?
 
-    @State private var showAddComponent = false
     @State private var addMetaBugTarget: FollowedComponent?
 
     var body: some View {
@@ -183,9 +199,9 @@ struct Sidebar: View {
                 }
             }
 
-            Section {
+            Section("Components") {
                 if followedComponents.isEmpty {
-                    Text("No components yet. Tap + to follow one.")
+                    Text("No components yet. Tap + above to follow one.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 4)
@@ -193,24 +209,10 @@ struct Sidebar: View {
                     ForEach(followedComponents) { followed in
                         FollowedComponentEntry(
                             followed: followed,
-                            onAddMetaBug: { addMetaBugTarget = followed },
-                            onRemove: { modelContext.delete(followed) },
-                            onRemoveMetaBug: { modelContext.delete($0) }
+                            onAddMetaBug: { addMetaBugTarget = followed }
                         )
                     }
-                }
-            } header: {
-                HStack {
-                    Text("Components")
-                    Spacer()
-                    Button {
-                        showAddComponent = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .imageScale(.small)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .onMove(perform: moveComponents)
                 }
             }
         }
@@ -218,23 +220,29 @@ struct Sidebar: View {
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
         #endif
-        .sheet(isPresented: $showAddComponent) {
-            ComponentPickerSheet()
-        }
         .sheet(item: $addMetaBugTarget) { component in
             MetaBugPickerSheet(component: component)
+        }
+    }
+
+    private func moveComponents(from source: IndexSet, to destination: Int) {
+        var items = followedComponents
+        items.move(fromOffsets: source, toOffset: destination)
+        for (index, item) in items.enumerated() {
+            item.position = index
         }
     }
 }
 
 private struct FollowedComponentEntry: View {
+    @Environment(\.modelContext) private var modelContext
     let followed: FollowedComponent
     let onAddMetaBug: () -> Void
-    let onRemove: () -> Void
-    let onRemoveMetaBug: (FollowedMetaBug) -> Void
 
     var body: some View {
-        let metas = followed.metaBugs.sorted { $0.addedAt < $1.addedAt }
+        let metas = followed.metaBugs.sorted {
+            ($0.position, $0.addedAt) < ($1.position, $1.addedAt)
+        }
 
         Group {
             if metas.isEmpty {
@@ -247,9 +255,12 @@ private struct FollowedComponentEntry: View {
                             .tag(SidebarSelection.metaBug(meta.bugId))
                             .contextMenu {
                                 Button("Remove", role: .destructive) {
-                                    onRemoveMetaBug(meta)
+                                    modelContext.delete(meta)
                                 }
                             }
+                    }
+                    .onMove { source, destination in
+                        moveMetas(metas, from: source, to: destination)
                     }
                 } label: {
                     FollowedComponentRow(followed: followed)
@@ -260,7 +271,17 @@ private struct FollowedComponentEntry: View {
         .contextMenu {
             Button("Add Meta Bug…") { onAddMetaBug() }
             Divider()
-            Button("Remove", role: .destructive) { onRemove() }
+            Button("Remove", role: .destructive) {
+                modelContext.delete(followed)
+            }
+        }
+    }
+
+    private func moveMetas(_ metas: [FollowedMetaBug], from source: IndexSet, to destination: Int) {
+        var items = metas
+        items.move(fromOffsets: source, toOffset: destination)
+        for (index, item) in items.enumerated() {
+            item.position = index
         }
     }
 }
@@ -289,7 +310,7 @@ private struct FollowedMetaBugRow: View {
         Label {
             VStack(alignment: .leading, spacing: 1) {
                 Text(meta.summary).lineLimit(1)
-                Text("#\(meta.bugId)")
+                Text(verbatim: "#\(meta.bugId)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -304,6 +325,11 @@ private struct FollowedMetaBugRow: View {
 struct BugListView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: [SortDescriptor(\FollowedComponent.position),
+                  SortDescriptor(\FollowedComponent.addedAt)])
+    private var followedComponents: [FollowedComponent]
+
     let selection: SidebarSelection?
     @Binding var selectedBugID: Bug.ID?
 
@@ -340,7 +366,11 @@ struct BugListView: View {
             } else {
                 List(selection: $selectedBugID) {
                     ForEach(bugs) { bug in
-                        BugRow(bug: bug).tag(Optional(bug.id))
+                        BugRow(bug: bug)
+                            .tag(Optional(bug.id))
+                            .contextMenu {
+                                addAsMetaMenu(for: bug)
+                            }
                     }
                     if let total = totalMatches, total > bugs.count {
                         Text("Showing \(bugs.count) of \(total). Refine the search to narrow.")
@@ -355,6 +385,35 @@ struct BugListView: View {
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
         #endif
         .task(id: loadKey) { await load() }
+    }
+
+    @ViewBuilder
+    private func addAsMetaMenu(for bug: Bug) -> some View {
+        if followedComponents.isEmpty {
+            Button("Add as Meta Bug…") {}
+                .disabled(true)
+        } else {
+            Menu("Add as Meta Bug") {
+                ForEach(followedComponents) { followed in
+                    Button("\(followed.componentName)  ·  \(followed.product)") {
+                        addBugAsMeta(bug, to: followed)
+                    }
+                    .disabled(followed.metaBugs.contains { $0.bugId == bug.id })
+                }
+            }
+        }
+    }
+
+    private func addBugAsMeta(_ bug: Bug, to followed: FollowedComponent) {
+        guard !followed.metaBugs.contains(where: { $0.bugId == bug.id }) else { return }
+        let nextPosition = (followed.metaBugs.map(\.position).max() ?? -1) + 1
+        let meta = FollowedMetaBug(
+            bugId: bug.id,
+            summary: bug.summary,
+            component: followed,
+            position: nextPosition
+        )
+        modelContext.insert(meta)
     }
 
     private var loadKey: BugListLoadKey {
@@ -437,16 +496,16 @@ private struct BugRow: View {
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
-                    Text("#\(bug.id)")
-                    Text("·")
+                    Text(verbatim: "#\(bug.id)")
+                    Text(verbatim: "·")
                     Text(bug.status)
                     if let assignee = friendlyAssignee {
-                        Text("·")
+                        Text(verbatim: "·")
                         Text(assignee)
                             .lineLimit(1)
                     }
                     if let when = bug.lastChangeTime {
-                        Text("·")
+                        Text(verbatim: "·")
                         Text(when, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
                     }
                 }
