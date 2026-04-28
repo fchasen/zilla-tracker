@@ -50,7 +50,8 @@ struct BugDetailView: View {
                     composerText: $composerText,
                     isPosting: isPostingComment,
                     composerError: composerError,
-                    onPost: { Task { await postComment() } }
+                    onPost: { Task { await postComment() } },
+                    onUpdate: { update in Task { await applyUpdate(update) } }
                 )
             } else if isLoading {
                 ProgressView()
@@ -205,13 +206,14 @@ private struct BugContent: View {
     let isPosting: Bool
     let composerError: String?
     let onPost: () -> Void
+    let onUpdate: (BugUpdate) -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 BugHeader(bug: bug)
                 Divider()
-                BugMetadata(bug: bug)
+                BugMetadata(bug: bug, onUpdate: onUpdate)
 
                 if let loadError {
                     Label(loadError, systemImage: "exclamationmark.triangle")
@@ -323,14 +325,32 @@ private struct StatusPill: View {
 
 private struct BugMetadata: View {
     let bug: Bug
+    let onUpdate: (BugUpdate) -> Void
+
+    private static let priorityOptions = ["--", "P1", "P2", "P3", "P4", "P5"]
+    private static let severityOptions = ["--", "S1", "S2", "S3", "S4", "N/A"]
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
             row("Assignee", bug.assignedTo ?? "—")
             row("Reporter", bug.reporter ?? bug.creator ?? "—")
             row("Component", "\(bug.product) :: \(bug.component)")
-            if let p = bug.priority, !p.isEmpty { row("Priority", p) }
-            if let s = bug.severity, !s.isEmpty { row("Severity", s) }
+            editableRow(
+                label: "Priority",
+                current: bug.priority,
+                options: Self.priorityOptions,
+                color: priorityColor(bug.priority)
+            ) { value in
+                onUpdate(BugUpdate(priority: value))
+            }
+            editableRow(
+                label: "Severity",
+                current: bug.severity,
+                options: Self.severityOptions,
+                color: severityColor(bug.severity)
+            ) { value in
+                onUpdate(BugUpdate(severity: value))
+            }
             if !bug.keywords.isEmpty { row("Keywords", bug.keywords.joined(separator: ", ")) }
             if let when = bug.creationTime { dateRow("Created", when, relative: false) }
             if let when = bug.lastChangeTime { dateRow("Last change", when, relative: true) }
@@ -360,6 +380,64 @@ private struct BugMetadata: View {
                 Text(date, format: .dateTime.day().month().year())
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func editableRow(
+        label: String,
+        current: String?,
+        options: [String],
+        color: Color?,
+        onPick: @escaping (String) -> Void
+    ) -> some View {
+        let displayed = (current?.isEmpty == false ? current : nil) ?? "--"
+        GridRow {
+            Text(label).foregroundStyle(.secondary)
+            Menu {
+                ForEach(options, id: \.self) { value in
+                    Button {
+                        onPick(value)
+                    } label: {
+                        if value == current || (value == "--" && (current == nil || current?.isEmpty == true)) {
+                            Label(value, systemImage: "checkmark")
+                        } else {
+                            Text(value)
+                        }
+                    }
+                }
+                if let current, !current.isEmpty, !options.contains(current) {
+                    Divider()
+                    Text("Currently: \(current)")
+                        .foregroundStyle(.secondary)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(displayed).foregroundStyle(color ?? .primary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func priorityColor(_ value: String?) -> Color? {
+        switch value?.uppercased() {
+        case "P1": return .red
+        case "P2": return .orange
+        default: return nil
+        }
+    }
+
+    private func severityColor(_ value: String?) -> Color? {
+        switch value?.uppercased() {
+        case "S1", "BLOCKER", "CRITICAL": return .red
+        case "S2", "MAJOR": return .orange
+        default: return nil
         }
     }
 }

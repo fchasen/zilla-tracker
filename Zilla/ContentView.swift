@@ -509,10 +509,10 @@ struct BugListView: View {
     @ViewBuilder
     private func addAsMetaMenu(for bug: Bug) -> some View {
         if followedComponents.isEmpty {
-            Button("Add as Meta Bug…") {}
+            Button("Add To…") {}
                 .disabled(true)
         } else {
-            Menu("Add as Meta Bug") {
+            Menu("Add To") {
                 ForEach(followedComponents) { followed in
                     Button("\(followed.componentName)  ·  \(followed.product)") {
                         addBugAsMeta(bug, to: followed)
@@ -618,6 +618,16 @@ private struct BugRow: View {
                     Text(verbatim: "#\(bug.id)")
                     Text(verbatim: "·")
                     Text(bug.status)
+                    if let priority = displayPriority {
+                        Text(verbatim: "·")
+                        Text(priority)
+                            .foregroundStyle(priorityColor(bug.priority))
+                    }
+                    if let severity = displaySeverity {
+                        Text(verbatim: "·")
+                        Text(severity)
+                            .foregroundStyle(severityColor(bug.severity))
+                    }
                     if let assignee = friendlyAssignee {
                         Text(verbatim: "·")
                         Text(assignee)
@@ -647,6 +657,32 @@ private struct BugRow: View {
         switch bug.status.uppercased() {
         case "RESOLVED", "VERIFIED", "CLOSED": return .green
         case "ASSIGNED", "IN_PROGRESS": return .blue
+        default: return .secondary
+        }
+    }
+
+    private var displayPriority: String? {
+        guard let p = bug.priority, !p.isEmpty, p != "--" else { return nil }
+        return p
+    }
+
+    private var displaySeverity: String? {
+        guard let s = bug.severity, !s.isEmpty, s != "--" else { return nil }
+        return s
+    }
+
+    private func priorityColor(_ value: String?) -> Color {
+        switch value?.uppercased() {
+        case "P1": return .red
+        case "P2": return .orange
+        default: return .secondary
+        }
+    }
+
+    private func severityColor(_ value: String?) -> Color {
+        switch value?.uppercased() {
+        case "S1", "BLOCKER", "CRITICAL": return .red
+        case "S2", "MAJOR": return .orange
         default: return .secondary
         }
     }
