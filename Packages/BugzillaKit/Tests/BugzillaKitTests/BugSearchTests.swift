@@ -143,6 +143,31 @@ final class BugSearchTests: XCTestCase {
         _ = try await client.searchBugs(query)
     }
 
+    func testSearchToleratesMissingArrayFields() async throws {
+        // BMO honors include_fields by omitting unrequested keys entirely.
+        // Decoding must not require blocks/depends_on/cc/flags/keywords.
+        MockURLProtocol.handler = { request in
+            let body = #"""
+            {"bugs":[
+              {"id":1234567,"summary":"hi","status":"NEW","resolution":"",
+               "product":"Firefox","component":"General",
+               "assigned_to":"a@b","last_change_time":"2024-01-02T03:04:05Z"}
+            ]}
+            """#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 200), body)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        let result = try await client.searchBugs(BugQuery())
+        XCTAssertEqual(result.bugs.count, 1)
+        XCTAssertEqual(result.bugs[0].id, 1234567)
+        XCTAssertEqual(result.bugs[0].assignedTo, "a@b")
+        XCTAssertEqual(result.bugs[0].keywords, [])
+        XCTAssertEqual(result.bugs[0].blocks, [])
+        XCTAssertEqual(result.bugs[0].dependsOn, [])
+        XCTAssertEqual(result.bugs[0].cc, [])
+        XCTAssertEqual(result.bugs[0].flags, [])
+    }
+
     func testSearchDecodesTotalMatches() async throws {
         MockURLProtocol.handler = { request in
             let body = #"""

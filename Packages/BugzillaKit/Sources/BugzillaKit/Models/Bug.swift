@@ -65,6 +65,37 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.flags = flags
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, summary, status, resolution, product, component
+        case assignedTo, creator, reporter
+        case creationTime, lastChangeTime
+        case priority, severity, keywords, whiteboard
+        case blocks, dependsOn, cc, flags
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        self.status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        self.resolution = try c.decodeIfPresent(String.self, forKey: .resolution) ?? ""
+        self.product = try c.decodeIfPresent(String.self, forKey: .product) ?? ""
+        self.component = try c.decodeIfPresent(String.self, forKey: .component) ?? ""
+        self.assignedTo = try c.decodeIfPresent(String.self, forKey: .assignedTo)
+        self.creator = try c.decodeIfPresent(String.self, forKey: .creator)
+        self.reporter = try c.decodeIfPresent(String.self, forKey: .reporter)
+        self.creationTime = try c.decodeIfPresent(Date.self, forKey: .creationTime)
+        self.lastChangeTime = try c.decodeIfPresent(Date.self, forKey: .lastChangeTime)
+        self.priority = try c.decodeIfPresent(String.self, forKey: .priority)
+        self.severity = try c.decodeIfPresent(String.self, forKey: .severity)
+        self.keywords = try c.decodeIfPresent([String].self, forKey: .keywords) ?? []
+        self.whiteboard = try c.decodeIfPresent(String.self, forKey: .whiteboard)
+        self.blocks = try c.decodeIfPresent([Int].self, forKey: .blocks) ?? []
+        self.dependsOn = try c.decodeIfPresent([Int].self, forKey: .dependsOn) ?? []
+        self.cc = try c.decodeIfPresent([String].self, forKey: .cc) ?? []
+        self.flags = try c.decodeIfPresent([Flag].self, forKey: .flags) ?? []
+    }
+
     public var isMeta: Bool {
         keywords.contains("meta")
     }
