@@ -412,12 +412,7 @@ private struct BugMetadata: View {
                         .foregroundStyle(.secondary)
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text(displayed).foregroundStyle(color ?? .primary)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                Text(displayed).foregroundStyle(color ?? .primary)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()

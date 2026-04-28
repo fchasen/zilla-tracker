@@ -668,7 +668,8 @@ private struct BugRow: View {
     private var statusIcon: String {
         switch bug.status.uppercased() {
         case "RESOLVED", "VERIFIED", "CLOSED": return "checkmark.circle.fill"
-        case "ASSIGNED", "IN_PROGRESS": return "circle.lefthalf.filled"
+        case "ASSIGNED": return "circle"
+        case "IN_PROGRESS": return "circle.lefthalf.filled"
         default: return "circle"
         }
     }
