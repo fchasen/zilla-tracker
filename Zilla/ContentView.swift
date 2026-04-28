@@ -77,6 +77,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
 enum ReviewList: String, CaseIterable, Hashable, Identifiable {
     case active
     case review
+    case landed
 
     var id: String { rawValue }
 
@@ -84,6 +85,7 @@ enum ReviewList: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .active: return "Active"
         case .review: return "Review"
+        case .landed: return "Landed"
         }
     }
 
@@ -91,6 +93,7 @@ enum ReviewList: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .active: return "doc.text"
         case .review: return "checkmark.seal"
+        case .landed: return "shippingbox"
         }
     }
 }

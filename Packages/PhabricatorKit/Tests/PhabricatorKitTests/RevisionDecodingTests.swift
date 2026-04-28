@@ -86,6 +86,14 @@ final class RevisionDecodingTests: XCTestCase {
         XCTAssertEqual(query.constraints?.statuses, [RevisionStatus.Value.needsReview])
     }
 
+    func testLandedQueryConstrainsByAuthorPublishedAndModifiedStart() throws {
+        let since = Date(timeIntervalSince1970: 1_700_000_000)
+        let query = RevisionQuery.landed(authorPHID: "PHID-USER-aaa", since: since)
+        XCTAssertEqual(query.constraints?.authorPHIDs, ["PHID-USER-aaa"])
+        XCTAssertEqual(query.constraints?.statuses, [RevisionStatus.Value.published])
+        XCTAssertEqual(query.constraints?.modifiedStart, 1_700_000_000)
+    }
+
     func testFormBodyEncodesTokenAndJSON() throws {
         let body = ConduitFormBody.encode(token: "api-xyz", paramsJSON: "{\"order\":\"updated\"}")
         let s = String(data: body, encoding: .utf8) ?? ""

@@ -35,6 +35,8 @@ public struct RevisionQuery: Sendable, Encodable {
         public var responsiblePHIDs: [String]?
         public var statuses: [String]?
         public var query: String?
+        public var modifiedStart: Int?
+        public var modifiedEnd: Int?
 
         public init(
             ids: [Int]? = nil,
@@ -43,7 +45,9 @@ public struct RevisionQuery: Sendable, Encodable {
             reviewerPHIDs: [String]? = nil,
             responsiblePHIDs: [String]? = nil,
             statuses: [String]? = nil,
-            query: String? = nil
+            query: String? = nil,
+            modifiedStart: Int? = nil,
+            modifiedEnd: Int? = nil
         ) {
             self.ids = ids
             self.phids = phids
@@ -52,6 +56,8 @@ public struct RevisionQuery: Sendable, Encodable {
             self.responsiblePHIDs = responsiblePHIDs
             self.statuses = statuses
             self.query = query
+            self.modifiedStart = modifiedStart
+            self.modifiedEnd = modifiedEnd
         }
     }
 
@@ -84,6 +90,17 @@ public extension RevisionQuery {
             constraints: Constraints(
                 reviewerPHIDs: [reviewerPHID],
                 statuses: [RevisionStatus.Value.needsReview]
+            ),
+            order: "updated"
+        )
+    }
+
+    static func landed(authorPHID: String, since: Date) -> RevisionQuery {
+        RevisionQuery(
+            constraints: Constraints(
+                authorPHIDs: [authorPHID],
+                statuses: [RevisionStatus.Value.published],
+                modifiedStart: Int(since.timeIntervalSince1970)
             ),
             order: "updated"
         )

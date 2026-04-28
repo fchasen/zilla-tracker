@@ -81,6 +81,7 @@ struct RevisionListView: View {
         switch list {
         case .active: return "No open revisions you authored."
         case .review: return "No revisions waiting for your review."
+        case .landed: return "No revisions landed in the last week."
         }
     }
 
@@ -110,6 +111,9 @@ struct RevisionListView: View {
             switch list {
             case .active: return .active(authorPHID: phid)
             case .review: return .reviewing(reviewerPHID: phid)
+            case .landed:
+                let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 3600)
+                return .landed(authorPHID: phid, since: oneWeekAgo)
             }
         }()
         do {
