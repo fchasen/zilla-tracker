@@ -14,12 +14,8 @@ import UIKit
 
 struct BugDetailView: View {
     @Environment(AuthStore.self) private var auth
+    @Environment(Workspace.self) private var workspace
     let bugID: Bug.ID?
-
-    @State private var bug: Bug?
-    @State private var comments: [Comment] = []
-    @State private var isLoading = false
-    @State private var loadError: String?
 
     @State private var composerText: String = ""
     @State private var composerSelection: TextSelection?
@@ -30,7 +26,10 @@ struct BugDetailView: View {
     @State private var updateError: String?
     @State private var dupePrompt: DupePromptIdentifier?
 
-    @State private var showInspector = false
+    private var bug: Bug? { workspace.loadedBug }
+    private var comments: [Comment] { workspace.loadedComments }
+    private var loadError: String? { workspace.bugLoadError }
+    private var isLoading: Bool { workspace.isLoadingBug }
 
     var body: some View {
         Group {
@@ -76,29 +75,8 @@ struct BugDetailView: View {
                     statusMenu(for: bug)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-                .help(showInspector ? "Hide Inspector" : "Show Inspector")
-                .disabled(bug == nil)
-            }
         }
-        .inspector(isPresented: $showInspector) {
-            if let bug {
-                ScrollView {
-                    BugMetadata(bug: bug, onUpdate: { update in
-                        Task { await applyUpdate(update) }
-                    })
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
-            }
-        }
-        .task(id: bugID) { await load(id: bugID) }
+        .task(id: bugID) { await reload() }
         .alert(
             "Couldn't update bug",
             isPresented: Binding(
@@ -156,52 +134,22 @@ struct BugDetailView: View {
     ]
 
     private func applyUpdate(_ update: BugUpdate) async {
-        guard let id = bugID else { return }
         isUpdating = true
-        updateError = nil
         defer { isUpdating = false }
-
-        let client = auth.client
-        do {
-            _ = try await client.updateBug(id: id, update)
-            if let refreshedBug = try? await client.getBug(id: id) {
-                bug = refreshedBug
-            }
-            if let refreshedComments = try? await client.comments(bugID: id) {
-                comments = refreshedComments
-            }
-        } catch {
+        if let error = await workspace.applyBugUpdate(update, using: auth.client) {
             updateError = error.localizedDescription
         }
     }
 
-    private func load(id: Int?) async {
+    private func reload() async {
         composerText = ""
         composerSelection = nil
         composerError = nil
-        guard let id else {
-            bug = nil
-            comments = []
-            loadError = nil
+        guard let id = bugID else {
+            workspace.clearLoadedBug()
             return
         }
-        isLoading = true
-        loadError = nil
-        defer { isLoading = false }
-
-        let client = auth.client
-        do {
-            async let bugTask = client.getBug(id: id)
-            async let commentsTask = client.comments(bugID: id)
-            self.bug = try await bugTask
-            self.comments = try await commentsTask
-        } catch is CancellationError {
-            return
-        } catch {
-            self.bug = nil
-            self.comments = []
-            self.loadError = error.localizedDescription
-        }
+        await workspace.loadBug(id: id, using: auth.client)
     }
 
     private func postComment() async {
@@ -217,9 +165,7 @@ struct BugDetailView: View {
             _ = try await client.addComment(bugID: id, text: trimmed, isMarkdown: true)
             composerText = ""
             composerSelection = nil
-            if let refreshed = try? await client.comments(bugID: id) {
-                comments = refreshed
-            }
+            await workspace.refreshLoadedComments(using: client)
         } catch {
             composerError = error.localizedDescription
         }
@@ -360,7 +306,7 @@ private struct StatusPill: View {
     }
 }
 
-private struct BugMetadata: View {
+struct BugMetadata: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 

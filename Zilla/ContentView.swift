@@ -127,6 +127,14 @@ final class Workspace {
     var bugListSort: BugListSort = .newest
     var bugListRefreshToken: UUID = UUID()
 
+    // Active bug (loaded once per selection; shared with the inspector).
+    private(set) var loadedBug: Bug?
+    private(set) var loadedComments: [Comment] = []
+    private(set) var isLoadingBug = false
+    private(set) var bugLoadError: String?
+
+    var showInspector: Bool = false
+
     func loadProducts(using client: BugzillaClient) async {
         guard !isLoadingProducts else { return }
         isLoadingProducts = true
@@ -148,6 +156,60 @@ final class Workspace {
         sidebarSelection = .smart(.myBugs)
         selectedBugID = nil
         searchText = ""
+        clearLoadedBug()
+        showInspector = false
+    }
+
+    @MainActor
+    func loadBug(id: Bug.ID, using client: BugzillaClient) async {
+        isLoadingBug = true
+        bugLoadError = nil
+        defer { isLoadingBug = false }
+        do {
+            async let bugTask = client.getBug(id: id)
+            async let commentsTask = client.comments(bugID: id)
+            loadedBug = try await bugTask
+            loadedComments = try await commentsTask
+        } catch is CancellationError {
+            return
+        } catch {
+            loadedBug = nil
+            loadedComments = []
+            bugLoadError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    func clearLoadedBug() {
+        loadedBug = nil
+        loadedComments = []
+        bugLoadError = nil
+    }
+
+    @discardableResult
+    @MainActor
+    func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
+        guard let id = loadedBug?.id else { return nil }
+        do {
+            _ = try await client.updateBug(id: id, update)
+            if let refreshed = try? await client.getBug(id: id) {
+                loadedBug = refreshed
+            }
+            if let refreshed = try? await client.comments(bugID: id) {
+                loadedComments = refreshed
+            }
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @MainActor
+    func refreshLoadedComments(using client: BugzillaClient) async {
+        guard let id = loadedBug?.id else { return }
+        if let refreshed = try? await client.comments(bugID: id) {
+            loadedComments = refreshed
+        }
     }
 
     func bugQuery(for selection: SidebarSelection) -> BugQuery {
@@ -236,14 +298,50 @@ struct ContentView: View {
                 }
                 .help("Account")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    workspace.showInspector.toggle()
+                } label: {
+                    Label("Inspector", systemImage: "sidebar.right")
+                }
+                .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
+                .disabled(workspace.loadedBug == nil)
+            }
         }
         .sheet(isPresented: $showAddComponent) {
             ComponentPickerSheet()
+        }
+        .inspector(isPresented: $workspace.showInspector) {
+            BugInspector()
+                .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
         }
         .task {
             if workspace.products.isEmpty {
                 await workspace.loadProducts(using: auth.client)
             }
+        }
+    }
+}
+
+private struct BugInspector: View {
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+
+    var body: some View {
+        if let bug = workspace.loadedBug {
+            ScrollView {
+                BugMetadata(bug: bug, onUpdate: { update in
+                    Task { await workspace.applyBugUpdate(update, using: auth.client) }
+                })
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            ContentUnavailableView(
+                "No bug selected",
+                systemImage: "sidebar.right",
+                description: Text("Select a bug to see its details.")
+            )
         }
     }
 }
@@ -509,16 +607,9 @@ struct BugListView: View {
 
     private var searchField: some View {
         @Bindable var workspace = workspace
-        return HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search bugs", text: $workspace.searchText)
-                .textFieldStyle(.plain)
-                .frame(width: 200)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        return TextField("Search bugs", text: $workspace.searchText)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 220)
     }
 
     private var sortMenu: some View {
