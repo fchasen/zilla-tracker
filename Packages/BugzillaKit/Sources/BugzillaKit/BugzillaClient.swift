@@ -194,7 +194,11 @@ public extension BugzillaClient {
 
     func getBug(id: Bug.ID) async throws -> Bug {
         struct Response: Decodable { let bugs: [Bug] }
-        let response: Response = try await execute(Endpoint(path: "bug/\(id)"))
+        let endpoint = Endpoint(
+            path: "bug/\(id)",
+            query: [URLQueryItem(name: "include_fields", value: "_default,attachments")]
+        )
+        let response: Response = try await execute(endpoint)
         guard let bug = response.bugs.first else {
             throw BugzillaError.notFound
         }

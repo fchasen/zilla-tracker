@@ -233,6 +233,49 @@ public struct Comment: Codable, Sendable, Hashable, Identifiable {
     public let creationTime: Date
     public let isPrivate: Bool
     public let count: Int?
+    public let attachmentId: Attachment.ID?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, bugId, creator, text, creationTime, isPrivate, count, attachmentId
+    }
+
+    public init(
+        id: ID,
+        bugId: Bug.ID,
+        creator: String,
+        text: String,
+        creationTime: Date,
+        isPrivate: Bool,
+        count: Int?,
+        attachmentId: Attachment.ID? = nil
+    ) {
+        self.id = id
+        self.bugId = bugId
+        self.creator = creator
+        self.text = text
+        self.creationTime = creationTime
+        self.isPrivate = isPrivate
+        self.count = count
+        self.attachmentId = attachmentId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.bugId = try c.decodeIfPresent(Int.self, forKey: .bugId) ?? 0
+        self.creator = try c.decodeIfPresent(String.self, forKey: .creator) ?? ""
+        self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        self.creationTime = try c.decodeIfPresent(Date.self, forKey: .creationTime) ?? .distantPast
+        if let b = try? c.decode(Bool.self, forKey: .isPrivate) {
+            self.isPrivate = b
+        } else if let i = try? c.decode(Int.self, forKey: .isPrivate) {
+            self.isPrivate = i != 0
+        } else {
+            self.isPrivate = false
+        }
+        self.count = try c.decodeIfPresent(Int.self, forKey: .count)
+        self.attachmentId = try c.decodeIfPresent(Int.self, forKey: .attachmentId)
+    }
 }
 
 public struct Attachment: Codable, Sendable, Hashable, Identifiable {
@@ -251,6 +294,7 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
     public let isPatch: Bool
     public let isPrivate: Bool
     public let data: String?
+    public let flags: [Flag]
 
     public init(
         id: ID,
@@ -265,7 +309,8 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
         isObsolete: Bool = false,
         isPatch: Bool = false,
         isPrivate: Bool = false,
-        data: String? = nil
+        data: String? = nil,
+        flags: [Flag] = []
     ) {
         self.id = id
         self.bugId = bugId
@@ -280,12 +325,13 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
         self.isPatch = isPatch
         self.isPrivate = isPrivate
         self.data = data
+        self.flags = flags
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, bugId, fileName, summary, contentType, creator
         case creationTime, lastChangeTime, size
-        case isObsolete, isPatch, isPrivate, data
+        case isObsolete, isPatch, isPrivate, data, flags
     }
 
     public init(from decoder: Decoder) throws {
@@ -299,10 +345,17 @@ public struct Attachment: Codable, Sendable, Hashable, Identifiable {
         self.creationTime = try c.decodeIfPresent(Date.self, forKey: .creationTime) ?? .distantPast
         self.lastChangeTime = try c.decodeIfPresent(Date.self, forKey: .lastChangeTime)
         self.size = try c.decodeIfPresent(Int.self, forKey: .size)
-        self.isObsolete = try c.decodeIfPresent(Bool.self, forKey: .isObsolete) ?? false
-        self.isPatch = try c.decodeIfPresent(Bool.self, forKey: .isPatch) ?? false
-        self.isPrivate = try c.decodeIfPresent(Bool.self, forKey: .isPrivate) ?? false
+        self.isObsolete = Self.decodeFlexibleBool(c, key: .isObsolete)
+        self.isPatch = Self.decodeFlexibleBool(c, key: .isPatch)
+        self.isPrivate = Self.decodeFlexibleBool(c, key: .isPrivate)
         self.data = try c.decodeIfPresent(String.self, forKey: .data)
+        self.flags = try c.decodeIfPresent([Flag].self, forKey: .flags) ?? []
+    }
+
+    private static func decodeFlexibleBool(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Bool {
+        if let b = try? c.decodeIfPresent(Bool.self, forKey: key) { return b }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return i != 0 }
+        return false
     }
 }
 
