@@ -53,7 +53,7 @@ struct RevisionListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    Task { await load(force: true) }
+                    Task { await load() }
                 } label: {
                     if isLoading {
                         ProgressView().controlSize(.small)
@@ -67,7 +67,7 @@ struct RevisionListView: View {
             }
         }
         .task(id: TaskKey(list: list, signedIn: phab.isSignedIn)) {
-            await load(force: false)
+            await load()
         }
     }
 
@@ -99,19 +99,19 @@ struct RevisionListView: View {
         }
     }
 
-    private func load(force: Bool) async {
+    private func load() async {
         guard phab.isSignedIn, let phid = phab.currentUser?.phid else {
             revisions = []
             return
         }
-        if !force && !revisions.isEmpty { return }
+        revisions = []
         isLoading = true
         loadError = nil
         defer { isLoading = false }
         let query: RevisionQuery = {
             switch list {
             case .active: return .active(authorPHID: phid)
-            case .review: return .reviewing(reviewerPHID: phid)
+            case .review: return .reviewing(responsiblePHID: phid)
             case .landed:
                 let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 3600)
                 return .landed(authorPHID: phid, since: oneWeekAgo)
@@ -119,7 +119,11 @@ struct RevisionListView: View {
         }()
         do {
             let result = try await phab.client.searchRevisions(query)
-            revisions = result.data
+            if list == .review {
+                revisions = result.data.filter { $0.fields.authorPHID != phid }
+            } else {
+                revisions = result.data
+            }
         } catch is CancellationError {
             return
         } catch {

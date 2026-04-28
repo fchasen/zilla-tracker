@@ -85,10 +85,10 @@ public extension RevisionQuery {
         )
     }
 
-    static func reviewing(reviewerPHID: String) -> RevisionQuery {
+    static func reviewing(responsiblePHID: String) -> RevisionQuery {
         RevisionQuery(
             constraints: Constraints(
-                reviewerPHIDs: [reviewerPHID],
+                responsiblePHIDs: [responsiblePHID],
                 statuses: [RevisionStatus.Value.needsReview]
             ),
             order: "updated"
