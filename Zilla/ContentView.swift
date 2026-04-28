@@ -1130,32 +1130,24 @@ private struct FollowedComponentEntry: View {
             ($0.position, $0.addedAt) < ($1.position, $1.addedAt)
         }
 
-        Group {
-            if metas.isEmpty {
-                FollowedComponentRow(followed: followed)
-                    .tag(SidebarSelection.component(followed.ref))
-                    .contextMenu { componentMenu }
-            } else {
-                DisclosureGroup(isExpanded: $isExpanded) {
-                    Label("Open Bugs", systemImage: "tray.full")
-                        .tag(SidebarSelection.component(followed.ref))
-                    ForEach(metas) { meta in
-                        FollowedMetaBugRow(meta: meta)
-                            .tag(SidebarSelection.metaBug(meta.bugId))
-                            .contextMenu {
-                                Button("Remove", role: .destructive) {
-                                    modelContext.delete(meta)
-                                }
-                            }
+        DisclosureGroup(isExpanded: $isExpanded) {
+            Label("Open Bugs", systemImage: "tray.full")
+                .tag(SidebarSelection.component(followed.ref))
+            ForEach(metas) { meta in
+                FollowedMetaBugRow(meta: meta)
+                    .tag(SidebarSelection.metaBug(meta.bugId))
+                    .contextMenu {
+                        Button("Remove", role: .destructive) {
+                            modelContext.delete(meta)
+                        }
                     }
-                    .onMove { source, destination in
-                        moveMetas(metas, from: source, to: destination)
-                    }
-                } label: {
-                    FollowedComponentRow(followed: followed)
-                        .contextMenu { componentMenu }
-                }
             }
+            .onMove { source, destination in
+                moveMetas(metas, from: source, to: destination)
+            }
+        } label: {
+            FollowedComponentRow(followed: followed)
+                .contextMenu { componentMenu }
         }
         .background(
             isDropTarget
