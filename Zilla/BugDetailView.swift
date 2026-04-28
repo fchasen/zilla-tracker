@@ -215,24 +215,21 @@ private struct BugContent: View {
     let onUpdate: (BugUpdate) -> Void
 
     var body: some View {
+        #if os(macOS)
+        HStack(alignment: .top, spacing: 0) {
+            mainColumn
+            Divider()
+            metadataSidebar
+        }
+        #else
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 BugHeader(bug: bug)
                 Divider()
                 BugMetadata(bug: bug, onUpdate: onUpdate)
-
-                if let loadError {
-                    Label(loadError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-
-                if let description = descriptionComment {
-                    DescriptionBlock(comment: description)
-                }
-
+                if let loadError { errorLabel(loadError) }
+                if let description = descriptionComment { DescriptionBlock(comment: description) }
                 BugCommentsSection(comments: threadComments)
-
                 Divider()
                 CommentComposer(
                     text: $composerText,
@@ -245,6 +242,47 @@ private struct BugContent: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        #endif
+    }
+
+    private var mainColumn: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                BugHeader(bug: bug)
+                if let loadError { errorLabel(loadError) }
+                if let description = descriptionComment {
+                    DescriptionBlock(comment: description)
+                }
+                BugCommentsSection(comments: threadComments)
+                Divider()
+                CommentComposer(
+                    text: $composerText,
+                    selection: $composerSelection,
+                    isPosting: isPosting,
+                    error: composerError,
+                    onPost: onPost
+                )
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var metadataSidebar: some View {
+        ScrollView {
+            BugMetadata(bug: bug, onUpdate: onUpdate)
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 260)
+        .background(Color.secondary.opacity(0.05))
+    }
+
+    @ViewBuilder
+    private func errorLabel(_ message: String) -> some View {
+        Label(message, systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(.orange)
     }
 
     private var descriptionComment: Comment? {
