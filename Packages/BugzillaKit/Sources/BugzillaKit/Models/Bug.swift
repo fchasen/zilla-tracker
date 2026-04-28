@@ -135,6 +135,37 @@ public struct Flag: Codable, Sendable, Hashable, Identifiable {
     public let modificationDate: Date?
 }
 
+public struct BugRelationUpdate: Sendable, Equatable, Encodable {
+    public var add: [Bug.ID]?
+    public var remove: [Bug.ID]?
+    public var set: [Bug.ID]?
+
+    public init(add: [Bug.ID]? = nil, remove: [Bug.ID]? = nil, set: [Bug.ID]? = nil) {
+        self.add = add
+        self.remove = remove
+        self.set = set
+    }
+
+    public static func add(_ ids: [Bug.ID]) -> BugRelationUpdate {
+        BugRelationUpdate(add: ids)
+    }
+
+    public static func remove(_ ids: [Bug.ID]) -> BugRelationUpdate {
+        BugRelationUpdate(remove: ids)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case add, remove, set
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(add, forKey: .add)
+        try c.encodeIfPresent(remove, forKey: .remove)
+        try c.encodeIfPresent(set, forKey: .set)
+    }
+}
+
 public struct BugUpdate: Sendable, Equatable {
     public var status: String?
     public var resolution: String?
@@ -144,6 +175,8 @@ public struct BugUpdate: Sendable, Equatable {
     public var severity: String?
     public var comment: String?
     public var commentIsPrivate: Bool?
+    public var blocks: BugRelationUpdate?
+    public var dependsOn: BugRelationUpdate?
 
     public init(
         status: String? = nil,
@@ -153,7 +186,9 @@ public struct BugUpdate: Sendable, Equatable {
         priority: String? = nil,
         severity: String? = nil,
         comment: String? = nil,
-        commentIsPrivate: Bool? = nil
+        commentIsPrivate: Bool? = nil,
+        blocks: BugRelationUpdate? = nil,
+        dependsOn: BugRelationUpdate? = nil
     ) {
         self.status = status
         self.resolution = resolution
@@ -163,6 +198,8 @@ public struct BugUpdate: Sendable, Equatable {
         self.severity = severity
         self.comment = comment
         self.commentIsPrivate = commentIsPrivate
+        self.blocks = blocks
+        self.dependsOn = dependsOn
     }
 }
 

@@ -96,6 +96,42 @@ final class UpdateBugTests: XCTestCase {
         let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
         _ = try await client.updateBug(id: 1, BugUpdate())
     }
+
+    func testAddBlocksUsesAddObject() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let blocks = try XCTUnwrap(json["blocks"] as? [String: Any])
+            XCTAssertEqual(blocks["add"] as? [Int], [42])
+            XCTAssertNil(blocks["remove"])
+            XCTAssertNil(blocks["set"])
+            XCTAssertNil(json["depends_on"])
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(
+            id: 1,
+            BugUpdate(blocks: BugRelationUpdate(add: [42]))
+        )
+    }
+
+    func testAddDependsOnUsesSnakeCaseKey() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let dependsOn = try XCTUnwrap(json["depends_on"] as? [String: Any])
+            XCTAssertEqual(dependsOn["add"] as? [Int], [99])
+            XCTAssertNil(json["blocks"])
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(
+            id: 1,
+            BugUpdate(dependsOn: .add([99]))
+        )
+    }
 }
 
 private extension URLRequest {

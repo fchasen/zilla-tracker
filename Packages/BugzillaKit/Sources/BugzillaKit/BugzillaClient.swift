@@ -233,10 +233,13 @@ public extension BugzillaClient {
             let priority: String?
             let severity: String?
             let comment: CommentBody?
+            let blocks: BugRelationUpdate?
+            let dependsOn: BugRelationUpdate?
 
             enum CodingKeys: String, CodingKey {
                 case status, resolution, dupeOf
                 case assignedTo, priority, severity, comment
+                case blocks, dependsOn
             }
 
             func encode(to encoder: Encoder) throws {
@@ -248,6 +251,8 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(priority, forKey: .priority)
                 try c.encodeIfPresent(severity, forKey: .severity)
                 try c.encodeIfPresent(comment, forKey: .comment)
+                try c.encodeIfPresent(blocks, forKey: .blocks)
+                try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
             }
         }
 
@@ -258,7 +263,9 @@ public extension BugzillaClient {
             assignedTo: update.assignedTo,
             priority: update.priority,
             severity: update.severity,
-            comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) }
+            comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) },
+            blocks: update.blocks,
+            dependsOn: update.dependsOn
         )
         let body = try encoder.encode(payload)
 
