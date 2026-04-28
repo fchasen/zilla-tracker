@@ -341,7 +341,7 @@ private struct BugHeader: View {
             HStack(spacing: 8) {
                 BugTypePill(
                     type: bug.type,
-                    dragTransfer: BugTransfer(id: bug.id, summary: bug.summary)
+                    linkTransfer: BugLinkTransfer(id: bug.id, summary: bug.summary)
                 )
 
                 Button(action: copyID) {
@@ -1643,5 +1643,46 @@ private struct BugBlockDropModifier: ViewModifier {
 extension View {
     func bugBlockDrop(target: Bug.ID, fixed: BlockDirection? = nil) -> some View {
         modifier(BugBlockDropModifier(target: target, fixed: fixed))
+    }
+
+    func bugLinkDrop(target: Bug.ID) -> some View {
+        modifier(BugLinkDropModifier(target: target))
+    }
+}
+
+private struct BugLinkDropModifier: ViewModifier {
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+
+    let target: Bug.ID
+
+    @State private var isTargeted: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isTargeted ? Color.accentColor.opacity(0.18) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .dropDestination(for: BugLinkTransfer.self) { transfers, _ in
+                let targetID = target
+                let usable = transfers.filter { $0.id != targetID }
+                guard !usable.isEmpty else { return false }
+                let workspace = workspace
+                let client = auth.client
+                Task { @MainActor in
+                    for transfer in usable {
+                        if let error = await workspace.linkBlocking(
+                            source: transfer.id,
+                            target: targetID,
+                            using: client
+                        ) {
+                            workspace.lastLinkError = error.localizedDescription
+                            return
+                        }
+                    }
+                }
+                return true
+            } isTargeted: { isTargeted = $0 }
     }
 }

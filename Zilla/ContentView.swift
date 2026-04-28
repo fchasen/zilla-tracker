@@ -14,11 +14,11 @@ import BugzillaKit
 
 struct BugTypePill: View {
     let type: String?
-    var dragTransfer: BugTransfer? = nil
+    var linkTransfer: BugLinkTransfer? = nil
 
     var body: some View {
         if let info {
-            if let transfer = dragTransfer {
+            if let transfer = linkTransfer {
                 icon(info)
                     .draggable(transfer) {
                         Label("#\(transfer.id) \(transfer.summary)", systemImage: "ant")
@@ -44,7 +44,7 @@ struct BugTypePill: View {
         case "enhancement": return ("sparkles", .indigo, "Enhancement")
         case "task": return ("clipboard", .gray, "Task")
         default:
-            return dragTransfer == nil ? nil : ("ant.fill", .secondary, "Bug")
+            return linkTransfer == nil ? nil : ("ant.fill", .secondary, "Bug")
         }
     }
 }
@@ -52,6 +52,15 @@ struct BugTypePill: View {
 // MARK: - Drag payload
 
 struct BugTransfer: Codable, Transferable {
+    let id: Int
+    let summary: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .json)
+    }
+}
+
+struct BugLinkTransfer: Codable, Transferable {
     let id: Int
     let summary: String
 
@@ -1163,27 +1172,23 @@ struct BugListView: View {
                 )
             } else {
                 List(selection: $selectedBugID) {
-                    if isOrdered, let key = endpointKey {
-                        let sorted = sortedBugs
+                    let sorted = sortedBugs
+                    ReorderZone(
+                        endpointKey: endpointKey,
+                        zoneIndex: 0,
+                        displayed: sorted,
+                        entries: orderEntries,
+                        isEnabled: isOrdered
+                    )
+                    ForEach(Array(sorted.enumerated()), id: \.element.id) { index, bug in
+                        row(for: bug)
                         ReorderZone(
-                            endpointKey: key,
-                            zoneIndex: 0,
+                            endpointKey: endpointKey,
+                            zoneIndex: index + 1,
                             displayed: sorted,
-                            entries: orderEntries
+                            entries: orderEntries,
+                            isEnabled: isOrdered
                         )
-                        ForEach(Array(sorted.enumerated()), id: \.element.id) { index, bug in
-                            row(for: bug)
-                            ReorderZone(
-                                endpointKey: key,
-                                zoneIndex: index + 1,
-                                displayed: sorted,
-                                entries: orderEntries
-                            )
-                        }
-                    } else {
-                        ForEach(sortedBugs) { bug in
-                            row(for: bug)
-                        }
                     }
                     if let total = totalMatches, total > bugs.count {
                         Text("Showing \(bugs.count) of \(total). Refine the search to narrow.")
@@ -1228,7 +1233,7 @@ struct BugListView: View {
                     .padding(8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
             }
-            .bugBlockDrop(target: bug.id)
+            .bugLinkDrop(target: bug.id)
             .contextMenu {
                 addAsMetaMenu(for: bug)
             }
@@ -1450,35 +1455,44 @@ private struct BugListLoadKey: Hashable {
 private struct ReorderZone: View {
     @Environment(\.modelContext) private var modelContext
 
-    let endpointKey: String
+    let endpointKey: String?
     let zoneIndex: Int
     let displayed: [Bug]
     let entries: [BugOrderEntry]
+    let isEnabled: Bool
 
     @State private var isTargeted = false
 
     var body: some View {
+        if isEnabled, let key = endpointKey {
+            zoneBase
+                .dropDestination(for: BugTransfer.self) { transfers, _ in
+                    guard let transfer = transfers.first else { return false }
+                    reorder(bugID: transfer.id, key: key)
+                    return true
+                } isTargeted: { isTargeted = $0 }
+        } else {
+            zoneBase
+        }
+    }
+
+    private var zoneBase: some View {
         Color.clear
-            .frame(height: 6)
+            .frame(height: 3)
             .overlay(alignment: .center) {
                 if isTargeted {
                     Capsule()
                         .fill(Color.accentColor)
-                        .frame(height: 2)
+                        .frame(height: 1.5)
                         .padding(.horizontal, 4)
                 }
             }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
             .selectionDisabled()
-            .dropDestination(for: BugTransfer.self) { transfers, _ in
-                guard let transfer = transfers.first else { return false }
-                reorder(bugID: transfer.id)
-                return true
-            } isTargeted: { isTargeted = $0 }
     }
 
-    private func reorder(bugID: Bug.ID) {
+    private func reorder(bugID: Bug.ID, key: String) {
         let removeIdx = displayed.firstIndex(where: { $0.id == bugID })
         var newOrder = displayed
         if let idx = removeIdx {
@@ -1497,7 +1511,7 @@ private struct ReorderZone: View {
         newOrder.insert(bug, at: insertIdx)
 
         let preexisting: Set<Bug.ID> = Set(
-            entries.filter { $0.endpointKey == endpointKey }.map(\.bugId)
+            entries.filter { $0.endpointKey == key }.map(\.bugId)
         )
         let firstManualIdx = newOrder.firstIndex { $0.id == bugID || preexisting.contains($0.id) }
             ?? newOrder.count
@@ -1506,14 +1520,14 @@ private struct ReorderZone: View {
             let candidate = newOrder[i]
             let position = i - firstManualIdx
             if let entry = entries.first(where: {
-                $0.endpointKey == endpointKey && $0.bugId == candidate.id
+                $0.endpointKey == key && $0.bugId == candidate.id
             }) {
                 if entry.position != position {
                     entry.position = position
                 }
             } else {
                 modelContext.insert(BugOrderEntry(
-                    endpointKey: endpointKey,
+                    endpointKey: key,
                     bugId: candidate.id,
                     position: position
                 ))
