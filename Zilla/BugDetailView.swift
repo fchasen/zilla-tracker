@@ -232,6 +232,8 @@ private struct BugHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
+                BugTypePill(type: bug.type)
+
                 Button(action: copyID) {
                     Text(verbatim: "#\(bug.id)")
                         .font(.headline.monospaced())
@@ -248,8 +250,14 @@ private struct BugHeader: View {
                     .help("Open in Bugzilla")
                 }
 
-                BugTypePill(type: bug.type)
                 StatusPill(bug: bug)
+
+                if let priority = displayPriority {
+                    MetaPill(label: priority, color: priorityColor(bug.priority))
+                }
+                if let severity = displaySeverity {
+                    MetaPill(label: severity, color: severityColor(bug.severity))
+                }
 
                 if didCopy {
                     Text("Copied")
@@ -261,6 +269,32 @@ private struct BugHeader: View {
             Text(bug.summary)
                 .font(.title2)
                 .textSelection(.enabled)
+        }
+    }
+
+    private var displayPriority: String? {
+        guard let p = bug.priority, !p.isEmpty, p != "--" else { return nil }
+        return p
+    }
+
+    private var displaySeverity: String? {
+        guard let s = bug.severity, !s.isEmpty, s != "--" else { return nil }
+        return s
+    }
+
+    private func priorityColor(_ value: String?) -> Color {
+        switch value?.uppercased() {
+        case "P1": return .red
+        case "P2": return .orange
+        default: return .secondary
+        }
+    }
+
+    private func severityColor(_ value: String?) -> Color {
+        switch value?.uppercased() {
+        case "S1", "BLOCKER", "CRITICAL": return .red
+        case "S2", "MAJOR": return .orange
+        default: return .secondary
         }
     }
 
@@ -298,9 +332,9 @@ private struct StatusPill: View {
 
     private var label: String {
         if bug.resolution.isEmpty {
-            return bug.status
+            return bug.status.bugzillaTitleCased
         }
-        return "\(bug.status) · \(bug.resolution)"
+        return "\(bug.status.bugzillaTitleCased) · \(bug.resolution.bugzillaTitleCased)"
     }
 
     private var color: Color {
@@ -309,6 +343,20 @@ private struct StatusPill: View {
         case "ASSIGNED", "IN_PROGRESS": return .blue
         default: return .orange
         }
+    }
+}
+
+private struct MetaPill: View {
+    let label: String
+    let color: Color
+
+    var body: some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.18), in: Capsule())
+            .foregroundStyle(color)
     }
 }
 
@@ -658,9 +706,6 @@ private struct CommentComposer: View {
             FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
                 wrapLink()
             }
-            FormatButton(systemImage: "magnifyingglass", help: "Insert Searchfox link") {
-                showingSearchfoxPicker = true
-            }
             FormatButton(systemImage: "list.bullet", help: "Bullet list") {
                 prefixLines("- ")
             }
@@ -669,6 +714,9 @@ private struct CommentComposer: View {
             }
             FormatButton(systemImage: "text.quote", help: "Blockquote") {
                 prefixLines("> ")
+            }
+            FormatButton(systemImage: "magnifyingglass", help: "Insert Searchfox link (⌘F)", shortcut: KeyboardShortcut("f", modifiers: .command)) {
+                showingSearchfoxPicker = true
             }
         }
         .disabled(isPosting)
