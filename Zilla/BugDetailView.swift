@@ -1180,61 +1180,79 @@ private struct PatchesSection: View {
 }
 
 private struct PatchRow: View {
+    @Environment(Workspace.self) private var workspace
     let attachment: BugzillaKit.Attachment
 
     var body: some View {
-        Link(destination: openURL) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Image(systemName: iconName)
-                    .foregroundStyle(accentColor)
-                    .imageScale(.large)
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        if let revision = phabRevision {
-                            Text(revision)
-                                .font(.callout.weight(.semibold).monospaced())
-                                .foregroundStyle(accentColor)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Link(destination: openURL) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Image(systemName: iconName)
+                        .foregroundStyle(accentColor)
+                        .imageScale(.large)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            if let revision = phabRevision {
+                                Text(revision)
+                                    .font(.callout.weight(.semibold).monospaced())
+                                    .foregroundStyle(accentColor)
+                            }
+                            Text(title)
+                                .font(.callout)
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            ForEach(approvalChannels, id: \.self) { channel in
+                                MetaPill(label: channel, color: .green)
+                            }
                         }
-                        Text(title)
-                            .font(.callout)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        ForEach(approvalChannels, id: \.self) { channel in
-                            MetaPill(label: channel, color: .green)
-                        }
-                    }
-                    HStack(spacing: 6) {
-                        Text(attachment.creator).lineLimit(1)
-                        Text(verbatim: "·")
-                        Text(attachment.creationTime, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                        if isPhabricator {
+                        HStack(spacing: 6) {
+                            Text(attachment.creator).lineLimit(1)
                             Text(verbatim: "·")
-                            Text("Phabricator")
-                        } else {
-                            Text(verbatim: "·")
-                            Text("Patch")
+                            Text(attachment.creationTime, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
+                            if isPhabricator {
+                                Text(verbatim: "·")
+                                Text("Phabricator")
+                            } else {
+                                Text(verbatim: "·")
+                                Text("Patch")
+                            }
                         }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+            }
+            .buttonStyle(.plain)
+            .help(isPhabricator ? "Open D\(phabRevisionInt.map(String.init) ?? "") in Phabricator" : "Open patch in Bugzilla")
+
+            if let id = phabRevisionInt {
+                Button {
+                    workspace.activeRevisionID = id
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open D\(id) in Zilla")
+            } else {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .padding(.leading, 8)
             }
-            .padding(12)
-            .background(accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(accentColor.opacity(0.25), lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.plain)
-        .help(isPhabricator ? "Open in Phabricator" : "Open patch in Bugzilla")
+        .padding(12)
+        .background(accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(accentColor.opacity(0.25), lineWidth: 1)
+        )
     }
 
     private var isPhabricator: Bool {
@@ -1257,6 +1275,11 @@ private struct PatchRow: View {
             }
         }
         return nil
+    }
+
+    private var phabRevisionInt: Int? {
+        guard let r = phabRevision else { return nil }
+        return Int(r.dropFirst())
     }
 
     private var approvalChannels: [String] {
