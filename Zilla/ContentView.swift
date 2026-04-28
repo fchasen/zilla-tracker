@@ -1684,7 +1684,6 @@ extension View {
 
 private struct BugRow: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
-    @Environment(AuthStore.self) private var auth
     let bug: Bug
 
     var body: some View {
@@ -1712,7 +1711,6 @@ private struct BugRow: View {
                     metadataLine(level: 1)
                     metadataLine(level: 2)
                     metadataLine(level: 3)
-                    metadataLine(level: 4)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1777,18 +1775,6 @@ private struct BugRow: View {
         }
     }
 
-    private var friendlyAssignee: String? {
-        guard let raw = bug.assignedTo, !raw.isEmpty else { return nil }
-        if raw.lowercased().contains("nobody") { return nil }
-        if let me = auth.currentUser?.name, raw.caseInsensitiveCompare(me) == .orderedSame {
-            return nil
-        }
-        if let detail = bug.assignedToDetail {
-            return detail.displayName
-        }
-        return User.localPart(of: raw)
-    }
-
     @ViewBuilder
     private func metadataLine(level: Int) -> some View {
         HStack(spacing: 6) {
@@ -1796,19 +1782,15 @@ private struct BugRow: View {
             Text(verbatim: "\(bug.id)")
             Text(verbatim: "·")
             Text(bug.status.bugzillaTitleCased)
-            if level <= 3, let priority = displayPriority {
+            if level <= 2, let priority = displayPriority {
                 Text(verbatim: "·")
                 Text(priority)
                     .foregroundStyle(priorityColor(bug.priority))
             }
-            if level <= 2, let severity = displaySeverity {
+            if level <= 1, let severity = displaySeverity {
                 Text(verbatim: "·")
                 Text(severity)
                     .foregroundStyle(severityColor(bug.severity))
-            }
-            if level <= 1, let assignee = friendlyAssignee {
-                Text(verbatim: "·")
-                Text(assignee)
             }
             if level <= 0, let when = bug.lastChangeTime {
                 Text(verbatim: "·")
