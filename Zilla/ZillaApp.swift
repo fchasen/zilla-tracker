@@ -14,6 +14,7 @@ struct ZillaApp: App {
     @State private var phab = PhabricatorAuthStore()
     @State private var workspace = Workspace()
     @State private var viewedBugs = ViewedBugsStore()
+    @State private var viewedRevisions = ViewedRevisionsStore()
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,7 @@ struct ZillaApp: App {
                 .environment(phab)
                 .environment(workspace)
                 .environment(viewedBugs)
+                .environment(viewedRevisions)
                 .task {
                     await auth.bootstrap()
                     await phab.bootstrap()

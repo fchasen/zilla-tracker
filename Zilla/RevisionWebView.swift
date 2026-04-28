@@ -7,6 +7,7 @@ import SwiftUI
 import WebKit
 
 struct RevisionWebView: View {
+    @Environment(ViewedRevisionsStore.self) private var viewedRevisions
     let revisionID: Int
     let onClose: () -> Void
 
@@ -46,6 +47,9 @@ struct RevisionWebView: View {
             Divider()
 
             PhabricatorWebView(url: revisionURL)
+        }
+        .task(id: revisionID) {
+            viewedRevisions.markViewed(revisionID)
         }
     }
 }

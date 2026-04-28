@@ -139,12 +139,19 @@ struct RevisionListView: View {
 }
 
 private struct RevisionRow: View {
+    @Environment(ViewedRevisionsStore.self) private var viewedRevisions
     let revision: Revision
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
+                    if !viewedRevisions.contains(revision.id) {
+                        Circle()
+                            .fill(.blue)
+                            .frame(width: 7, height: 7)
+                            .accessibilityLabel("New")
+                    }
                     Text(revision.revisionLabel)
                         .font(.callout.weight(.semibold).monospaced())
                         .foregroundStyle(.blue)
