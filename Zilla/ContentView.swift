@@ -16,29 +16,20 @@ struct BugTypePill: View {
     let type: String?
 
     var body: some View {
-        if let displayed {
-            Text(displayed)
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(color.opacity(0.18), in: Capsule())
-                .foregroundStyle(color)
+        if let info {
+            Image(systemName: info.symbol)
+                .foregroundStyle(info.color)
+                .help(info.label)
+                .accessibilityLabel(info.label)
         }
     }
 
-    private var displayed: String? {
-        guard let raw = type?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty,
-              raw != "--" else { return nil }
-        return raw.prefix(1).uppercased() + raw.dropFirst()
-    }
-
-    private var color: Color {
+    private var info: (symbol: String, color: Color, label: String)? {
         switch type?.lowercased() {
-        case "defect": return .red
-        case "enhancement": return .indigo
-        case "task": return .gray
-        default: return .secondary
+        case "defect": return ("ant.fill", .red, "Defect")
+        case "enhancement": return ("sparkles", .indigo, "Enhancement")
+        case "task": return ("clipboard", .gray, "Task")
+        default: return nil
         }
     }
 }
@@ -782,10 +773,10 @@ private struct BugRow: View {
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
-                    Text(verbatim: "#\(bug.id)")
-                    Text(verbatim: "·")
                     BugTypePill(type: bug.type)
-                    Text(bug.status)
+                    Text(verbatim: "\(bug.id)")
+                    Text(verbatim: "·")
+                    Text(bug.status.bugzillaTitleCased)
                     if let priority = displayPriority {
                         Text(verbatim: "·")
                         Text(priority)
@@ -869,6 +860,12 @@ private struct BugRow: View {
             return String(raw[..<at])
         }
         return raw
+    }
+}
+
+extension String {
+    var bugzillaTitleCased: String {
+        replacingOccurrences(of: "_", with: " ").capitalized
     }
 }
 

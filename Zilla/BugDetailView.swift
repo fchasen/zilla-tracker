@@ -235,7 +235,7 @@ private struct BugHeader: View {
                 BugTypePill(type: bug.type)
 
                 Button(action: copyID) {
-                    Text(verbatim: "#\(bug.id)")
+                    Text(verbatim: "\(bug.id)")
                         .font(.headline.monospaced())
                         .foregroundStyle(.secondary)
                 }
