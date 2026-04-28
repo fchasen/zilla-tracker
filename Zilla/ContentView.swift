@@ -107,6 +107,17 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
 
 // MARK: - Workspace
 
+struct DependencyMetadata: Sendable, Hashable {
+    let id: Bug.ID
+    let summary: String
+    let status: String
+    let resolution: String
+
+    var isClosed: Bool {
+        ["RESOLVED", "VERIFIED", "CLOSED"].contains(status.uppercased())
+    }
+}
+
 @Observable
 final class Workspace {
     private(set) var products: [Product] = []
@@ -149,6 +160,8 @@ final class Workspace {
 
     var showInspector: Bool = false
 
+    private(set) var dependencyMetadata: [Bug.ID: DependencyMetadata] = [:]
+
     func loadProducts(using client: BugzillaClient) async {
         guard !isLoadingProducts else { return }
         isLoadingProducts = true
@@ -173,6 +186,7 @@ final class Workspace {
         searchText = ""
         clearLoadedBug()
         showInspector = false
+        dependencyMetadata = [:]
     }
 
     @MainActor
@@ -226,6 +240,21 @@ final class Workspace {
         guard let id = loadedBug?.id else { return }
         if let refreshed = try? await client.comments(bugID: id) {
             loadedComments = refreshed
+        }
+    }
+
+    @MainActor
+    func loadDependencyMetadata(ids: [Bug.ID], using client: BugzillaClient) async {
+        let needed = ids.filter { dependencyMetadata[$0] == nil }
+        guard !needed.isEmpty else { return }
+        guard let bugs = try? await client.getBugs(ids: needed) else { return }
+        for bug in bugs {
+            dependencyMetadata[bug.id] = DependencyMetadata(
+                id: bug.id,
+                summary: bug.summary,
+                status: bug.status,
+                resolution: bug.resolution
+            )
         }
     }
 
@@ -388,9 +417,15 @@ private struct BugInspector: View {
     var body: some View {
         if let bug = workspace.loadedBug {
             ScrollView {
-                BugMetadata(bug: bug, onUpdate: { update in
-                    Task { await workspace.applyBugUpdate(update, using: auth.client) }
-                })
+                BugInspectorContent(
+                    bug: bug,
+                    onUpdate: { update in
+                        Task { await workspace.applyBugUpdate(update, using: auth.client) }
+                    },
+                    onOpenBug: { id in
+                        workspace.selectedBugID = id
+                    }
+                )
                 .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -818,6 +853,7 @@ private struct FollowedComponentEntry: View {
             if metas.isEmpty {
                 FollowedComponentRow(followed: followed)
                     .tag(SidebarSelection.component(followed.ref))
+                    .contextMenu { componentMenu }
             } else {
                 DisclosureGroup {
                     ForEach(metas) { meta in
@@ -835,6 +871,7 @@ private struct FollowedComponentEntry: View {
                 } label: {
                     FollowedComponentRow(followed: followed)
                         .tag(SidebarSelection.component(followed.ref))
+                        .contextMenu { componentMenu }
                 }
             }
         }
@@ -844,13 +881,6 @@ private struct FollowedComponentEntry: View {
                 : Color.clear,
             in: RoundedRectangle(cornerRadius: 6)
         )
-        .contextMenu {
-            Button("Add Meta Bug…") { onAddMetaBug() }
-            Divider()
-            Button("Remove", role: .destructive) {
-                modelContext.delete(followed)
-            }
-        }
         .dropDestination(for: BugTransfer.self) { transfers, _ in
             var inserted = false
             for transfer in transfers where !followed.metaBugs.contains(where: { $0.bugId == transfer.id }) {
@@ -866,6 +896,15 @@ private struct FollowedComponentEntry: View {
             }
             return inserted
         } isTargeted: { isDropTarget = $0 }
+    }
+
+    @ViewBuilder
+    private var componentMenu: some View {
+        Button("Add Meta Bug…") { onAddMetaBug() }
+        Divider()
+        Button("Remove", role: .destructive) {
+            modelContext.delete(followed)
+        }
     }
 
     private func moveMetas(_ metas: [FollowedMetaBug], from source: IndexSet, to destination: Int) {
@@ -1001,6 +1040,11 @@ struct BugListView: View {
             prompt: "Search bugs"
         )
         .task(id: loadKey) { await load() }
+        .onChange(of: selection) { _, _ in
+            bugs = []
+            totalMatches = nil
+            loadError = nil
+        }
     }
 
     private var searchBinding: Binding<String> {
