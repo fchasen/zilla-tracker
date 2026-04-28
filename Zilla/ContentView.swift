@@ -199,10 +199,14 @@ final class Workspace {
         }
     }
     var previousSidebarSelection: SidebarSelection?
+    var metaBugTitleHints: [Bug.ID: String] = [:]
 
-    func navigateToMetaBug(_ id: Bug.ID) {
+    func navigateToMetaBug(_ id: Bug.ID, summary: String? = nil) {
         previousSidebarSelection = sidebarSelection
         sidebarSelection = .metaBug(id)
+        if let summary, !summary.isEmpty {
+            metaBugTitleHints[id] = summary
+        }
     }
 
     func navigateBackFromMetaBug() {
@@ -1378,16 +1382,6 @@ struct BugListView: View {
                     .help("Back to previous list")
                 }
             }
-            if case let .metaBug(id) = selection {
-                ToolbarItem(placement: .principal) {
-                    Button {
-                        selectedBugID = id
-                    } label: {
-                        Label("Open Meta Bug #\(id)", systemImage: "info.circle")
-                    }
-                    .help("Open the meta bug's details")
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     onNewBug()
@@ -1395,6 +1389,16 @@ struct BugListView: View {
                     Label("New Bug", systemImage: "plus")
                 }
                 .help(newBugHelp)
+            }
+            if case let .metaBug(id) = selection {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        selectedBugID = id
+                    } label: {
+                        Label("Open Meta Bug #\(id)", systemImage: "square.and.pencil")
+                    }
+                    .help("Open the meta bug's details")
+                }
             }
             if !isAllDrafts && auth.isSignedIn {
                 ToolbarItem(placement: .primaryAction) {
@@ -1421,7 +1425,7 @@ struct BugListView: View {
                   let bug = bugs.first(where: { $0.id == id }),
                   Self.isMetaSummary(bug.summary) else { return }
             selectedBugID = nil
-            workspace.navigateToMetaBug(id)
+            workspace.navigateToMetaBug(id, summary: bug.summary)
         }
     }
 
@@ -1574,6 +1578,9 @@ struct BugListView: View {
             if let meta = followedMetaBugs.first(where: { $0.bugId == id }),
                !meta.summary.isEmpty {
                 return meta.summary
+            }
+            if let hint = workspace.metaBugTitleHints[id], !hint.isEmpty {
+                return FollowedMetaBug.cleanedSummary(hint)
             }
             return "Meta \(id)"
         case .allDrafts: return "Drafts"
