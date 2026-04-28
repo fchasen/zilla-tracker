@@ -227,7 +227,11 @@ private struct BugContent: View {
                         .foregroundStyle(.orange)
                 }
 
-                BugCommentsSection(comments: comments)
+                if let description = descriptionComment {
+                    DescriptionBlock(comment: description)
+                }
+
+                BugCommentsSection(comments: threadComments)
 
                 Divider()
                 CommentComposer(
@@ -241,6 +245,14 @@ private struct BugContent: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var descriptionComment: Comment? {
+        comments.first { ($0.count ?? -1) == 0 }
+    }
+
+    private var threadComments: [Comment] {
+        comments.filter { ($0.count ?? -1) != 0 }
     }
 }
 
@@ -461,6 +473,36 @@ private struct BugCommentsSection: View {
                 ForEach(visible) { comment in
                     CommentBlock(comment: comment)
                 }
+            }
+        }
+    }
+}
+
+private struct DescriptionBlock: View {
+    let comment: Comment
+
+    var body: some View {
+        let trimmed = comment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Divider()
+                Text("Description")
+                    .font(.headline)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(comment.creator)
+                            .font(.caption.weight(.semibold))
+                        Text(comment.creationTime, format: .relative(presentation: .named))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    StructuredText(markdown: comment.text)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
