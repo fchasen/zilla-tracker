@@ -55,4 +55,75 @@ final class CommentsTests: XCTestCase {
         let comments = try await client.comments(bugID: 9999999)
         XCTAssertTrue(comments.isEmpty)
     }
+
+    func testAddCommentHappyPath() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/rest/bug/1234567/comment")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["comment"] as? String, "Looks like a duplicate.")
+            XCTAssertEqual(json["is_private"] as? Bool, false)
+
+            let responseBody = #"{"id":42}"#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 201), responseBody)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        let id = try await client.addComment(bugID: 1234567, text: "Looks like a duplicate.")
+        XCTAssertEqual(id, 42)
+    }
+
+    func testAddCommentSendsPrivateFlag() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["is_private"] as? Bool, true)
+            return (httpResponse(for: request, status: 201), #"{"id":1}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.addComment(bugID: 1, text: "secret", isPrivate: true)
+    }
+
+    func testAddCommentSurfacesApiError() async {
+        MockURLProtocol.handler = { request in
+            let body = #"{"error":true,"code":105,"message":"You did not specify a comment"}"#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 400), body)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        do {
+            _ = try await client.addComment(bugID: 1, text: "")
+            XCTFail("Expected api error")
+        } catch BugzillaError.api(let code, _) {
+            XCTAssertEqual(code, 105)
+        } catch {
+            XCTFail("Wrong error: \(error)")
+        }
+    }
+}
+
+private extension URLRequest {
+    /// MockURLProtocol gives us the request as URLSession passes it; httpBody is nil
+    /// because URLProtocol exposes the body via `httpBodyStream`. Read it out.
+    var bodyData: Data? {
+        if let direct = httpBody {
+            return direct
+        }
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let read = stream.read(buffer, maxLength: bufferSize)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+        }
+        return data
+    }
 }

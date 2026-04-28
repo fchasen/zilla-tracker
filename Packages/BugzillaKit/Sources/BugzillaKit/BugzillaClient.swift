@@ -224,6 +224,22 @@ public extension BugzillaClient {
         return response.bugs[String(bugID)]?.comments ?? []
     }
 
+    func addComment(bugID: Bug.ID, text: String, isPrivate: Bool = false) async throws -> Comment.ID {
+        struct Body: Encodable {
+            let comment: String
+            let isPrivate: Bool
+        }
+        struct Response: Decodable { let id: Int }
+        let body = try encoder.encode(Body(comment: text, isPrivate: isPrivate))
+        let endpoint = Endpoint(
+            path: "bug/\(bugID)/comment",
+            method: .post,
+            body: body
+        )
+        let response: Response = try await execute(endpoint)
+        return response.id
+    }
+
     func history(bugID: Bug.ID) async throws -> [HistoryEntry] {
         throw BugzillaError.notImplemented
     }
