@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import BugzillaKit
 import SearchfoxKit
 import Textual
 
@@ -17,6 +18,7 @@ struct MarkdownEditor: View {
 
     @State private var showPreview = false
     @State private var showingSearchfoxPicker = false
+    @State private var showingLinkPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -51,6 +53,12 @@ struct MarkdownEditor: View {
             SearchfoxPickerSheet { hit, symbol in
                 insertSearchfoxLink(hit, symbol: symbol)
             }
+        }
+        .sheet(isPresented: $showingLinkPicker) {
+            QuickSearchSheet(
+                onPickBug: { bugID in insertBugLink(bugID) },
+                onPickUser: { user in insertUserMention(user) }
+            )
         }
     }
 
@@ -106,7 +114,7 @@ struct MarkdownEditor: View {
                 wrapCodeBlock()
             }
             FormatButton(systemImage: "link", help: "Link (⌘K)", shortcut: KeyboardShortcut("k", modifiers: .command)) {
-                wrapLink()
+                showingLinkPicker = true
             }
             FormatButton(systemImage: "list.bullet", help: "Bullet list") {
                 prefixLines("- ")
@@ -137,13 +145,29 @@ struct MarkdownEditor: View {
         }
     }
 
-    private func wrapLink() {
+    private func insertBugLink(_ bugID: Bug.ID) {
+        let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)"
         if let range = singleSelectionRange(), !range.isEmpty {
             let selected = String(text[range])
-            text.replaceSubrange(range, with: "[\(selected)](https://)")
+            text.replaceSubrange(range, with: "[\(selected)](\(url))")
         } else {
-            text += "[text](https://)"
+            text += "[bug \(bugID)](\(url))"
         }
+    }
+
+    private func insertUserMention(_ user: User) {
+        let handle = ":\(mentionHandle(for: user))"
+        if let range = singleSelectionRange(), !range.isEmpty {
+            text.replaceSubrange(range, with: handle)
+        } else {
+            text += handle
+        }
+    }
+
+    private func mentionHandle(for user: User) -> String {
+        if let nick = user.nick, !nick.isEmpty { return nick }
+        let local = user.name.split(separator: "@").first.map(String.init) ?? user.name
+        return local
     }
 
     private func insertSearchfoxLink(_ hit: SearchHit, symbol: String? = nil) {

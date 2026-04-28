@@ -8,6 +8,7 @@ import BugzillaKit
 
 struct QuickSearchSheet: View {
     let onPickBug: (Bug.ID) -> Void
+    var onPickUser: ((User) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthStore.self) private var auth
@@ -42,7 +43,7 @@ struct QuickSearchSheet: View {
             if let id = Int(rest), id > 0 { return .bug(id) }
             return .empty
         }
-        if trimmed.hasPrefix(":") {
+        if trimmed.hasPrefix("@") {
             let rest = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
             return rest.isEmpty ? .empty : .users(rest)
         }
@@ -139,7 +140,7 @@ struct QuickSearchSheet: View {
         if pinnedUser != nil {
             return "Filter this user's bugs (↩ to search)"
         }
-        return "#bug · :user · text — ↩ to search"
+        return "#bug · @user · text — ↩ to search"
     }
 
     @ViewBuilder
@@ -187,7 +188,7 @@ struct QuickSearchSheet: View {
             )
             hintRow(
                 symbol: "at",
-                title: ":user",
+                title: "@user",
                 description: "Find a Bugzilla user, then drill into their bugs."
             )
             hintRow(
@@ -384,6 +385,11 @@ struct QuickSearchSheet: View {
     }
 
     private func pickUser(_ user: User) {
+        if let onPickUser {
+            onPickUser(user)
+            dismiss()
+            return
+        }
         pinnedUser = user
         query = ""
         committedQuery = ""
