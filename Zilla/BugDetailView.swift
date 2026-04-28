@@ -339,7 +339,10 @@ private struct BugHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                BugTypePill(type: bug.type)
+                BugTypePill(
+                    type: bug.type,
+                    dragTransfer: BugTransfer(id: bug.id, summary: bug.summary)
+                )
 
                 Button(action: copyID) {
                     Text(verbatim: "\(bug.id)")
@@ -372,7 +375,11 @@ private struct BugHeader: View {
                         .foregroundStyle(.green)
                         .transition(.opacity)
                 }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .bugBlockDrop(target: bug.id)
             Text(bug.summary)
                 .font(.title2)
                 .textSelection(.enabled)
@@ -599,14 +606,13 @@ struct BugInspectorContent: View {
                 WhiteboardSection(text: whiteboard)
             }
 
-            if !bug.dependsOn.isEmpty || !bug.blocks.isEmpty {
-                Divider()
-                DependenciesSection(
-                    dependsOn: bug.dependsOn,
-                    blocks: bug.blocks,
-                    onOpenBug: onOpenBug
-                )
-            }
+            Divider()
+            DependenciesSection(
+                bugID: bug.id,
+                dependsOn: bug.dependsOn,
+                blocks: bug.blocks,
+                onOpenBug: onOpenBug
+            )
 
             if !bug.cc.isEmpty {
                 Divider()
@@ -738,36 +744,57 @@ private struct WhiteboardSection: View {
 }
 
 private struct DependenciesSection: View {
+    let bugID: Bug.ID
     let dependsOn: [Int]
     let blocks: [Int]
     let onOpenBug: (Bug.ID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !dependsOn.isEmpty {
-                DependencyList(title: "Depends on", ids: dependsOn, onOpenBug: onOpenBug)
-            }
-            if !blocks.isEmpty {
-                DependencyList(title: "Blocks", ids: blocks, onOpenBug: onOpenBug)
-            }
+            DependencyList(
+                title: "Depends on",
+                bugID: bugID,
+                ids: dependsOn,
+                direction: .dragBlocksTarget,
+                onOpenBug: onOpenBug
+            )
+            DependencyList(
+                title: "Blocks",
+                bugID: bugID,
+                ids: blocks,
+                direction: .targetBlocksDrag,
+                onOpenBug: onOpenBug
+            )
         }
     }
 }
 
 private struct DependencyList: View {
     let title: String
+    let bugID: Bug.ID
     let ids: [Int]
+    let direction: BlockDirection
     let onOpenBug: (Bug.ID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             InspectorSectionHeader(title: title, trailing: ids.count > 1 ? "\(ids.count)" : nil)
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(ids, id: \.self) { id in
-                    DependencyRow(id: id, onOpen: onOpenBug)
+                if ids.isEmpty {
+                    Text("Drop bugs here to add")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 4)
+                } else {
+                    ForEach(ids, id: \.self) { id in
+                        DependencyRow(id: id, onOpen: onOpenBug)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .bugBlockDrop(target: bugID, fixed: direction)
     }
 }
 
@@ -1545,5 +1572,76 @@ private struct CommentComposer: View {
 
     private var trimmedIsEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+// MARK: - Drag-and-drop bug linking
+
+enum BlockDirection: Sendable {
+    case dragBlocksTarget
+    case targetBlocksDrag
+}
+
+private struct BugBlockDropModifier: ViewModifier {
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+
+    let target: Bug.ID
+    let fixed: BlockDirection?
+
+    @State private var isTargeted: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isTargeted ? Color.accentColor.opacity(0.18) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .dropDestination(for: BugTransfer.self) { transfers, _ in
+                let direction = fixed ?? Self.directionFromModifiers()
+                let targetID = target
+                let usable = transfers.filter { $0.id != targetID }
+                guard !usable.isEmpty else { return false }
+                let workspace = workspace
+                let client = auth.client
+                Task { @MainActor in
+                    for transfer in usable {
+                        let source: Bug.ID
+                        let dst: Bug.ID
+                        switch direction {
+                        case .dragBlocksTarget:
+                            source = transfer.id
+                            dst = targetID
+                        case .targetBlocksDrag:
+                            source = targetID
+                            dst = transfer.id
+                        }
+                        if let error = await workspace.linkBlocking(
+                            source: source,
+                            target: dst,
+                            using: client
+                        ) {
+                            workspace.lastLinkError = error.localizedDescription
+                            return
+                        }
+                    }
+                }
+                return true
+            } isTargeted: { isTargeted = $0 }
+    }
+
+    private static func directionFromModifiers() -> BlockDirection {
+        #if canImport(AppKit)
+        if NSEvent.modifierFlags.contains(.option) {
+            return .targetBlocksDrag
+        }
+        #endif
+        return .dragBlocksTarget
+    }
+}
+
+extension View {
+    func bugBlockDrop(target: Bug.ID, fixed: BlockDirection? = nil) -> some View {
+        modifier(BugBlockDropModifier(target: target, fixed: fixed))
     }
 }

@@ -14,14 +14,28 @@ import BugzillaKit
 
 struct BugTypePill: View {
     let type: String?
+    var dragTransfer: BugTransfer? = nil
 
     var body: some View {
         if let info {
-            Image(systemName: info.symbol)
-                .foregroundStyle(info.color)
-                .help(info.label)
-                .accessibilityLabel(info.label)
+            if let transfer = dragTransfer {
+                icon(info)
+                    .draggable(transfer) {
+                        Label("#\(transfer.id) \(transfer.summary)", systemImage: "ant")
+                            .padding(8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    }
+            } else {
+                icon(info)
+            }
         }
+    }
+
+    private func icon(_ info: (symbol: String, color: Color, label: String)) -> some View {
+        Image(systemName: info.symbol)
+            .foregroundStyle(info.color)
+            .help(info.label)
+            .accessibilityLabel(info.label)
     }
 
     private var info: (symbol: String, color: Color, label: String)? {
@@ -29,7 +43,8 @@ struct BugTypePill: View {
         case "defect": return ("ant.fill", .red, "Defect")
         case "enhancement": return ("sparkles", .indigo, "Enhancement")
         case "task": return ("clipboard", .gray, "Task")
-        default: return nil
+        default:
+            return dragTransfer == nil ? nil : ("ant.fill", .secondary, "Bug")
         }
     }
 }
@@ -193,6 +208,8 @@ final class Workspace {
     // Bug-update flag, drives the toolbar progress indicator.
     private(set) var isUpdatingBug = false
 
+    var lastLinkError: String?
+
     var showInspector: Bool = false
 
     private(set) var dependencyMetadata: [Bug.ID: DependencyMetadata] = [:]
@@ -265,6 +282,35 @@ final class Workspace {
             if let refreshed = try? await client.comments(bugID: id) {
                 loadedComments = refreshed
             }
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @discardableResult
+    @MainActor
+    func linkBlocking(source: Bug.ID, target: Bug.ID, using client: BugzillaClient) async -> Error? {
+        guard source != target else { return nil }
+        if loadedBug?.id == source, loadedBug?.blocks.contains(target) == true {
+            return nil
+        }
+        if loadedBug?.id == target, loadedBug?.dependsOn.contains(source) == true {
+            return nil
+        }
+        isUpdatingBug = true
+        defer { isUpdatingBug = false }
+        do {
+            _ = try await client.updateBug(
+                id: source,
+                BugUpdate(blocks: BugRelationUpdate(add: [target]))
+            )
+            if let id = loadedBug?.id, id == source || id == target {
+                if let refreshed = try? await client.getBug(id: id) {
+                    loadedBug = refreshed
+                }
+            }
+            await loadDependencyMetadata(ids: [source, target], using: client)
             return nil
         } catch {
             return error
@@ -394,6 +440,15 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.phabricatorSettingsPresented) {
             PhabricatorSettingsView()
         }
+        .alert(
+            "Couldn't link bugs",
+            isPresented: Binding(
+                get: { workspace.lastLinkError != nil },
+                set: { if !$0 { workspace.lastLinkError = nil } }
+            ),
+            actions: { Button("OK") { workspace.lastLinkError = nil } },
+            message: { Text(workspace.lastLinkError ?? "") }
+        )
         .task {
             if workspace.products.isEmpty {
                 await workspace.loadProducts(using: auth.client)
@@ -1089,6 +1144,7 @@ struct BugListView: View {
                                     .padding(8)
                                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
                             }
+                            .bugBlockDrop(target: bug.id)
                             .contextMenu {
                                 addAsMetaMenu(for: bug)
                             }
