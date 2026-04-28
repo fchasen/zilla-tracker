@@ -19,6 +19,10 @@ struct BugDetailView: View {
     @State private var isPostingComment = false
     @State private var composerError: String?
 
+    @State private var isUpdating = false
+    @State private var updateError: String?
+    @State private var dupePrompt: DupePromptIdentifier?
+
     var body: some View {
         Group {
             if bugID == nil {
@@ -59,8 +63,91 @@ struct BugDetailView: View {
                     }
                 }
             }
+            if isUpdating {
+                ToolbarItem(placement: .primaryAction) {
+                    ProgressView().controlSize(.small)
+                }
+            } else if let bug {
+                ToolbarItem(placement: .primaryAction) {
+                    statusMenu(for: bug)
+                }
+            }
         }
         .task(id: bugID) { await load(id: bugID) }
+        .alert(
+            "Couldn't update bug",
+            isPresented: Binding(
+                get: { updateError != nil },
+                set: { if !$0 { updateError = nil } }
+            )
+        ) {
+            Button("OK") { updateError = nil }
+        } message: {
+            Text(updateError ?? "")
+        }
+        .sheet(item: $dupePrompt) { _ in
+            DupeOfSheet { dupeOfID, comment in
+                Task { await applyUpdate(BugUpdate(
+                    status: "RESOLVED",
+                    resolution: "DUPLICATE",
+                    dupeOf: dupeOfID,
+                    comment: comment.isEmpty ? nil : comment
+                )) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func statusMenu(for bug: Bug) -> some View {
+        let isClosed = ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
+
+        Menu {
+            if isClosed {
+                Button("Reopen") {
+                    Task { await applyUpdate(BugUpdate(status: "REOPENED", resolution: "")) }
+                }
+            } else {
+                ForEach(Self.resolveOptions, id: \.code) { option in
+                    Button("Resolve as \(option.label)") {
+                        Task { await applyUpdate(BugUpdate(status: "RESOLVED", resolution: option.code)) }
+                    }
+                }
+                Divider()
+                Button("Mark as Duplicate…") {
+                    dupePrompt = DupePromptIdentifier()
+                }
+            }
+        } label: {
+            Label("Change status", systemImage: "checkmark.circle")
+        }
+    }
+
+    private static let resolveOptions: [(code: String, label: String)] = [
+        ("FIXED", "Fixed"),
+        ("INVALID", "Invalid"),
+        ("WORKSFORME", "Works for Me"),
+        ("INCOMPLETE", "Incomplete"),
+        ("WONTFIX", "Won't Fix")
+    ]
+
+    private func applyUpdate(_ update: BugUpdate) async {
+        guard let id = bugID else { return }
+        isUpdating = true
+        updateError = nil
+        defer { isUpdating = false }
+
+        let client = auth.client
+        do {
+            _ = try await client.updateBug(id: id, update)
+            if let refreshedBug = try? await client.getBug(id: id) {
+                bug = refreshedBug
+            }
+            if let refreshedComments = try? await client.comments(bugID: id) {
+                comments = refreshedComments
+            }
+        } catch {
+            updateError = error.localizedDescription
+        }
     }
 
     private func bmoURL(for id: Int) -> URL? {
@@ -285,6 +372,54 @@ private struct CommentBlock: View {
         }
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+struct DupePromptIdentifier: Identifiable {
+    let id = UUID()
+}
+
+private struct DupeOfSheet: View {
+    let onConfirm: (Int, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var bugIdText: String = ""
+    @State private var comment: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Duplicate of") {
+                    TextField("Bug ID", text: $bugIdText)
+                        .textFieldStyle(.roundedBorder)
+                }
+                Section("Comment (optional)") {
+                    TextEditor(text: $comment)
+                        .frame(minHeight: 80)
+                }
+            }
+            .navigationTitle("Mark as Duplicate")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Confirm") {
+                        guard let id = parsedID else { return }
+                        onConfirm(id, comment.trimmingCharacters(in: .whitespacesAndNewlines))
+                        dismiss()
+                    }
+                    .disabled(parsedID == nil)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 440, minHeight: 320)
+        #endif
+    }
+
+    private var parsedID: Int? {
+        Int(bugIdText.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
