@@ -46,7 +46,7 @@ struct RevisionWebView: View {
                     Label("Open in Browser", systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(.borderless)
-                .pointerStyle(.link)
+                .linkPointerStyle()
                 .help("Open D\(String(revisionID)) in your browser")
                 .contextMenu {
                     Button("Copy Link") {

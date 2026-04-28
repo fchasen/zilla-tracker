@@ -50,7 +50,7 @@ struct BugzillaSettingsView: View {
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .pointerStyle(.link)
+                .linkPointerStyle()
             }
 
             SecureField("API key", text: $apiKey)

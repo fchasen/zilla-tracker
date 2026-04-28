@@ -50,7 +50,7 @@ struct PhabricatorSettingsView: View {
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .pointerStyle(.link)
+                .linkPointerStyle()
             }
 
             SecureField("api-…", text: $token)

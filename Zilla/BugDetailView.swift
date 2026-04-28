@@ -366,7 +366,7 @@ private struct BugHeader: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .pointerStyle(.link)
+                    .linkPointerStyle()
                     .help("Open in Bugzilla")
                     .contextMenu {
                         Button("Copy Link") {
@@ -1578,7 +1578,7 @@ private struct AttachmentImagePreview: View {
                 }
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
+            .linkPointerStyle()
             .help("Open attachment in Bugzilla")
         }
     }
@@ -1621,7 +1621,7 @@ private struct AttachmentInlineLink: View {
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
+            .linkPointerStyle()
             .help("Open attachment in Bugzilla")
         }
     }
@@ -1743,7 +1743,7 @@ private struct PatchRow: View {
                 }
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
+            .linkPointerStyle()
             .help(isPhabricator ? "Open D\(phabRevisionInt.map(String.init) ?? "") in Phabricator" : "Open patch in Bugzilla")
 
             if let id = phabRevisionInt {
@@ -1892,7 +1892,7 @@ private struct AttachmentRow: View {
                 rowContent
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
+            .linkPointerStyle()
             .help("Open attachment in Bugzilla")
         } else {
             rowContent
@@ -2140,6 +2140,15 @@ extension View {
 
     func bugLinkDrop(target: Bug.ID) -> some View {
         modifier(BugLinkDropModifier(target: target))
+    }
+
+    @ViewBuilder
+    func linkPointerStyle() -> some View {
+        #if os(macOS)
+        self.pointerStyle(.link)
+        #else
+        self
+        #endif
     }
 }
 
