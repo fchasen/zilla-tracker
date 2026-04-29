@@ -108,4 +108,136 @@ public extension PhabricatorClient {
     func searchRevisions(_ query: RevisionQuery) async throws -> RevisionSearchResult {
         try await call(method: "differential.revision.search", params: query)
     }
+
+    func searchDiffs(_ query: DiffQuery) async throws -> DiffSearchResult {
+        try await call(method: "differential.diff.search", params: query)
+    }
+
+    func getDiffs(ids: [Int]) async throws -> [DiffDetail] {
+        struct Params: Encodable { let ids: [Int] }
+        let raw: [String: QueryDiffsRaw] = try await call(
+            method: "differential.querydiffs",
+            params: Params(ids: ids)
+        )
+        return raw.values.map { $0.toDetail() }.sorted { $0.id > $1.id }
+    }
+
+    func searchTransactions(_ query: TransactionQuery) async throws -> TransactionSearchResult {
+        try await call(method: "transaction.search", params: query)
+    }
+
+    func getInlineComments(revisionID: Int) async throws -> [InlineComment] {
+        struct Params: Encodable { let revisionID: Int }
+        let raws: [DifferentialGetInlinesRaw] = try await call(
+            method: "differential.getinlines",
+            params: Params(revisionID: revisionID)
+        )
+        return raws.map { $0.toModel() }
+    }
+
+    func editRevision(
+        objectIdentifier: String,
+        transactions: [RevisionEditTransaction]
+    ) async throws -> RevisionEditResult {
+        let params = RevisionEditRequest(objectIdentifier: objectIdentifier, transactions: transactions)
+        return try await call(method: "differential.revision.edit", params: params)
+    }
+
+    func searchUsers(phids: [String]) async throws -> [PhabricatorUser] {
+        guard !phids.isEmpty else { return [] }
+        struct Params: Encodable { let phids: [String] }
+        struct Row: Decodable, Sendable {
+            let phid: String
+            let userName: String
+            let realName: String?
+            let image: URL?
+            let uri: URL?
+        }
+        let rows: [Row] = try await call(method: "user.query", params: Params(phids: phids))
+        return rows.map { row in
+            PhabricatorUser(
+                phid: row.phid,
+                userName: row.userName,
+                realName: row.realName,
+                primaryEmail: nil,
+                image: row.image
+            )
+        }
+    }
+
+    func getFileContent(repositoryPHID: String, commit: String, path: String) async throws -> String? {
+        struct FCQ: Encodable {
+            let repositoryPHID: String
+            let commit: String
+            let path: String
+        }
+        struct FCQResult: Decodable, Sendable {
+            let filePHID: String?
+        }
+        let result: FCQResult
+        do {
+            result = try await call(
+                method: "diffusion.filecontentquery",
+                params: FCQ(repositoryPHID: repositoryPHID, commit: commit, path: path)
+            )
+        } catch PhabricatorError.api {
+            return nil
+        }
+        guard let phid = result.filePHID else { return nil }
+        let bytes = try await downloadFile(phid: phid)
+        return String(data: bytes, encoding: .utf8)
+    }
+
+    func downloadFile(phid: String) async throws -> Data {
+        struct Params: Encodable { let phid: String }
+        let base64: String = try await call(method: "file.download", params: Params(phid: phid))
+        guard let data = Data(base64Encoded: base64, options: [.ignoreUnknownCharacters]) else {
+            throw PhabricatorError.invalidResponse
+        }
+        return data
+    }
+
+    func createInlineComment(
+        diffID: Int,
+        path: String,
+        line: Int,
+        length: Int,
+        isNewFile: Bool,
+        content: String,
+        replyToCommentPHID: String? = nil
+    ) async throws -> InlineComment {
+        struct Params: Encodable {
+            let diffID: Int
+            let filePath: String
+            let lineNumber: Int
+            let lineLength: Int
+            let isNewFile: Bool
+            let content: String
+            let replyToCommentPHID: String?
+        }
+        let raw: DifferentialGetInlinesRaw = try await call(
+            method: "differential.createinline",
+            params: Params(
+                diffID: diffID,
+                filePath: path,
+                lineNumber: line,
+                lineLength: max(0, length - 1),
+                isNewFile: isNewFile,
+                content: content,
+                replyToCommentPHID: replyToCommentPHID
+            )
+        )
+        return raw.toModel()
+    }
+
+    func deleteDraftInline(phid: String) async throws {
+        struct Params: Encodable {
+            let phid: String
+        }
+        struct EmptyResult: Decodable, Sendable {}
+        let _: EmptyResult = try await call(
+            method: "differential.deleteinline",
+            params: Params(phid: phid)
+        )
+    }
 }

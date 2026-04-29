@@ -63,13 +63,22 @@ public struct RevisionQuery: Sendable, Hashable, Encodable {
 
     public struct Attachments: Sendable, Hashable, Encodable {
         public var reviewers: Bool?
+        public var reviewersExtra: Bool?
         public var subscribers: Bool?
         public var projects: Bool?
 
-        public init(reviewers: Bool? = nil, subscribers: Bool? = nil, projects: Bool? = nil) {
+        public init(reviewers: Bool? = nil, reviewersExtra: Bool? = nil, subscribers: Bool? = nil, projects: Bool? = nil) {
             self.reviewers = reviewers
+            self.reviewersExtra = reviewersExtra
             self.subscribers = subscribers
             self.projects = projects
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case reviewers
+            case reviewersExtra = "reviewers-extra"
+            case subscribers
+            case projects
         }
     }
 }
