@@ -7,6 +7,11 @@
 
 import Foundation
 import WebKit
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 /// Coordinator that handles WKWebView delegate methods and JavaScript communication.
 @MainActor
@@ -271,39 +276,40 @@ public final class DiffWebViewCoordinator: NSObject {
       executePendingOperations()
       onReady?()
 
-    case .lineClicked(let lineNumber, let side, _, _):
-      // Always call the simple callback
+    case .lineClicked(let lineNumber, let side, let lineY, let lineHeight):
       onLineClick?(lineNumber, side)
 
-      // Also call the position callback if set, using NSEvent.mouseLocation for reliable positioning
       if let onLineClickWithPosition = onLineClickWithPosition {
+        #if os(macOS)
         // Use macOS mouse location - more reliable than JavaScript coordinates
         let screenPoint = NSEvent.mouseLocation
 
-        // Convert screen coordinates to WebView local coordinates
         if let webView = webView, let window = webView.window {
-          // Get WebView's frame in window coordinates
           let webViewFrameInWindow = webView.convert(webView.bounds, to: nil)
-
-          // Convert from screen to window coordinates
           let windowPoint = window.convertPoint(fromScreen: screenPoint)
 
-          // Calculate position relative to WebView's top-left in window coords
           // Window coords have origin at bottom-left, so WebView's top edge is at maxY
           let relativeX = windowPoint.x - webViewFrameInWindow.minX
-          let relativeY = webViewFrameInWindow.maxY - windowPoint.y  // Flip Y for top-left origin
+          let relativeY = webViewFrameInWindow.maxY - windowPoint.y
 
           let position = LineClickPosition(
             lineNumber: lineNumber,
             side: side,
             lineY: relativeY,
-            lineHeight: 22 // Default line height estimate
+            lineHeight: 22
           )
-
-          // Pass position relative to WebView with top-left origin (matches SwiftUI)
           let localPoint = CGPoint(x: relativeX, y: relativeY)
           onLineClickWithPosition(position, localPoint)
         }
+        #else
+        let position = LineClickPosition(
+          lineNumber: lineNumber,
+          side: side,
+          lineY: lineY,
+          lineHeight: lineHeight
+        )
+        onLineClickWithPosition(position, CGPoint(x: 0, y: lineY))
+        #endif
       }
 
     case .selectionChanged(let startLine, let endLine, let side):
@@ -318,6 +324,7 @@ public final class DiffWebViewCoordinator: NSObject {
     case .annotationClicked(let id, let side, let lineNumber):
       DiffLogger.info("Annotation clicked: id=\(id), side=\(side), line=\(lineNumber)")
       if let onAnnotationClick {
+        #if os(macOS)
         let screenPoint = NSEvent.mouseLocation
         if let webView, let window = webView.window {
           let webViewFrameInWindow = webView.convert(webView.bounds, to: nil)
@@ -326,6 +333,9 @@ public final class DiffWebViewCoordinator: NSObject {
           let relativeY = webViewFrameInWindow.maxY - windowPoint.y
           onAnnotationClick(id, side, lineNumber, CGPoint(x: relativeX, y: relativeY))
         }
+        #else
+        onAnnotationClick(id, side, lineNumber, .zero)
+        #endif
       }
 
     case .annotationDeleteRequested(let id, let side, let lineNumber):
@@ -342,9 +352,11 @@ public final class DiffWebViewCoordinator: NSObject {
       // Plumb the value into the WebView's intrinsic content size so layout
       // systems (Auto Layout / SwiftUI) can size the host without a manual
       // frame binding.
+      #if os(macOS)
       if let auto = webView as? ScrollPassThroughWebView {
         auto.setContentHeight(height)
       }
+      #endif
       onContentHeightChange?(height)
 
     case .systemThemeChanged(let isDark):

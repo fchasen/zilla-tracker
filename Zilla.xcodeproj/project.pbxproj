@@ -11,7 +11,7 @@
 		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
 		3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7082FA06FFF003FB395 /* SearchfoxKit */; };
 		3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7FF2FA15288003FB395 /* PhabricatorKit */; };
-		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
+		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */

@@ -1,8 +1,6 @@
 import SwiftUI
 import PhabricatorKit
-#if os(macOS)
 import PierreDiffsSwift
-#endif
 
 struct RevisionDiffView: View {
     @Environment(Workspace.self) private var workspace

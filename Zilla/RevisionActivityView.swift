@@ -17,12 +17,16 @@ struct RevisionActivityView: View {
                 )
                 Spacer()
                 if hiddenCount > 0 || workspace.activityShowAll {
-                    Toggle("Show all", isOn: $workspace.activityShowAll)
-                        .toggleStyle(.checkbox)
+                    let toggle = Toggle("Show all", isOn: $workspace.activityShowAll)
                         .controlSize(.small)
                         .help(workspace.activityShowAll
                               ? "Hide non-comment activity"
                               : "\(hiddenCount) non-comment item\(hiddenCount == 1 ? "" : "s") hidden")
+                    #if os(macOS)
+                    toggle.toggleStyle(.checkbox)
+                    #else
+                    toggle
+                    #endif
                 }
             }
             if workspace.loadedRevisionTransactions.isEmpty {
@@ -169,7 +173,7 @@ struct ActivityRow: View {
             Text("commented on")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button {
+            let jumpButton = Button {
                 workspace.revealChangeset(path: descriptor.path)
             } label: {
                 Text("\(descriptor.path):\(descriptor.line)")
@@ -178,8 +182,12 @@ struct ActivityRow: View {
                     .underline(true, color: .clear)
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
             .help("Jump to \(descriptor.path):\(descriptor.line)")
+            #if os(macOS)
+            jumpButton.pointerStyle(.link)
+            #else
+            jumpButton
+            #endif
         }
     }
 

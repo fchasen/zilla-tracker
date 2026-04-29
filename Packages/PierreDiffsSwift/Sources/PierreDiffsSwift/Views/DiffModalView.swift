@@ -6,6 +6,11 @@
 //
 
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 /// Full-screen modal view for displaying diffs with integrated approval controls
 public struct DiffModalView: View {
@@ -41,7 +46,7 @@ public struct DiffModalView: View {
         .keyboardShortcut(.escape, modifiers: [])
       }
       .padding()
-      .background(Color(NSColor.controlBackgroundColor))
+      .background(headerBackground)
       Divider()
 
       // Diff content
@@ -49,5 +54,15 @@ public struct DiffModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .frame(minWidth: 800, minHeight: 600)
+  }
+
+  private var headerBackground: Color {
+    #if canImport(AppKit)
+    Color(NSColor.controlBackgroundColor)
+    #elseif canImport(UIKit)
+    Color(UIColor.secondarySystemBackground)
+    #else
+    Color.gray.opacity(0.15)
+    #endif
   }
 }

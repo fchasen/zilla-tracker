@@ -16,6 +16,7 @@ struct ZillaApp: App {
     @State private var viewedBugs = ViewedBugsStore()
     @State private var viewedRevisions = ViewedRevisionsStore()
     @State private var cache = ResourceCache()
+    @State private var refreshScheduler: RevisionRefreshScheduler?
 
     var body: some Scene {
         WindowGroup {
@@ -32,6 +33,11 @@ struct ZillaApp: App {
                     phab.cacheClearHook = { [weak cache] in cache?.clear() }
                     await auth.bootstrap()
                     await phab.bootstrap()
+                    if refreshScheduler == nil {
+                        let s = RevisionRefreshScheduler(workspace: workspace, phab: phab)
+                        s.start()
+                        refreshScheduler = s
+                    }
                 }
         }
         .defaultSize(width: 1600, height: 1024)

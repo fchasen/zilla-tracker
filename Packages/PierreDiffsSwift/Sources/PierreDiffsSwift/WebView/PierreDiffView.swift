@@ -7,6 +7,11 @@
 
 import SwiftUI
 import WebKit
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 /// A SwiftUI view that renders code diffs using the @pierre/diffs JavaScript library.
 ///
@@ -16,60 +21,29 @@ import WebKit
 /// - Syntax highlighting via Shiki
 /// - Inline word-level change highlighting
 /// - Dark/light theme support
-public struct PierreDiffView: NSViewRepresentable {
+///
+/// Conforms to `NSViewRepresentable` on macOS and `UIViewRepresentable` on iOS /
+/// iPadOS / visionOS via conditional extensions below.
+@MainActor
+public struct PierreDiffView {
 
   // MARK: - Properties
 
-  /// The original file content (before changes)
   let oldContent: String
-
-  /// The updated file content (after changes)
   let newContent: String
-
-  /// The name of the file being diffed (used for syntax highlighting detection)
   let fileName: String
-
-  /// The current diff view style
   @Binding var diffStyle: DiffStyle
-
-  /// The current overflow mode (scroll or wrap)
   @Binding var overflowMode: OverflowMode
-
-  /// Callback when the user clicks on a line
   var onLineClick: ((Int, String) -> Void)?
-
-  /// Callback when the user clicks on a line, with position data for UI overlay positioning
   var onLineClickWithPosition: ((LineClickPosition, CGPoint) -> Void)?
-
-  /// Callback when a range of lines is selected via drag
   var onLineSelectionChange: ((LineSelectionRange) -> Void)?
-
-  /// Callback when the view requests expansion to full screen
   var onExpandRequest: (() -> Void)?
-
-  /// Inline annotations to display on the diff
   var annotations: [DiffAnnotation]?
-
-  /// Callback when an annotation is clicked (id, side, lineNumber, localPoint)
   var onAnnotationClick: ((String, String, Int, CGPoint) -> Void)?
-
-  /// Callback when an annotation delete is requested (id, side, lineNumber)
   var onAnnotationDelete: ((String, String, Int) -> Void)?
-
-  /// Callback when the user submits a draft via an in-diff composer.
-  /// Args: (annotationID, commentID, body, side, lineNumber).
   var onAnnotationDraftSubmit: ((String, String, String, String, Int) -> Void)?
-
-  /// Callback when the user cancels an in-diff composer.
-  /// Args: (annotationID, commentID, side, lineNumber).
   var onAnnotationDraftCancel: ((String, String, String, Int) -> Void)?
-
-  /// Callback when the rendered content height changes. Hosts can use this to
-  /// size their containing view so the diff renders at full intrinsic height
-  /// without an inner scrollbar.
   var onContentHeightChange: ((CGFloat) -> Void)?
-
-  /// Callback when the WebView is ready to display content
   var onReady: (() -> Void)?
 
   // MARK: - Environment
@@ -114,61 +88,58 @@ public struct PierreDiffView: NSViewRepresentable {
     self.onReady = onReady
   }
 
-  // MARK: - NSViewRepresentable
+  // MARK: - Coordinator
 
-  public func makeNSView(context: Context) -> WKWebView {
-    let configuration = WKWebViewConfiguration()
-
-    // Set up message handler for JavaScript to Swift communication
-    configuration.userContentController.add(
-      context.coordinator,
-      name: "diffBridge"
+  public func makeCoordinator() -> DiffWebViewCoordinator {
+    DiffWebViewCoordinator(
+      onLineClick: onLineClick,
+      onLineClickWithPosition: onLineClickWithPosition,
+      onLineSelectionChange: onLineSelectionChange,
+      onExpandRequest: onExpandRequest,
+      onReady: onReady,
+      onAnnotationClick: onAnnotationClick,
+      onAnnotationDelete: onAnnotationDelete,
+      onAnnotationDraftSubmit: onAnnotationDraftSubmit,
+      onAnnotationDraftCancel: onAnnotationDraftCancel,
+      onContentHeightChange: onContentHeightChange
     )
+  }
 
-    // Configure preferences
+  // MARK: - Shared WebView setup
+
+  fileprivate func makeWebView(coordinator: DiffWebViewCoordinator) -> WKWebView {
+    let configuration = WKWebViewConfiguration()
+    configuration.userContentController.add(coordinator, name: "diffBridge")
+
+    #if os(macOS)
     configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
-
-    // We size the host to the diff's intrinsic content height (see
-    // `onContentHeightChange`), so the WebView never needs to scroll
-    // internally. Use a subclass that always forwards scroll events to its
-    // parent responder — without this, the WKWebView swallows wheel events
-    // and the surrounding ScrollView can't scroll while the cursor is over
-    // the diff.
     let webView = ScrollPassThroughWebView(frame: .zero, configuration: configuration)
-    webView.navigationDelegate = context.coordinator
+    webView.navigationDelegate = coordinator
     webView.allowsMagnification = true
-
-    // Make background transparent to blend with SwiftUI
     webView.setValue(false, forKey: "drawsBackground")
+    #else
+    let webView = WKWebView(frame: .zero, configuration: configuration)
+    webView.navigationDelegate = coordinator
+    webView.isOpaque = false
+    webView.backgroundColor = .clear
+    webView.scrollView.backgroundColor = .clear
+    webView.scrollView.isScrollEnabled = false
+    #endif
 
-    // Store reference in coordinator
-    context.coordinator.webView = webView
-
-    // Load the initial HTML
+    coordinator.webView = webView
     loadHTML(into: webView)
-
     return webView
   }
 
-  public func updateNSView(_ webView: WKWebView, context: Context) {
-    let coordinator = context.coordinator
-
-    // Check if content has changed
+  fileprivate func updateWebView(_ webView: WKWebView, coordinator: DiffWebViewCoordinator) {
     let contentChanged = coordinator.lastOldContent != oldContent ||
                          coordinator.lastNewContent != newContent ||
                          coordinator.lastFileName != fileName
 
-    // Check if style has changed
     let styleChanged = coordinator.lastDiffStyle != diffStyle
-
-    // Check if overflow mode has changed
     let overflowChanged = coordinator.lastOverflowMode != overflowMode
-
-    // Check if theme has changed
     let currentTheme = themeForColorScheme
     let themeChanged = coordinator.lastTheme != currentTheme
-
-    // Check if annotations have changed
     let annotationsChanged = coordinator.lastAnnotations != annotations
 
     if contentChanged {
@@ -207,25 +178,6 @@ public struct PierreDiffView: NSViewRepresentable {
     }
   }
 
-  public func makeCoordinator() -> DiffWebViewCoordinator {
-    DiffWebViewCoordinator(
-      onLineClick: onLineClick,
-      onLineClickWithPosition: onLineClickWithPosition,
-      onLineSelectionChange: onLineSelectionChange,
-      onExpandRequest: onExpandRequest,
-      onReady: onReady,
-      onAnnotationClick: onAnnotationClick,
-      onAnnotationDelete: onAnnotationDelete,
-      onAnnotationDraftSubmit: onAnnotationDraftSubmit,
-      onAnnotationDraftCancel: onAnnotationDraftCancel,
-      onContentHeightChange: onContentHeightChange
-    )
-  }
-
-  public static func dismantleNSView(_ nsView: WKWebView, coordinator: DiffWebViewCoordinator) {
-    coordinator.cleanup()
-  }
-
   // MARK: - Private Helpers
 
   private var themeForColorScheme: String {
@@ -238,6 +190,43 @@ public struct PierreDiffView: NSViewRepresentable {
   }
 }
 
+// MARK: - Platform conformances
+
+#if os(macOS)
+extension PierreDiffView: NSViewRepresentable {
+
+  public func makeNSView(context: Context) -> WKWebView {
+    makeWebView(coordinator: context.coordinator)
+  }
+
+  public func updateNSView(_ webView: WKWebView, context: Context) {
+    updateWebView(webView, coordinator: context.coordinator)
+  }
+
+  public static func dismantleNSView(_ nsView: WKWebView, coordinator: DiffWebViewCoordinator) {
+    coordinator.cleanup()
+  }
+}
+#else
+extension PierreDiffView: UIViewRepresentable {
+
+  public func makeUIView(context: Context) -> WKWebView {
+    makeWebView(coordinator: context.coordinator)
+  }
+
+  public func updateUIView(_ webView: WKWebView, context: Context) {
+    updateWebView(webView, coordinator: context.coordinator)
+  }
+
+  public static func dismantleUIView(_ uiView: WKWebView, coordinator: DiffWebViewCoordinator) {
+    coordinator.cleanup()
+  }
+}
+#endif
+
+// MARK: - macOS scroll passthrough
+
+#if os(macOS)
 /// A WKWebView that
 ///   1. Always forwards scroll wheel events to the next responder, since the
 ///      page is sized to its intrinsic content height (nothing to scroll
@@ -267,3 +256,4 @@ final class ScrollPassThroughWebView: WKWebView {
     invalidateIntrinsicContentSize()
   }
 }
+#endif

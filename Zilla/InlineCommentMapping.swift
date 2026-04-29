@@ -1,9 +1,7 @@
 import Foundation
 import SwiftUI
 import PhabricatorKit
-#if os(macOS)
 import PierreDiffsSwift
-#endif
 
 /// In-flight inline composer state. When set, a synthetic editable annotation
 /// is injected into the diff at `(path, line)`; submitting it routes to
@@ -22,7 +20,6 @@ struct ActiveInlineComposer: Equatable {
 }
 
 
-#if os(macOS)
 extension Array where Element == InlineComment {
     /// Groups inline comments into threads on the latest diff, returning one
     /// `DiffAnnotation` per thread (root + replies). Replies appear stacked
@@ -172,4 +169,3 @@ extension Array where Element == InlineComment {
         return formatter.localizedString(for: date, relativeTo: .now)
     }
 }
-#endif

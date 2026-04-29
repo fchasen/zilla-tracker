@@ -1,8 +1,6 @@
 import SwiftUI
 import PhabricatorKit
-#if os(macOS)
 import PierreDiffsSwift
-#endif
 
 struct ChangesetView: View {
     @Environment(Workspace.self) private var workspace
@@ -63,7 +61,11 @@ struct ChangesetView: View {
 
     private var diffCardBackground: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
+            #if os(macOS)
             .fill(Color(nsColor: .controlBackgroundColor))
+            #else
+            .fill(Color(uiColor: .secondarySystemBackground))
+            #endif
     }
 
     private var disclosureRow: some View {
@@ -106,19 +108,7 @@ struct ChangesetView: View {
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         case .hunks(let old, let new):
-            #if os(macOS)
             pierreView(old: old, new: new)
-            #else
-            ContentUnavailableView {
-                Label("Diff viewer is macOS-only for now", systemImage: "macwindow")
-            } description: {
-                Text("Open the revision in your browser to see the diff.")
-            } actions: {
-                if let revision = workspace.loadedRevision, let url = revision.fields.uri {
-                    Button("Open in Browser") { openURL(url) }
-                }
-            }
-            #endif
         }
     }
 
@@ -140,7 +130,6 @@ struct ChangesetView: View {
         }
     }
 
-    #if os(macOS)
     @ViewBuilder
     private func pierreView(old: String, new: String) -> some View {
         let useSplit = containerWidth >= Self.splitWidthThreshold
@@ -252,7 +241,6 @@ struct ChangesetView: View {
             _ = await workspace.deleteInlineDraft(phid: id, using: phab.client)
         }
     }
-    #endif
 }
 
 struct ChangesetHeader: View {
