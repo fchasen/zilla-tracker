@@ -7,7 +7,7 @@ import PackageDescription;
 let package = Package(
     name: "SearchfoxKit",
     platforms: [
-        .macOS(.v10_15), .iOS(.v13), .visionOS(.v1)
+        .macOS(.v10_15), .iOS(.v13)
     ],
     products: [
         .library(

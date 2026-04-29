@@ -23,7 +23,7 @@ import UIKit
 /// - Dark/light theme support
 ///
 /// Conforms to `NSViewRepresentable` on macOS and `UIViewRepresentable` on iOS /
-/// iPadOS / visionOS via conditional extensions below.
+/// iPadOS via conditional extensions below.
 @MainActor
 public struct PierreDiffView {
 
@@ -124,6 +124,14 @@ public struct PierreDiffView {
     webView.backgroundColor = .clear
     webView.scrollView.backgroundColor = .clear
     webView.scrollView.isScrollEnabled = false
+    // When the keyboard appears for a focused <textarea> inside the WebView,
+    // iOS by default reserves bottom inset on the WebView's scrollView and
+    // shifts content up. With `isScrollEnabled = false` we get the worst of
+    // both: the inset still applies but our intrinsic-sized layout can't
+    // adapt, so the diff appears cropped. Keep insets stable; let the host
+    // SwiftUI ScrollView handle keyboard avoidance instead.
+    webView.scrollView.contentInsetAdjustmentBehavior = .never
+    webView.scrollView.contentInset = .zero
     #endif
 
     coordinator.webView = webView
@@ -257,7 +265,7 @@ final class ScrollPassThroughWebView: WKWebView {
   }
 }
 #else
-/// iOS / iPadOS / visionOS counterpart to `ScrollPassThroughWebView`. Inner
+/// iOS / iPadOS counterpart to `ScrollPassThroughWebView`. Inner
 /// scrolling is disabled in `makeWebView`, so the only job here is to expose
 /// the painted height via `intrinsicContentSize` so SwiftUI's `.fixedSize`
 /// can size the host correctly.

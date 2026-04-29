@@ -338,6 +338,15 @@ enum DiffHTMLTemplate {
     min-height: 56px;
   }
 
+  /* iOS auto-zooms into any focused input whose font-size is < 16px. Bump the
+     composer to 16px on touch devices to suppress that zoom — pinch-zoom on
+     the surrounding content still works. */
+  @media (hover: none) and (pointer: coarse) {
+    .pierre-annotation-textarea {
+      font-size: 16px;
+    }
+  }
+
   .pierre-annotation-textarea:focus {
     outline: none;
     border-color: rgba(120, 87, 255, 0.7);
@@ -417,6 +426,14 @@ enum DiffHTMLTemplate {
 
   .pierre-annotation:hover .pierre-annotation-delete {
     visibility: visible;
+  }
+
+  /* On touch devices there's no hover, so always reveal the delete button.
+     Without this, iOS users have no way to remove their own draft inlines. */
+  @media (hover: none) {
+    .pierre-annotation-delete {
+      visibility: visible;
+    }
   }
 
   .pierre-annotation-delete:hover {

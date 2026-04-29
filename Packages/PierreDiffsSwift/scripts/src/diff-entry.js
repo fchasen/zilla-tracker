@@ -148,34 +148,57 @@ function detectLanguage(fileName) {
 
 
 /**
- * Walks the document and any nested shadow roots, hiding @pierre/diffs'
- * built-in file headers so they don't duplicate the host-rendered header.
- * Pierre's headers are tagged with `data-diffs-header`. CSS injected into the
- * document head doesn't pierce shadow roots, so we drop a per-root <style>
- * the first time we see one, and re-run on each render.
+ * Recursively walks shadow roots starting from `root` and ensures each one
+ * carries a `<style>` element marked with `markerAttr` containing `cssText`.
+ * Pierre's diffs render inside a `<diffs-container>` web component with a
+ * shadow DOM, so document-level CSS doesn't reach internal nodes. Per-root
+ * <style> tags are how we override Pierre styles.
+ */
+function injectShadowStyle(root, markerAttr, cssText) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('*').forEach((el) => {
+    if (el.shadowRoot) {
+      if (!el.shadowRoot.querySelector(`style[${markerAttr}]`)) {
+        const s = document.createElement('style');
+        s.setAttribute(markerAttr, '1');
+        s.textContent = cssText;
+        el.shadowRoot.appendChild(s);
+      }
+      injectShadowStyle(el.shadowRoot, markerAttr, cssText);
+    }
+  });
+}
+
+/**
+ * Hides @pierre/diffs' built-in file headers (`[data-diffs-header]`) so they
+ * don't duplicate the host-rendered header. Direct hide in light DOM, plus a
+ * style sheet inside every shadow root.
  */
 function hidePierreHeaders(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('[data-diffs-header]').forEach((el) => {
+    el.style.display = 'none';
+  });
+  injectShadowStyle(
+    root,
+    'data-zilla-hide-headers',
+    '[data-diffs-header] { display: none !important; }'
+  );
+}
+
+/**
+ * On touch devices Pierre's hover-only gutter "+" affordance never appears,
+ * because there's no `:hover` to trigger it. Force it visible so iOS users
+ * can tap to start an inline comment.
+ */
+function applyTouchAffordances(root) {
   if (!root) return;
-  // Direct hide of any matching elements in light DOM.
-  if (root.querySelectorAll) {
-    root.querySelectorAll('[data-diffs-header]').forEach((el) => {
-      el.style.display = 'none';
-    });
-  }
-  // Recurse into shadow roots.
-  if (root.querySelectorAll) {
-    root.querySelectorAll('*').forEach((el) => {
-      if (el.shadowRoot) {
-        if (!el.shadowRoot.querySelector('style[data-zilla-hide-headers]')) {
-          const s = document.createElement('style');
-          s.setAttribute('data-zilla-hide-headers', '1');
-          s.textContent = '[data-diffs-header] { display: none !important; }';
-          el.shadowRoot.appendChild(s);
-        }
-        hidePierreHeaders(el.shadowRoot);
-      }
-    });
-  }
+  const css = `
+    @media (hover: none) and (pointer: coarse) {
+      .gutter-utility-slot { opacity: 1 !important; }
+    }
+  `;
+  injectShadowStyle(root, 'data-zilla-touch-affordances', css);
 }
 
 /**
@@ -386,6 +409,7 @@ window.pierreBridge = {
       const container = getContainer();
       container.innerHTML = '';
       hidePierreHeaders(document);
+      applyTouchAffordances(document);
 
       // Update current settings
       if (options.theme) {
@@ -600,9 +624,13 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
 });
 
 
-// Hide built-in file headers as soon as Pierre attaches them.
+// Hide built-in file headers and apply touch-only affordances as soon as
+// Pierre attaches its DOM.
 (function() {
-  const tick = () => hidePierreHeaders(document);
+  const tick = () => {
+    hidePierreHeaders(document);
+    applyTouchAffordances(document);
+  };
   tick();
   const mo = new MutationObserver(tick);
   mo.observe(document.body || document.documentElement, { childList: true, subtree: true });

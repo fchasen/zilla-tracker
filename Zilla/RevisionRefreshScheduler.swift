@@ -10,8 +10,8 @@ import os
 /// coalesce ticks with other background work, adapt to power state, and run
 /// while the app is in the background (subject to AppNap).
 ///
-/// On iOS / visionOS, where `NSBackgroundActivityScheduler` isn't available,
-/// it runs a `Task.sleep` loop. Foreground only — the system suspends the
+/// On iOS, where `NSBackgroundActivityScheduler` isn't available, it runs a
+/// `Task.sleep` loop. Foreground only — the system suspends the
 /// task when the app is backgrounded and resumes it when the user returns,
 /// which is exactly the behavior we want for "refresh while the user is
 /// looking at the app". Exact timing isn't load-bearing.

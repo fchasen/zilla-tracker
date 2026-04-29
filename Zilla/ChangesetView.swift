@@ -169,7 +169,6 @@ struct ChangesetView: View {
     }
 
     private func handleLineClick(position: LineClickPosition, localPoint: CGPoint) {
-        #if os(macOS)
         // Pierre reports the click side as "additions", "deletions", or
         // "unified". A click on the deletions side anchors the comment to the
         // old file; everything else anchors to the new file.
@@ -181,11 +180,9 @@ struct ChangesetView: View {
             isNewFile: isNew,
             replyTo: nil
         )
-        #endif
     }
 
     private func handleDraftSubmit(annotationID: String, commentID: String, body: String, side: String, lineNumber: Int) {
-        #if os(macOS)
         guard let composer = workspace.activeInlineComposer,
               composer.syntheticID == annotationID || composer.syntheticID == commentID else {
             return
@@ -213,20 +210,16 @@ struct ChangesetView: View {
                 )
             }
         }
-        #endif
     }
 
     private func handleDraftCancel(annotationID: String, commentID: String, side: String, lineNumber: Int) {
-        #if os(macOS)
         if let composer = workspace.activeInlineComposer,
            composer.syntheticID == annotationID || composer.syntheticID == commentID {
             workspace.activeInlineComposer = nil
         }
-        #endif
     }
 
     private func handleAnnotationClick(id: String, side: String, lineNumber: Int, localPoint: CGPoint) {
-        #if os(macOS)
         // Tapping an existing thread starts an in-diff reply on that thread.
         let isNew = side != "deletions"
         workspace.beginInlineComposer(
@@ -236,18 +229,15 @@ struct ChangesetView: View {
             isNewFile: isNew,
             replyTo: id
         )
-        #endif
     }
 
     private func handleAnnotationDelete(id: String, side: String, lineNumber: Int) {
-        #if os(macOS)
         guard let inline = workspace.loadedRevisionInlines.first(where: { $0.phid == id }) else { return }
         let myPHID = phab.currentUser?.phid
         guard inline.transactionPHID == nil, inline.authorPHID == myPHID else { return }
         Task {
             _ = await workspace.deleteInlineDraft(phid: id, using: phab.client)
         }
-        #endif
     }
 }
 

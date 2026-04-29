@@ -7,8 +7,7 @@ let package = Package(
   name: "PierreDiffsSwift",
   platforms: [
     .macOS(.v14),
-    .iOS(.v17),
-    .visionOS(.v1)
+    .iOS(.v17)
   ],
   products: [
     .library(
