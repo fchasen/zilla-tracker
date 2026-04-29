@@ -356,6 +356,10 @@ public final class DiffWebViewCoordinator: NSObject {
       if let auto = webView as? ScrollPassThroughWebView {
         auto.setContentHeight(height)
       }
+      #else
+      if let auto = webView as? IntrinsicHeightWebView {
+        auto.setContentHeight(height)
+      }
       #endif
       onContentHeightChange?(height)
 

@@ -118,7 +118,7 @@ public struct PierreDiffView {
     webView.allowsMagnification = true
     webView.setValue(false, forKey: "drawsBackground")
     #else
-    let webView = WKWebView(frame: .zero, configuration: configuration)
+    let webView = IntrinsicHeightWebView(frame: .zero, configuration: configuration)
     webView.navigationDelegate = coordinator
     webView.isOpaque = false
     webView.backgroundColor = .clear
@@ -224,7 +224,7 @@ extension PierreDiffView: UIViewRepresentable {
 }
 #endif
 
-// MARK: - macOS scroll passthrough
+// MARK: - Intrinsic-height WebView subclasses
 
 #if os(macOS)
 /// A WKWebView that
@@ -246,6 +246,28 @@ final class ScrollPassThroughWebView: WKWebView {
     NSSize(
       width: NSView.noIntrinsicMetric,
       height: contentHeight > 0 ? contentHeight : NSView.noIntrinsicMetric
+    )
+  }
+
+  func setContentHeight(_ newHeight: CGFloat) {
+    let resolved = max(0, newHeight)
+    guard abs(contentHeight - resolved) > 0.5 else { return }
+    contentHeight = resolved
+    invalidateIntrinsicContentSize()
+  }
+}
+#else
+/// iOS / iPadOS / visionOS counterpart to `ScrollPassThroughWebView`. Inner
+/// scrolling is disabled in `makeWebView`, so the only job here is to expose
+/// the painted height via `intrinsicContentSize` so SwiftUI's `.fixedSize`
+/// can size the host correctly.
+final class IntrinsicHeightWebView: WKWebView {
+  private var contentHeight: CGFloat = 0
+
+  override var intrinsicContentSize: CGSize {
+    CGSize(
+      width: UIView.noIntrinsicMetric,
+      height: contentHeight > 0 ? contentHeight : UIView.noIntrinsicMetric
     )
   }
 
