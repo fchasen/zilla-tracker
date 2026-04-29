@@ -11,6 +11,7 @@
 		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
 		3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7082FA06FFF003FB395 /* SearchfoxKit */; };
 		3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7FF2FA15288003FB395 /* PhabricatorKit */; };
+		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; platformFilter = macos; productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 				3339A5C22FA00C00003FB395 /* Textual in Frameworks */,
 				3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */,
 				3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */,
+				A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,6 +129,7 @@
 				3339A5C12FA00C00003FB395 /* Textual */,
 				3339A7082FA06FFF003FB395 /* SearchfoxKit */,
 				3339A7FF2FA15288003FB395 /* PhabricatorKit */,
+				A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */,
 			);
 			productName = Zilla;
 			productReference = 3339A5902FA001FC003FB395 /* Zilla.app */;
@@ -215,6 +218,7 @@
 				3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */,
 				3339A7072FA06FFF003FB395 /* XCLocalSwiftPackageReference "Packages/SearchfoxKit" */,
 				3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
+				A1B2C3D4E5F60000000F0003 /* XCRemoteSwiftPackageReference "PierreDiffsSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -685,6 +689,14 @@
 				minimumVersion = 0.3.0;
 			};
 		};
+		A1B2C3D4E5F60000000F0003 /* XCRemoteSwiftPackageReference "PierreDiffsSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jamesrochabrun/PierreDiffsSwift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.7;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -704,6 +716,11 @@
 		3339A7FF2FA15288003FB395 /* PhabricatorKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PhabricatorKit;
+		};
+		A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F60000000F0003 /* XCRemoteSwiftPackageReference "PierreDiffsSwift" */;
+			productName = PierreDiffsSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
