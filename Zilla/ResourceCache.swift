@@ -19,7 +19,6 @@ enum CacheKey: Hashable, Sendable {
     case revision(Int)
     case revisionDiff(Int)
     case revisionTransactions(Int)
-    case revisionInlines(Int)
     case phabricatorUser(String)
     case fileContent(repositoryPHID: String, commit: String, path: String)
 }
@@ -27,10 +26,16 @@ enum CacheKey: Hashable, Sendable {
 extension CacheKey {
     var freshTTL: TimeInterval {
         switch self {
+        // User identity rarely changes within a session.
         case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
-            return 60 * 60
-        case .bug, .comments, .bugSearch, .revisionSearch,
-             .revision, .revisionDiff, .revisionTransactions, .revisionInlines:
+            return 6 * 60 * 60
+        // Revision detail (header/transactions/diff) — keep cached longer
+        // so flipping between recently-opened revisions is instant.
+        case .revision, .revisionDiff, .revisionTransactions:
+            return 5 * 60
+        // Bug / list searches — tighter freshness because list contents
+        // change as the user works elsewhere.
+        case .bug, .comments, .bugSearch, .revisionSearch:
             return 60
         case .dependencyMeta:
             return 24 * 60 * 60
@@ -42,9 +47,10 @@ extension CacheKey {
     var hardTTL: TimeInterval {
         switch self {
         case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
-            return 24 * 60 * 60
-        case .bug, .comments, .bugSearch, .revisionSearch,
-             .revision, .revisionDiff, .revisionTransactions, .revisionInlines:
+            return 7 * 24 * 60 * 60
+        case .revision, .revisionDiff, .revisionTransactions:
+            return 60 * 60
+        case .bug, .comments, .bugSearch, .revisionSearch:
             return 10 * 60
         case .dependencyMeta:
             return 7 * 24 * 60 * 60
@@ -118,8 +124,7 @@ final class ResourceCache {
         for key in [
             CacheKey.revision(id),
             .revisionDiff(id),
-            .revisionTransactions(id),
-            .revisionInlines(id)
+            .revisionTransactions(id)
         ] {
             cancelInflight(for: key)
             if entries.removeValue(forKey: key) != nil { changed = true }

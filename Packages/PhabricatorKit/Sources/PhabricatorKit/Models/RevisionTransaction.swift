@@ -177,6 +177,27 @@ extension RevisionTransaction.TransactionFields {
 }
 
 public extension RevisionTransaction {
+    /// Whether this transaction represents a user-authored comment — either a
+    /// top-level comment on the revision or an inline comment on a diff line.
+    /// Other transaction types (status changes, reviewer changes, rebases,
+    /// etc.) are activity but not comments.
+    var isComment: Bool {
+        if type == "comment" || type == "inline" { return true }
+        // Some Phabricator forks emit `differential.inline` / `differential:inline`.
+        if let type, type.hasSuffix("inline") || type.hasSuffix(":inline") { return true }
+        // Inline comments always carry a path + line anchor; a fallback check
+        // catches transaction-type strings we haven't seen.
+        if fields.path != nil && fields.line != nil { return true }
+        // A non-empty top-level comment body without an anchor is also a comment.
+        if let body = comments.last(where: { ($0.removed ?? false) == false })?.content.raw,
+           !body.isEmpty {
+            // Only treat as a comment if the type is missing or hints at one;
+            // status changes etc. don't carry comment bodies.
+            return type == nil || type == "comment"
+        }
+        return false
+    }
+
     /// Builds an `InlineComment` from an inline-typed transaction.
     /// Inline transactions are recognized by their anchor fields (`diff`,
     /// `path`, `line`) rather than a specific `type` string, since different

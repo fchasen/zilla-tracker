@@ -6,20 +6,36 @@ struct RevisionActivityView: View {
     @Environment(Workspace.self) private var workspace
 
     var body: some View {
+        @Bindable var workspace = workspace
         VStack(alignment: .leading, spacing: 12) {
-            InspectorSectionHeader(
-                title: "Activity",
-                trailing: workspace.loadedRevisionTransactions.isEmpty
-                    ? nil
-                    : "\(workspace.loadedRevisionTransactions.count)"
-            )
+            HStack {
+                InspectorSectionHeader(
+                    title: "Activity",
+                    trailing: visibleTransactions.isEmpty
+                        ? nil
+                        : "\(visibleTransactions.count)"
+                )
+                Spacer()
+                if hiddenCount > 0 || workspace.activityShowAll {
+                    Toggle("Show all", isOn: $workspace.activityShowAll)
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        .help(workspace.activityShowAll
+                              ? "Hide non-comment activity"
+                              : "\(hiddenCount) non-comment item\(hiddenCount == 1 ? "" : "s") hidden")
+                }
+            }
             if workspace.loadedRevisionTransactions.isEmpty {
                 Text("No activity yet.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            } else if visibleTransactions.isEmpty {
+                Text("No comments yet.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(sortedTransactions, id: \.id) { transaction in
+                    ForEach(visibleTransactions, id: \.id) { transaction in
                         ActivityRow(transaction: transaction)
                     }
                 }
@@ -29,6 +45,16 @@ struct RevisionActivityView: View {
 
     private var sortedTransactions: [RevisionTransaction] {
         workspace.loadedRevisionTransactions.sorted { $0.dateCreated < $1.dateCreated }
+    }
+
+    private var visibleTransactions: [RevisionTransaction] {
+        workspace.activityShowAll
+            ? sortedTransactions
+            : sortedTransactions.filter(\.isComment)
+    }
+
+    private var hiddenCount: Int {
+        sortedTransactions.count - sortedTransactions.filter(\.isComment).count
     }
 }
 

@@ -309,6 +309,18 @@ final class Workspace {
     /// changeset row to the top, then clear this back to nil.
     var pendingScrollToFile: String?
 
+    /// When true, the activity stream hides everything that isn't a comment
+    /// (status changes, reviewer additions, rebases, etc.). Persisted across
+    /// launches via UserDefaults.
+    static let activityShowAllStorageKey = "Zilla.activityShowAll"
+    var activityShowAll: Bool = UserDefaults.standard.bool(forKey: Workspace.activityShowAllStorageKey) {
+        didSet {
+            if oldValue != activityShowAll {
+                UserDefaults.standard.set(activityShowAll, forKey: Workspace.activityShowAllStorageKey)
+            }
+        }
+    }
+
     func dependencyMetadata(for id: Bug.ID) -> DependencyMetadata? {
         cache?.dependencyMeta(for: id)
     }
@@ -740,7 +752,7 @@ final class Workspace {
                 content: content,
                 replyToCommentPHID: replyToCommentPHID
             )
-            cache?.invalidate(.revisionInlines(revision.id))
+            cache?.invalidate(.revisionTransactions(revision.id))
             await refreshRevisionActivity(using: client)
             return nil
         } catch {
@@ -753,7 +765,7 @@ final class Workspace {
         guard let revision = loadedRevision else { return nil }
         do {
             try await client.deleteDraftInline(phid: phid)
-            cache?.invalidate(.revisionInlines(revision.id))
+            cache?.invalidate(.revisionTransactions(revision.id))
             await refreshRevisionActivity(using: client)
             return nil
         } catch {
