@@ -1500,7 +1500,7 @@ private struct CCRow: View {
 
 // MARK: - FlowLayout
 
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 6
     var lineSpacing: CGFloat = 6
 

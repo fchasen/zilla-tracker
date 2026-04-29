@@ -146,6 +146,10 @@ public extension PhabricatorClient {
         return try await call(method: "differential.revision.edit", params: params)
     }
 
+    func searchProjects(_ query: ProjectQuery) async throws -> ProjectSearchResult {
+        try await call(method: "project.search", params: query)
+    }
+
     func searchUsers(phids: [String]) async throws -> [PhabricatorUser] {
         guard !phids.isEmpty else { return [] }
         struct Params: Encodable { let phids: [String] }

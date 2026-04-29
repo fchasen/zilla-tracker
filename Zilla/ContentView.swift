@@ -400,6 +400,7 @@ final class Workspace {
     private(set) var loadedRevisionTransactions: [RevisionTransaction] = []
     private(set) var loadedRevisionInlines: [InlineComment] = []
     private(set) var revisionUserDirectory: [String: PhabricatorUser] = [:]
+    private(set) var revisionProjectDirectory: [String: PhabricatorProject] = [:]
     private(set) var changesetContent: [Int: ChangesetContentSource] = [:]
     private(set) var isLoadingRevision = false
     private(set) var revisionLoadError: String?
@@ -607,6 +608,7 @@ final class Workspace {
         loadedRevisionTransactions = []
         loadedRevisionInlines = []
         revisionUserDirectory = [:]
+        revisionProjectDirectory = [:]
         changesetContent = [:]
         revisionLoadError = nil
         activeInlineComposer = nil
@@ -722,7 +724,32 @@ final class Workspace {
         loadedRevisionInlines = resolvedInlines
 
         await resolveUserDirectory(using: client)
+        await resolveProjectDirectory(using: client)
         await loadChangesetContent(using: client)
+    }
+
+    @MainActor
+    func cacheProjects(_ projects: [PhabricatorProject]) {
+        for project in projects {
+            revisionProjectDirectory[project.phid] = project
+        }
+    }
+
+    @MainActor
+    private func resolveProjectDirectory(using client: PhabricatorClient) async {
+        guard let phids = loadedRevision?.attachments?.projects?.projectPHIDs, !phids.isEmpty else {
+            return
+        }
+        let missing = phids.filter { revisionProjectDirectory[$0] == nil }
+        guard !missing.isEmpty else { return }
+        do {
+            let result = try await client.searchProjects(.byPHIDs(missing))
+            for project in result.data {
+                revisionProjectDirectory[project.phid] = project
+            }
+        } catch {
+            revisionLog.error("Project lookup failed: \(String(describing: error))")
+        }
     }
 
     @MainActor

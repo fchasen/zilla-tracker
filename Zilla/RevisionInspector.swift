@@ -8,6 +8,8 @@ struct RevisionInspector: View {
     @Environment(AuthStore.self) private var auth
     @Environment(\.openURL) private var openURL
 
+    @State private var tagPickerPresented: Bool = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -20,6 +22,8 @@ struct RevisionInspector: View {
                         Divider()
                         reviewersSection(revision: revision)
                     }
+                    Divider()
+                    tagsSection(revision: revision)
                     Divider()
                     propertiesSection(revision: revision)
                     if let inline = workspace.loadedRevisionDiff {
@@ -39,6 +43,11 @@ struct RevisionInspector: View {
             if let raw = workspace.loadedRevision?.fields.bugzillaBugID,
                let id = Int(raw) {
                 await workspace.loadDependencyMetadata(ids: [id], using: auth.client)
+            }
+        }
+        .sheet(isPresented: $tagPickerPresented) {
+            ProjectPickerSheet(excludedPHIDs: currentTagPHIDs) { project in
+                Task { await addTag(project) }
             }
         }
     }
@@ -144,6 +153,97 @@ struct RevisionInspector: View {
                     trailing: reviewerStateIcon(reviewer)
                 )
             }
+        }
+    }
+
+    private var currentTagPHIDs: Set<String> {
+        Set(workspace.loadedRevision?.attachments?.projects?.projectPHIDs ?? [])
+    }
+
+    private var sortedCurrentTags: [PhabricatorProject] {
+        let phids = workspace.loadedRevision?.attachments?.projects?.projectPHIDs ?? []
+        return phids
+            .compactMap { workspace.revisionProjectDirectory[$0] }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    @ViewBuilder
+    private func tagsSection(revision: Revision) -> some View {
+        let phids = revision.attachments?.projects?.projectPHIDs ?? []
+        let unresolved = phids.filter { workspace.revisionProjectDirectory[$0] == nil }.count
+
+        VStack(alignment: .leading, spacing: 8) {
+            InspectorSectionHeader(
+                title: "Tags",
+                trailing: phids.isEmpty ? nil : "\(phids.count)",
+                onAdd: phab.isSignedIn ? { tagPickerPresented = true } : nil
+            )
+            if phids.isEmpty {
+                Text("No tags")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                FlowLayout(spacing: 6) {
+                    ForEach(sortedCurrentTags) { project in
+                        tagChip(project)
+                    }
+                    if unresolved > 0 {
+                        Text("+\(unresolved) loading…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .disabled(workspace.isUpdatingRevision)
+    }
+
+    @ViewBuilder
+    private func tagChip(_ project: PhabricatorProject) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "tag.fill")
+                .font(.caption2)
+            Text(project.name)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+            if phab.isSignedIn {
+                Button {
+                    Task { await removeTag(project) }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Remove \(project.name)")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.15), in: Capsule())
+        .foregroundStyle(.primary)
+    }
+
+    @MainActor
+    private func addTag(_ project: PhabricatorProject) async {
+        guard !currentTagPHIDs.contains(project.phid) else { return }
+        workspace.cacheProjects([project])
+        if let error = await workspace.applyRevisionEdit(
+            transactions: [.projectsAdd([project.phid])],
+            using: phab.client
+        ) {
+            workspace.lastUpdateError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func removeTag(_ project: PhabricatorProject) async {
+        guard currentTagPHIDs.contains(project.phid) else { return }
+        if let error = await workspace.applyRevisionEdit(
+            transactions: [.projectsRemove([project.phid])],
+            using: phab.client
+        ) {
+            workspace.lastUpdateError = error.localizedDescription
         }
     }
 

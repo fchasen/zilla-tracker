@@ -20,12 +20,14 @@ public struct RevisionEditTransaction: Sendable, Hashable, Encodable {
     public enum Value: Sendable, Hashable, Encodable {
         case bool(Bool)
         case string(String)
+        case stringArray([String])
 
         public func encode(to encoder: Encoder) throws {
             var c = encoder.singleValueContainer()
             switch self {
             case .bool(let v): try c.encode(v)
             case .string(let v): try c.encode(v)
+            case .stringArray(let v): try c.encode(v)
             }
         }
     }
@@ -41,6 +43,18 @@ public struct RevisionEditTransaction: Sendable, Hashable, Encodable {
 
     public static func comment(_ body: String) -> RevisionEditTransaction {
         RevisionEditTransaction(type: RevisionAction.comment.rawValue, value: .string(body))
+    }
+
+    public static func projectsAdd(_ phids: [String]) -> RevisionEditTransaction {
+        RevisionEditTransaction(type: "projects.add", value: .stringArray(phids))
+    }
+
+    public static func projectsRemove(_ phids: [String]) -> RevisionEditTransaction {
+        RevisionEditTransaction(type: "projects.remove", value: .stringArray(phids))
+    }
+
+    public static func projectsSet(_ phids: [String]) -> RevisionEditTransaction {
+        RevisionEditTransaction(type: "projects.set", value: .stringArray(phids))
     }
 }
 
