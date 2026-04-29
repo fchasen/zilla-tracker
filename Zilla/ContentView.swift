@@ -144,7 +144,7 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
 
     var label: String {
         switch self {
-        case .ordered: return "Ordered"
+        case .ordered: return "Todo"
         case .newest: return "Newest"
         case .recent: return "Recent"
         case .oldest: return "Oldest"
@@ -162,15 +162,17 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// BMO REST `order` clause. `ordered` falls through to recent activity since
-    /// the user-defined order is reapplied client-side on top of the server result.
     var bmoOrder: String {
         switch self {
-        case .ordered, .recent: return "changeddate DESC"
+        case .ordered, .priority: return "priority,bug_id"
+        case .recent: return "changeddate DESC"
         case .newest: return "opendate DESC"
         case .oldest: return "opendate ASC"
-        case .priority: return "priority,bug_id"
         }
+    }
+
+    var restrictsToOpen: Bool {
+        self == .ordered
     }
 }
 
@@ -1330,10 +1332,13 @@ struct BugListView: View {
     }
 
     private var endpointKey: String? {
-        if case let .smart(endpoint) = selection {
-            return "smart.\(endpoint.rawValue)"
+        guard let selection else { return nil }
+        switch selection {
+        case .smart(let endpoint): return "smart.\(endpoint.rawValue)"
+        case .component(let ref): return "component.\(ref.product)::\(ref.component)"
+        case .metaBug(let id): return "metaBug.\(id)"
+        case .allDrafts, .review: return nil
         }
-        return nil
     }
 
     private var supportsOrdered: Bool {
@@ -1492,7 +1497,7 @@ struct BugListView: View {
     }
 
     private var availableSorts: [BugListSort] {
-        BugListSort.allCases.filter { $0 != .ordered || supportsOrdered }
+        BugListSort.allCases
     }
 
     private var sortedBugs: [Bug] {
@@ -1690,6 +1695,9 @@ struct BugListView: View {
         query.offset = offset
         query.order = workspace.bugListSort.bmoOrder
         query.includeFields = Self.bugIncludeFields
+        if workspace.bugListSort.restrictsToOpen {
+            query.resolution = ["---"]
+        }
         return query
     }
 
@@ -1777,6 +1785,7 @@ struct BugListView: View {
         let login = auth.currentUser?.name
         let client = auth.client
         let fields = Self.bugIncludeFields
+        let openOnly = workspace.bugListSort.restrictsToOpen
 
         let results = await withTaskGroup(of: (Bug.ID, [Bug])?.self) { group in
             for id in metaIDs {
@@ -1787,6 +1796,9 @@ struct BugListView: View {
                     }
                     query.limit = 100
                     query.includeFields = fields
+                    if openOnly {
+                        query.resolution = ["---"]
+                    }
                     guard let result = try? await client.searchBugs(query) else {
                         return nil
                     }
