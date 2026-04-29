@@ -16,27 +16,39 @@ enum CacheKey: Hashable, Sendable {
     case dependencyMeta(Bug.ID)
     case phabUser
     case revisionSearch(RevisionQuery)
+    case revision(Int)
+    case revisionDiff(Int)
+    case revisionTransactions(Int)
+    case revisionInlines(Int)
+    case phabricatorUser(String)
+    case fileContent(repositoryPHID: String, commit: String, path: String)
 }
 
 extension CacheKey {
     var freshTTL: TimeInterval {
         switch self {
-        case .whoami, .phabUser, .selectableProducts:
+        case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
             return 60 * 60
-        case .bug, .comments, .bugSearch, .revisionSearch:
+        case .bug, .comments, .bugSearch, .revisionSearch,
+             .revision, .revisionDiff, .revisionTransactions, .revisionInlines:
             return 60
         case .dependencyMeta:
+            return 24 * 60 * 60
+        case .fileContent:
             return 24 * 60 * 60
         }
     }
 
     var hardTTL: TimeInterval {
         switch self {
-        case .whoami, .phabUser, .selectableProducts:
+        case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
             return 24 * 60 * 60
-        case .bug, .comments, .bugSearch, .revisionSearch:
+        case .bug, .comments, .bugSearch, .revisionSearch,
+             .revision, .revisionDiff, .revisionTransactions, .revisionInlines:
             return 10 * 60
         case .dependencyMeta:
+            return 7 * 24 * 60 * 60
+        case .fileContent:
             return 7 * 24 * 60 * 60
         }
     }
@@ -95,6 +107,20 @@ final class ResourceCache {
     func invalidateBug(id: Bug.ID) {
         var changed = false
         for key in [CacheKey.bug(id), .comments(bugID: id), .dependencyMeta(id)] {
+            cancelInflight(for: key)
+            if entries.removeValue(forKey: key) != nil { changed = true }
+        }
+        if changed { version &+= 1 }
+    }
+
+    func invalidateRevision(id: Int) {
+        var changed = false
+        for key in [
+            CacheKey.revision(id),
+            .revisionDiff(id),
+            .revisionTransactions(id),
+            .revisionInlines(id)
+        ] {
             cancelInflight(for: key)
             if entries.removeValue(forKey: key) != nil { changed = true }
         }
@@ -265,6 +291,98 @@ extension ResourceCache {
     func phabUser(force: Bool = false, using client: PhabricatorClient) async throws -> PhabricatorUser {
         try await fetch(key: .phabUser, force: force) {
             try await client.whoami()
+        }
+    }
+
+    func revision(
+        id: Int,
+        force: Bool = false,
+        using client: PhabricatorClient,
+        onRefresh: ((Revision) -> Void)? = nil
+    ) async throws -> Revision {
+        try await fetch(key: .revision(id), force: force, onRefresh: onRefresh) {
+            let query = RevisionQuery(
+                constraints: RevisionQuery.Constraints(ids: [id]),
+                attachments: RevisionQuery.Attachments(
+                    reviewers: true,
+                    reviewersExtra: true,
+                    subscribers: true,
+                    projects: true
+                )
+            )
+            let result = try await client.searchRevisions(query)
+            guard let revision = result.data.first else {
+                throw PhabricatorError.invalidResponse
+            }
+            return revision
+        }
+    }
+
+    func revisionLatestDiff(
+        revisionPHID: String,
+        revisionID: Int,
+        force: Bool = false,
+        using client: PhabricatorClient,
+        onRefresh: ((DiffDetail?) -> Void)? = nil
+    ) async throws -> DiffDetail? {
+        try await fetch(key: .revisionDiff(revisionID), force: force, onRefresh: onRefresh) {
+            let diffs = try await client.searchDiffs(.forRevision(revisionPHID))
+            guard let latest = diffs.data.first else { return nil }
+            let details = try await client.getDiffs(ids: [latest.id])
+            guard let detail = details.first else { return nil }
+            return detail.merging(searchMetadata: latest)
+        }
+    }
+
+    func revisionTransactions(
+        id: Int,
+        revisionPHID: String,
+        force: Bool = false,
+        using client: PhabricatorClient,
+        onRefresh: (([RevisionTransaction]) -> Void)? = nil
+    ) async throws -> [RevisionTransaction] {
+        try await fetch(key: .revisionTransactions(id), force: force, onRefresh: onRefresh) {
+            let result = try await client.searchTransactions(
+                TransactionQuery(objectIdentifier: revisionPHID, limit: 100)
+            )
+            return result.data
+        }
+    }
+
+    func resolveUsers(
+        phids: [String],
+        using client: PhabricatorClient
+    ) async -> [String: PhabricatorUser] {
+        let unique = Array(Set(phids))
+        var resolved: [String: PhabricatorUser] = [:]
+        var missing: [String] = []
+        for phid in unique {
+            if let cached: PhabricatorUser = get(.phabricatorUser(phid)) {
+                resolved[phid] = cached
+            } else {
+                missing.append(phid)
+            }
+        }
+        if !missing.isEmpty,
+           let users = try? await client.searchUsers(phids: missing) {
+            for user in users {
+                store(user, for: .phabricatorUser(user.phid))
+                resolved[user.phid] = user
+            }
+        }
+        return resolved
+    }
+
+    func fileContent(
+        repositoryPHID: String,
+        commit: String,
+        path: String,
+        force: Bool = false,
+        using client: PhabricatorClient
+    ) async throws -> String? {
+        let key = CacheKey.fileContent(repositoryPHID: repositoryPHID, commit: commit, path: path)
+        return try await fetch(key: key, force: force) {
+            try await client.getFileContent(repositoryPHID: repositoryPHID, commit: commit, path: path)
         }
     }
 }

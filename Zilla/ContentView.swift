@@ -9,9 +9,14 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import BugzillaKit
+import PhabricatorKit
+import os
 #if os(macOS)
 import AppKit
 #endif
+
+private let revisionLog = Logger(subsystem: "com.zilla", category: "Revision")
+
 
 // MARK: - Pills
 
@@ -242,6 +247,7 @@ final class Workspace {
         }
     }
 
+
     var bugListSort: BugListSort {
         get {
             if case let .smart(endpoint) = sidebarSelection {
@@ -282,6 +288,26 @@ final class Workspace {
     var showInspector: Bool = false
 
     var cache: ResourceCache?
+
+    // Active revision (loaded once per selection; shared with the inspector).
+    private(set) var loadedRevision: Revision?
+    private(set) var loadedRevisionDiff: DiffDetail?
+    private(set) var loadedRevisionTransactions: [RevisionTransaction] = []
+    private(set) var loadedRevisionInlines: [InlineComment] = []
+    private(set) var revisionUserDirectory: [String: PhabricatorUser] = [:]
+    private(set) var changesetContent: [Int: ChangesetContentSource] = [:]
+    private(set) var isLoadingRevision = false
+    private(set) var revisionLoadError: String?
+    private(set) var isUpdatingRevision = false
+
+    var activeInlineComposer: ActiveInlineComposer?
+    /// Paths that should be expanded in the diff. ChangesetView reads from
+    /// this set rather than local state so external triggers (e.g. clicking
+    /// a file link in the activity log) can pop a collapsed diff open.
+    var expandedChangesets: Set<String> = []
+    /// When set, RevisionDetailView's ScrollViewReader will scroll the matching
+    /// changeset row to the top, then clear this back to nil.
+    var pendingScrollToFile: String?
 
     func dependencyMetadata(for id: Bug.ID) -> DependencyMetadata? {
         cache?.dependencyMeta(for: id)
@@ -457,6 +483,309 @@ final class Workspace {
         }
     }
 
+    @MainActor
+    func clearLoadedRevision() {
+        loadedRevision = nil
+        loadedRevisionDiff = nil
+        loadedRevisionTransactions = []
+        loadedRevisionInlines = []
+        revisionUserDirectory = [:]
+        changesetContent = [:]
+        revisionLoadError = nil
+        activeInlineComposer = nil
+        expandedChangesets = []
+        pendingScrollToFile = nil
+    }
+
+    /// Expand the matching diff row and scroll to it. Called when the user
+    /// taps a file path in the activity log.
+    @MainActor
+    func revealChangeset(path: String) {
+        expandedChangesets.insert(path)
+        pendingScrollToFile = path
+    }
+
+    @MainActor
+    func loadRevision(id: Int, using client: PhabricatorClient) async {
+        isLoadingRevision = true
+        revisionLoadError = nil
+        defer { isLoadingRevision = false }
+
+        do {
+            let revision: Revision
+            if let cache {
+                revision = try await cache.revision(id: id, using: client) { [weak self] refreshed in
+                    guard let self else { return }
+                    if self.loadedRevision?.id == id { self.loadedRevision = refreshed }
+                }
+            } else {
+                let query = RevisionQuery(
+                    constraints: RevisionQuery.Constraints(ids: [id]),
+                    attachments: RevisionQuery.Attachments(reviewers: true, reviewersExtra: true, subscribers: true, projects: true)
+                )
+                let result = try await client.searchRevisions(query)
+                guard let r = result.data.first else {
+                    revisionLoadError = "Revision not found."
+                    return
+                }
+                revision = r
+            }
+            loadedRevision = revision
+
+            await loadRevisionAuxiliaries(revision: revision, using: client)
+        } catch is CancellationError {
+            return
+        } catch {
+            revisionLog.error("loadRevision failed: \(String(describing: error))")
+            revisionLoadError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func loadRevisionAuxiliaries(revision: Revision, using client: PhabricatorClient) async {
+        async let diffOpt: DiffDetail? = {
+            do {
+                if let cache {
+                    return try await cache.revisionLatestDiff(
+                        revisionPHID: revision.phid,
+                        revisionID: revision.id,
+                        using: client
+                    )
+                }
+                let diffs = try await client.searchDiffs(.forRevision(revision.phid))
+                guard let latest = diffs.data.first else { return nil }
+                let details = try await client.getDiffs(ids: [latest.id])
+                return details.first
+            } catch is CancellationError {
+                return nil
+            } catch {
+                revisionLog.error("Diff load failed: \(String(describing: error))")
+                return nil
+            }
+        }()
+
+        async let transactions: [RevisionTransaction] = {
+            do {
+                if let cache {
+                    return try await cache.revisionTransactions(
+                        id: revision.id,
+                        revisionPHID: revision.phid,
+                        using: client
+                    )
+                }
+                return try await client.searchTransactions(
+                    TransactionQuery(objectIdentifier: revision.phid, limit: 100)
+                ).data
+            } catch is CancellationError {
+                return []
+            } catch {
+                revisionLog.error("Transaction load failed: \(String(describing: error))")
+                return []
+            }
+        }()
+
+        let resolvedDiff = await diffOpt
+        let resolvedTransactions = await transactions
+        let resolvedInlines = PhabricatorClient.inlineComments(from: resolvedTransactions)
+
+        let typeCounts = Dictionary(
+            grouping: resolvedTransactions,
+            by: { $0.type ?? "<nil>" }
+        ).mapValues { $0.count }
+        revisionLog.notice("D\(revision.id): \(resolvedTransactions.count) transactions, \(resolvedInlines.count) inlines; type counts \(typeCounts)")
+        if resolvedInlines.isEmpty {
+            for tx in resolvedTransactions where tx.fields.path != nil || tx.fields.line != nil {
+                revisionLog.notice("  inline-shaped tx type=\(tx.type ?? "<nil>") diffID=\(tx.fields.diffID.map(String.init) ?? "<nil>") path=\(tx.fields.path ?? "<nil>") line=\(tx.fields.line.map(String.init) ?? "<nil>") commentBody=\(tx.comments.last?.content.raw?.prefix(40).description ?? "<nil>")")
+            }
+        }
+
+        guard loadedRevision?.id == revision.id else { return }
+        loadedRevisionDiff = resolvedDiff
+        loadedRevisionTransactions = resolvedTransactions
+        loadedRevisionInlines = resolvedInlines
+
+        await resolveUserDirectory(using: client)
+        await loadChangesetContent(using: client)
+    }
+
+    @MainActor
+    private func resolveUserDirectory(using client: PhabricatorClient) async {
+        var phids: Set<String> = []
+        if let revision = loadedRevision {
+            phids.insert(revision.fields.authorPHID)
+            for reviewer in revision.attachments?.reviewers?.reviewers ?? [] {
+                phids.insert(reviewer.reviewerPHID)
+            }
+        }
+        for transaction in loadedRevisionTransactions {
+            if let phid = transaction.authorPHID { phids.insert(phid) }
+        }
+        for inline in loadedRevisionInlines {
+            if let phid = inline.authorPHID { phids.insert(phid) }
+        }
+        if let cache {
+            let resolved = await cache.resolveUsers(phids: Array(phids), using: client)
+            revisionUserDirectory.merge(resolved) { _, new in new }
+        } else if let users = try? await client.searchUsers(phids: Array(phids)) {
+            for user in users {
+                revisionUserDirectory[user.phid] = user
+            }
+        }
+    }
+
+    @MainActor
+    private func loadChangesetContent(using client: PhabricatorClient) async {
+        guard let diff = loadedRevisionDiff else { return }
+        let loader = ChangesetContentLoader(client: client, cache: cache)
+        let activeRevID = loadedRevision?.id
+        await withTaskGroup(of: (Int, ChangesetContentSource).self) { group in
+            for changeset in diff.changesets {
+                group.addTask { @MainActor in
+                    let source = await loader.load(changeset, diff: diff)
+                    return (changeset.id, source)
+                }
+            }
+            for await (id, source) in group {
+                guard loadedRevision?.id == activeRevID else { continue }
+                changesetContent[id] = source
+            }
+        }
+    }
+
+    @discardableResult
+    @MainActor
+    func applyRevisionEdit(
+        transactions: [RevisionEditTransaction],
+        using client: PhabricatorClient
+    ) async -> Error? {
+        guard let revision = loadedRevision else { return nil }
+        isUpdatingRevision = true
+        defer { isUpdatingRevision = false }
+        do {
+            _ = try await client.editRevision(objectIdentifier: revision.phid, transactions: transactions)
+            cache?.invalidateRevision(id: revision.id)
+            await loadRevision(id: revision.id, using: client)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @MainActor
+    func refreshRevisionActivity(using client: PhabricatorClient) async {
+        guard let revision = loadedRevision else { return }
+        cache?.invalidate(.revisionTransactions(revision.id))
+        let refreshed: [RevisionTransaction]?
+        if let cache {
+            refreshed = try? await cache.revisionTransactions(
+                id: revision.id,
+                revisionPHID: revision.phid,
+                force: true,
+                using: client
+            )
+        } else {
+            refreshed = try? await client.searchTransactions(
+                TransactionQuery(objectIdentifier: revision.phid, limit: 100)
+            ).data
+        }
+        if let refreshed {
+            loadedRevisionTransactions = refreshed
+            loadedRevisionInlines = PhabricatorClient.inlineComments(from: refreshed)
+        }
+        await resolveUserDirectory(using: client)
+    }
+
+    /// Opens an in-diff composer at `(path, line)`. If a composer is already
+    /// open elsewhere, it's replaced.
+    @MainActor
+    func beginInlineComposer(
+        path: String,
+        line: Int,
+        length: Int,
+        isNewFile: Bool,
+        replyTo: String?
+    ) {
+        activeInlineComposer = ActiveInlineComposer(
+            path: path,
+            line: line,
+            length: length,
+            isNewFile: isNewFile,
+            replyTo: replyTo
+        )
+    }
+
+    @MainActor
+    func cancelInlineComposer() {
+        activeInlineComposer = nil
+    }
+
+    @MainActor
+    func createInlineDraft(
+        path: String,
+        line: Int,
+        length: Int,
+        isNewFile: Bool,
+        content: String,
+        replyTo replyToCommentPHID: String?,
+        using client: PhabricatorClient
+    ) async -> Error? {
+        guard let diff = loadedRevisionDiff, let revision = loadedRevision else { return nil }
+        do {
+            _ = try await client.createInlineComment(
+                diffID: diff.id,
+                path: path,
+                line: line,
+                length: length,
+                isNewFile: isNewFile,
+                content: content,
+                replyToCommentPHID: replyToCommentPHID
+            )
+            cache?.invalidate(.revisionInlines(revision.id))
+            await refreshRevisionActivity(using: client)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @MainActor
+    func deleteInlineDraft(phid: String, using client: PhabricatorClient) async -> Error? {
+        guard let revision = loadedRevision else { return nil }
+        do {
+            try await client.deleteDraftInline(phid: phid)
+            cache?.invalidate(.revisionInlines(revision.id))
+            await refreshRevisionActivity(using: client)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @MainActor
+    func editInlineDraft(
+        phid: String,
+        path: String,
+        line: Int,
+        length: Int,
+        isNewFile: Bool,
+        replyTo replyToCommentPHID: String?,
+        newContent: String,
+        using client: PhabricatorClient
+    ) async -> Error? {
+        if let error = await deleteInlineDraft(phid: phid, using: client) {
+            return error
+        }
+        return await createInlineDraft(
+            path: path,
+            line: line,
+            length: length,
+            isNewFile: isNewFile,
+            content: newContent,
+            replyTo: replyToCommentPHID,
+            using: client
+        )
+    }
+
     func bugQuery(for selection: SidebarSelection) -> BugQuery {
         switch selection {
         case .smart(.myBugs):
@@ -586,7 +915,7 @@ struct ContentView: View {
     @ViewBuilder
     private var detailColumn: some View {
         if let id = workspace.activeRevisionID {
-            RevisionWebView(revisionID: id) {
+            RevisionDetailView(revisionID: id) {
                 workspace.activeRevisionID = nil
             }
         } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
@@ -599,7 +928,7 @@ struct ContentView: View {
     @ViewBuilder
     private var inspectorColumn: some View {
         if workspace.activeRevisionID != nil {
-            EmptyView()
+            RevisionInspector()
         } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftInspector(draftID: id)
         } else {
