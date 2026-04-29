@@ -68,17 +68,17 @@ final class BugSearchTests: XCTestCase {
         XCTAssertEqual(bugs[1].id, 2)
     }
 
-    func testSearchMyOpenBugs() async throws {
+    func testSearchMyBugs() async throws {
         MockURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/rest/bug")
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             XCTAssertTrue(items.contains(URLQueryItem(name: "assigned_to", value: "@me")))
-            XCTAssertTrue(items.contains(URLQueryItem(name: "resolution", value: "---")))
+            XCTAssertFalse(items.contains(where: { $0.name == "resolution" }))
             let body = #"{"bugs":[]}"#.data(using: .utf8)!
             return (httpResponse(for: request, status: 200), body)
         }
         let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
-        let result = try await client.searchBugs(.myOpenBugs)
+        let result = try await client.searchBugs(.myBugs)
         XCTAssertEqual(result.bugs.count, 0)
     }
 

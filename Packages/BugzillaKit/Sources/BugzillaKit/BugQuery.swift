@@ -177,8 +177,8 @@ public extension BugQuery {
         return copy
     }
 
-    static var myOpenBugs: BugQuery {
-        BugQuery(resolution: ["---"], assignedTo: [me])
+    static var myBugs: BugQuery {
+        BugQuery(assignedTo: [me])
     }
 
     static var reportedByMe: BugQuery {

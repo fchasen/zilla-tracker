@@ -906,7 +906,7 @@ final class Workspace {
     func bugQuery(for selection: SidebarSelection) -> BugQuery {
         switch selection {
         case .smart(.myBugs):
-            return .myOpenBugs
+            return .myBugs
         case .smart(.reported):
             return .reportedByMe
         case .smart(.needsReview):

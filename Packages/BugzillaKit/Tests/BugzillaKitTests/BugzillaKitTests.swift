@@ -10,8 +10,8 @@ final class BugzillaKitTests: XCTestCase {
     }
 
     func testBugQueryPresets() {
-        XCTAssertEqual(BugQuery.myOpenBugs.assignedTo, ["@me"])
-        XCTAssertEqual(BugQuery.myOpenBugs.resolution, ["---"])
+        XCTAssertEqual(BugQuery.myBugs.assignedTo, ["@me"])
+        XCTAssertEqual(BugQuery.myBugs.resolution, [])
         XCTAssertEqual(BugQuery.reportedByMe.reporter, ["@me"])
 
         let ref = ComponentRef(product: "Firefox", component: "General")
