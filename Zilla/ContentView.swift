@@ -203,6 +203,8 @@ struct DependencyMetadata: Sendable, Hashable {
     let summary: String
     let status: String
     let resolution: String
+    let type: String?
+    let assigneeDisplayName: String?
 
     var isClosed: Bool {
         ["RESOLVED", "VERIFIED", "CLOSED"].contains(status.uppercased())
@@ -217,13 +219,31 @@ final class Workspace {
 
     var sidebarSelection: SidebarSelection? = .smart(.myBugs) {
         didSet {
-            if oldValue != sidebarSelection { activeRevisionID = nil }
+            if oldValue != sidebarSelection {
+                activeRevisionID = nil
+                pendingBackToRevision = nil
+            }
         }
     }
     var selectedBugID: Bug.ID? {
         didSet {
-            if oldValue != selectedBugID { activeRevisionID = nil }
+            if oldValue != selectedBugID {
+                activeRevisionID = nil
+                // Don't clear pendingBackToRevision here — the navigation away
+                // from a revision *to* a bug is exactly the case that sets it.
+            }
         }
+    }
+    /// When the user navigates from a revision to its linked bug, this stores
+    /// the revision ID so `BugDetailView` can render a back button that
+    /// returns to the revision.
+    var pendingBackToRevision: Int?
+
+    @MainActor
+    func returnToPendingRevision() {
+        guard let id = pendingBackToRevision else { return }
+        pendingBackToRevision = nil
+        activeRevisionID = id
     }
     var selectedDraftID: UUID?
     var activeRevisionID: Int?

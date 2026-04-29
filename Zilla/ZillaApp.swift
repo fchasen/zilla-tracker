@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Textual
 
 @main
 struct ZillaApp: App {
@@ -21,6 +22,7 @@ struct ZillaApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .textual.blockQuoteStyle(.gitHub)
                 .environment(auth)
                 .environment(phab)
                 .environment(workspace)

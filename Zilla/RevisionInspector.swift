@@ -1,17 +1,20 @@
 import SwiftUI
+import BugzillaKit
 import PhabricatorKit
 
 struct RevisionInspector: View {
     @Environment(Workspace.self) private var workspace
     @Environment(PhabricatorAuthStore.self) private var phab
+    @Environment(AuthStore.self) private var auth
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let revision = workspace.loadedRevision {
-                    statusSection(revision: revision)
-                    Divider()
+                    if let bug = revision.fields.bugzillaBugID, let id = Int(bug) {
+                        bugLinkCard(id: id)
+                    }
                     authorSection(revision: revision)
                     if hasReviewers(revision: revision) {
                         Divider()
@@ -32,12 +35,87 @@ struct RevisionInspector: View {
             }
             .padding(16)
         }
+        .task(id: workspace.loadedRevision?.fields.bugzillaBugID) {
+            if let raw = workspace.loadedRevision?.fields.bugzillaBugID,
+               let id = Int(raw) {
+                await workspace.loadDependencyMetadata(ids: [id], using: auth.client)
+            }
+        }
     }
 
     @ViewBuilder
-    private func statusSection(revision: Revision) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            StatusBadge(status: revision.fields.status)
+    private func bugLinkCard(id: Bug.ID) -> some View {
+        let meta = workspace.dependencyMetadata(for: id)
+        let icon = bugTypeIcon(meta?.type)
+        let link = Button {
+            if let revID = workspace.loadedRevision?.id {
+                workspace.pendingBackToRevision = revID
+            }
+            workspace.selectedBugID = id
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: icon.symbol)
+                            .foregroundStyle(icon.color)
+                        Text(verbatim: "#\(id)")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.tint)
+                        if let meta, !meta.status.isEmpty {
+                            Text(meta.status)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.secondary.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let summary = meta?.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(.callout)
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(3)
+                    } else {
+                        Text("Open in app")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let assignee = meta?.assigneeDisplayName, !assignee.isEmpty {
+                        Text("Assigned to \(assignee)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Open #\(id) in Zilla")
+
+        #if os(macOS)
+        link.pointerStyle(.link)
+        #else
+        link
+        #endif
+    }
+
+    private func bugTypeIcon(_ type: String?) -> (symbol: String, color: Color) {
+        switch type?.lowercased() {
+        case "defect": return ("ant.fill", .red)
+        case "enhancement": return ("sparkles", .indigo)
+        case "task": return ("clipboard", .gray)
+        default: return ("ant.fill", .secondary)
         }
     }
 
@@ -74,13 +152,6 @@ struct RevisionInspector: View {
         VStack(alignment: .leading, spacing: 6) {
             InspectorSectionHeader(title: "Properties")
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
-                if let bug = revision.fields.bugzillaBugID, let id = Int(bug) {
-                    GridRow {
-                        Text("Bug").foregroundStyle(.secondary)
-                        Button("#\(bug)") { workspace.selectedBugID = id }
-                            .buttonStyle(.borderless)
-                    }
-                }
                 GridRow {
                     Text("Created").foregroundStyle(.secondary)
                     Text(revision.fields.dateCreated, format: .dateTime)

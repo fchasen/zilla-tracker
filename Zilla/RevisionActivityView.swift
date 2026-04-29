@@ -93,26 +93,12 @@ struct ActivityRow: View {
 
     @ViewBuilder
     private var avatar: some View {
-        if let phid = transaction.authorPHID,
-           let user = workspace.revisionUserDirectory[phid],
-           let url = user.image {
-            AsyncImage(url: url) { image in
-                image.resizable()
-            } placeholder: {
-                placeholder
-            }
-            .frame(width: 28, height: 28)
-            .clipShape(Circle())
-        } else {
-            placeholder
-        }
-    }
-
-    private var placeholder: some View {
-        Image(systemName: "person.crop.circle.fill")
-            .resizable()
-            .frame(width: 28, height: 28)
-            .foregroundStyle(.secondary)
+        let user = transaction.authorPHID.flatMap { workspace.revisionUserDirectory[$0] }
+        UserAvatar(
+            email: user?.primaryEmail,
+            size: 28,
+            imageURL: user?.image
+        )
     }
 
     private var authorName: String {

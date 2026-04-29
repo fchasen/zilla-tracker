@@ -407,11 +407,20 @@ extension ResourceCache {
         guard !needed.isEmpty else { return }
         guard let bugs = try? await client.getBugs(ids: needed) else { return }
         for bug in bugs {
+            let assigneeDisplay: String? = {
+                if let detail = bug.assignedToDetail {
+                    if let real = detail.realName, !real.isEmpty { return real }
+                    return detail.name
+                }
+                return bug.assignedTo
+            }()
             let meta = DependencyMetadata(
                 id: bug.id,
                 summary: bug.summary,
                 status: bug.status,
-                resolution: bug.resolution
+                resolution: bug.resolution,
+                type: bug.type,
+                assigneeDisplayName: assigneeDisplay
             )
             store(meta, for: .dependencyMeta(bug.id))
         }

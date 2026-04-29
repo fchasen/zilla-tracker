@@ -93,6 +93,16 @@ struct BugDetailView: View {
             }
         }
         .toolbar {
+            if let revID = workspace.pendingBackToRevision {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        workspace.returnToPendingRevision()
+                    } label: {
+                        Label("Back to D\(revID)", systemImage: "chevron.backward")
+                    }
+                    .help("Return to D\(revID)")
+                }
+            }
             if let bug {
                 if !BugStatuses.isClosed(bug.status) {
                     ToolbarItem(placement: .primaryAction) {
@@ -1636,8 +1646,6 @@ private struct DescriptionBlock: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(12)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
@@ -1689,61 +1697,65 @@ private struct CommentBlock: View {
 
     var body: some View {
         let stripped = stripAttachmentHeader(comment.text, hasAttachment: attachment != nil)
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(User.displayName(for: comment.creator))
-                    .font(.caption.weight(.semibold))
-                    .help(comment.creator)
-                if let count = comment.count {
-                    Text(verbatim: "#\(count)")
-                        .font(.caption.monospaced())
+        HStack(alignment: .top, spacing: 12) {
+            UserAvatar(email: comment.creator, size: 28)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(User.displayName(for: comment.creator))
+                        .font(.callout.weight(.semibold))
+                        .help(comment.creator)
+                    Text(verbatim: "·")
+                        .foregroundStyle(.tertiary)
+                    Text(comment.creationTime, format: .relative(presentation: .named))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Text(comment.creationTime, format: .relative(presentation: .named))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            if let attachment, isImageAttachment(attachment) {
-                AttachmentImagePreview(attachment: attachment)
-            } else if let attachment {
-                AttachmentInlineLink(attachment: attachment)
-            }
-            if isEditing {
-                MarkdownEditor(
-                    text: $editedText,
-                    selection: $editorSelection,
-                    minHeight: 120,
-                    isDisabled: workspace.isUpdatingBug
-                )
-                HStack(spacing: 8) {
-                    if let saveError {
-                        Label(saveError, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                    Spacer()
-                    Button("Cancel") {
-                        isEditing = false
-                        saveError = nil
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(workspace.isUpdatingBug)
-                    Button("Save") {
-                        Task { await save() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(workspace.isUpdatingBug || !canSave)
+                if let attachment, isImageAttachment(attachment) {
+                    AttachmentImagePreview(attachment: attachment)
+                } else if let attachment {
+                    AttachmentInlineLink(attachment: attachment)
                 }
-            } else if !stripped.isEmpty {
-                StructuredText(markdown: stripped)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if isEditing {
+                    MarkdownEditor(
+                        text: $editedText,
+                        selection: $editorSelection,
+                        minHeight: 120,
+                        isDisabled: workspace.isUpdatingBug
+                    )
+                    HStack(spacing: 8) {
+                        if let saveError {
+                            Label(saveError, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                        Spacer()
+                        Button("Cancel") {
+                            isEditing = false
+                            saveError = nil
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(workspace.isUpdatingBug)
+                        Button("Save") {
+                            Task { await save() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(workspace.isUpdatingBug || !canSave)
+                    }
+                } else if !stripped.isEmpty {
+                    StructuredText(markdown: stripped)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            Spacer(minLength: 0)
         }
         .padding(12)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
         .contextMenu {
             if !stripped.isEmpty {
                 Button("Copy Comment Text") { copyToPasteboard(stripped) }
