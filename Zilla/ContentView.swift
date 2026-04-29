@@ -143,13 +143,13 @@ enum SidebarSelection: Hashable {
 }
 
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
-    case ordered, newest, recent, oldest, priority
+    case rank, newest, recent, oldest, priority
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .ordered: return "Todo"
+        case .rank: return "Rank"
         case .newest: return "Newest"
         case .recent: return "Recent"
         case .oldest: return "Oldest"
@@ -159,7 +159,7 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
-        case .ordered: return "list.number"
+        case .rank: return "list.number"
         case .newest: return "arrow.down.circle"
         case .recent: return "clock"
         case .oldest: return "arrow.up.circle"
@@ -169,15 +169,60 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
 
     var bmoOrder: String {
         switch self {
-        case .ordered, .priority: return "priority,bug_id"
+        case .rank: return "cf_rank,bug_id"
+        case .priority: return "priority,bug_id"
         case .recent: return "changeddate DESC"
         case .newest: return "opendate DESC"
         case .oldest: return "opendate ASC"
         }
     }
+}
 
-    var restrictsToOpen: Bool {
-        self == .ordered
+enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
+    case all, open, new, assigned, closed
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .open: return "Open"
+        case .new: return "New"
+        case .assigned: return "Assigned"
+        case .closed: return "Closed"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: return "tray.full"
+        case .open: return "circle"
+        case .new: return "sparkles"
+        case .assigned: return "person.fill"
+        case .closed: return "checkmark.circle"
+        }
+    }
+
+    func apply(to query: BugQuery) -> BugQuery {
+        var copy = query
+        switch self {
+        case .all:
+            copy.status = []
+            copy.resolution = []
+        case .open:
+            copy.status = []
+            copy.resolution = ["---"]
+        case .new:
+            copy.status = ["NEW", "UNCONFIRMED", "REOPENED"]
+            copy.resolution = ["---"]
+        case .assigned:
+            copy.status = ["ASSIGNED", "IN_PROGRESS"]
+            copy.resolution = ["---"]
+        case .closed:
+            copy.status = ["RESOLVED", "VERIFIED", "CLOSED"]
+            copy.resolution = []
+        }
+        return copy
     }
 }
 
@@ -256,6 +301,9 @@ final class Workspace {
     var searchText: String = ""
     var smartSorts: [SmartEndpoint: BugListSort] = [:]
     var componentSort: BugListSort = .priority
+    var smartFilters: [SmartEndpoint: BugStatusFilter] = [:]
+    var componentFilter: BugStatusFilter = .open
+    var metaBugFilter: BugStatusFilter = .open
     var bugListRefreshToken: UUID = UUID()
     var revisionListRefreshToken: UUID = UUID()
 
@@ -284,10 +332,44 @@ final class Workspace {
         }
     }
 
+    var bugStatusFilter: BugStatusFilter {
+        get {
+            switch sidebarSelection {
+            case .smart(let endpoint):
+                return smartFilters[endpoint] ?? Self.defaultFilter(for: endpoint)
+            case .metaBug:
+                return metaBugFilter
+            case .component:
+                return componentFilter
+            case .allDrafts, .review, .none:
+                return .all
+            }
+        }
+        set {
+            switch sidebarSelection {
+            case .smart(let endpoint):
+                smartFilters[endpoint] = newValue
+            case .metaBug:
+                metaBugFilter = newValue
+            case .component:
+                componentFilter = newValue
+            case .allDrafts, .review, .none:
+                break
+            }
+        }
+    }
+
     private static func defaultSort(for endpoint: SmartEndpoint) -> BugListSort {
         switch endpoint {
-        case .myBugs: return .ordered
+        case .myBugs: return .rank
         default: return .recent
+        }
+    }
+
+    private static func defaultFilter(for endpoint: SmartEndpoint) -> BugStatusFilter {
+        switch endpoint {
+        case .myBugs: return .open
+        default: return .all
         }
     }
 
@@ -1669,7 +1751,6 @@ struct BugListView: View {
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
-    @Query private var orderEntries: [BugOrderEntry]
     @Query private var followedMetaBugs: [FollowedMetaBug]
 
     let selection: SidebarSelection?
@@ -1692,22 +1773,8 @@ struct BugListView: View {
         selection == .allDrafts
     }
 
-    private var endpointKey: String? {
-        guard let selection else { return nil }
-        switch selection {
-        case .smart(let endpoint): return "smart.\(endpoint.rawValue)"
-        case .component(let ref): return "component.\(ref.product)::\(ref.component)"
-        case .metaBug(let id): return "metaBug.\(id)"
-        case .allDrafts, .review: return nil
-        }
-    }
-
-    private var supportsOrdered: Bool {
-        endpointKey != nil
-    }
-
-    private var isOrdered: Bool {
-        supportsOrdered && workspace.bugListSort == .ordered
+    private var isRanked: Bool {
+        workspace.bugListSort == .rank
     }
 
     var body: some View {
@@ -1787,6 +1854,9 @@ struct BugListView: View {
                 ToolbarItem(placement: .primaryAction) {
                     sortMenu
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    filterMenu
+                }
             }
         }
         .searchable(
@@ -1857,28 +1927,35 @@ struct BugListView: View {
         .help("Sort bug list")
     }
 
+    private var filterMenu: some View {
+        @Bindable var workspace = workspace
+        return Menu {
+            Picker(selection: $workspace.bugStatusFilter) {
+                ForEach(BugStatusFilter.allCases) { option in
+                    Label(option.label, systemImage: option.systemImage).tag(option)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("Filter", systemImage: filterIcon)
+        }
+        .help("Filter by status")
+    }
+
+    private var filterIcon: String {
+        workspace.bugStatusFilter == .all
+            ? "line.3.horizontal.decrease.circle"
+            : "line.3.horizontal.decrease.circle.fill"
+    }
+
     private var availableSorts: [BugListSort] {
         BugListSort.allCases
     }
 
     private var sortedBugs: [Bug] {
-        if workspace.bugListSort == .ordered {
-            return orderedBugs
-        }
-        return bugs
-    }
-
-    private var orderedBugs: [Bug] {
-        guard let key = endpointKey else { return bugs }
-        var positions: [Bug.ID: Int] = [:]
-        for entry in orderEntries where entry.endpointKey == key {
-            positions[entry.bugId] = entry.position
-        }
-        let unpositioned = bugs.filter { positions[$0.id] == nil }
-        let positioned = bugs
-            .filter { positions[$0.id] != nil }
-            .sorted { (positions[$0.id] ?? 0) < (positions[$1.id] ?? 0) }
-        return unpositioned + positioned
+        bugs
     }
 
     @ViewBuilder
@@ -1894,10 +1971,11 @@ struct BugListView: View {
             .bugReorderDrop(
                 bugID: bug.id,
                 indexInList: topIndex ?? 0,
-                endpointKey: endpointKey,
                 displayed: displayed,
-                entries: orderEntries,
-                isEnabled: topIndex != nil && isOrdered
+                isEnabled: topIndex != nil && isRanked,
+                onReorder: { id, rank, order in
+                    applyRank(bugID: id, rank: rank, optimisticOrder: order)
+                }
             )
             .contextMenu {
                 rowQuickActions(for: bug)
@@ -1934,10 +2012,9 @@ struct BugListView: View {
                 takeBug(bug, as: me)
             }
         }
-        if isOrdered, let key = endpointKey,
-           orderEntries.contains(where: { $0.endpointKey == key && $0.bugId == bug.id }) {
-            Button("Remove from Custom Order") {
-                removeFromOrder(bugID: bug.id, key: key)
+        if isRanked, bug.rank != nil {
+            Button("Clear Rank") {
+                applyRank(bugID: bug.id, rank: 0, optimisticOrder: nil)
             }
         }
     }
@@ -1957,9 +2034,19 @@ struct BugListView: View {
         }
     }
 
-    private func removeFromOrder(bugID: Bug.ID, key: String) {
-        for entry in orderEntries where entry.endpointKey == key && entry.bugId == bugID {
-            modelContext.delete(entry)
+    private func applyRank(bugID: Bug.ID, rank: Int, optimisticOrder: [Bug]?) {
+        if let optimisticOrder {
+            bugs = optimisticOrder
+        }
+        let client = auth.client
+        Task {
+            do {
+                _ = try await client.updateBug(id: bugID, BugUpdate(rank: rank))
+                cache.invalidateBug(id: bugID)
+            } catch {
+                workspace.lastUpdateError = error.localizedDescription
+            }
+            workspace.bugListRefreshToken = UUID()
         }
     }
 
@@ -2014,6 +2101,7 @@ struct BugListView: View {
             selection: selection,
             search: workspace.searchText,
             sort: workspace.bugListSort,
+            filter: workspace.bugStatusFilter,
             refresh: workspace.bugListRefreshToken,
             signedIn: auth.isSignedIn
         )
@@ -2038,7 +2126,7 @@ struct BugListView: View {
     private static let bugIncludeFields = [
         "id", "summary", "status", "resolution", "product", "component",
         "assigned_to", "priority", "severity", "keywords", "type",
-        "last_change_time", "creation_time",
+        "last_change_time", "creation_time", "cf_rank",
         "attachments.id", "attachments.content_type", "attachments.is_obsolete"
     ]
 
@@ -2048,6 +2136,7 @@ struct BugListView: View {
         if let login = auth.currentUser?.name {
             query = query.substitutingMe(with: login)
         }
+        query = workspace.bugStatusFilter.apply(to: query)
         let trimmed = workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             query.quicksearch = trimmed
@@ -2056,9 +2145,6 @@ struct BugListView: View {
         query.offset = offset
         query.order = workspace.bugListSort.bmoOrder
         query.includeFields = Self.bugIncludeFields
-        if workspace.bugListSort.restrictsToOpen {
-            query.resolution = ["---"]
-        }
         return query
     }
 
@@ -2146,7 +2232,7 @@ struct BugListView: View {
         let login = auth.currentUser?.name
         let client = auth.client
         let fields = Self.bugIncludeFields
-        let openOnly = workspace.bugListSort.restrictsToOpen
+        let filter = workspace.bugStatusFilter
 
         let results = await withTaskGroup(of: (Bug.ID, [Bug])?.self) { group in
             for id in metaIDs {
@@ -2155,11 +2241,9 @@ struct BugListView: View {
                     if let login {
                         query = query.substitutingMe(with: login)
                     }
+                    query = filter.apply(to: query)
                     query.limit = 100
                     query.includeFields = fields
-                    if openOnly {
-                        query.resolution = ["---"]
-                    }
                     guard let result = try? await client.searchBugs(query) else {
                         return nil
                     }
@@ -2187,33 +2271,31 @@ private struct BugListLoadKey: Hashable {
     let selection: SidebarSelection?
     let search: String
     let sort: BugListSort
+    let filter: BugStatusFilter
     let refresh: UUID
     let signedIn: Bool
 }
 
 private struct BugReorderDropModifier: ViewModifier {
-    @Environment(\.modelContext) private var modelContext
-
     let bugID: Bug.ID
     let indexInList: Int
-    let endpointKey: String?
     let displayed: [Bug]
-    let entries: [BugOrderEntry]
     let isEnabled: Bool
+    let onReorder: (Bug.ID, Int, [Bug]?) -> Void
 
     func body(content: Content) -> some View {
-        if isEnabled, let key = endpointKey {
+        if isEnabled {
             content.overlay {
                 VStack(spacing: 0) {
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .dropDestination(for: BugTransfer.self) { transfers, _ in
-                            handleDrop(transfers, key: key, zoneIndex: indexInList)
+                            handleDrop(transfers, zoneIndex: indexInList)
                         } isTargeted: { _ in }
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .dropDestination(for: BugTransfer.self) { transfers, _ in
-                            handleDrop(transfers, key: key, zoneIndex: indexInList + 1)
+                            handleDrop(transfers, zoneIndex: indexInList + 1)
                         } isTargeted: { _ in }
                 }
             }
@@ -2222,14 +2304,14 @@ private struct BugReorderDropModifier: ViewModifier {
         }
     }
 
-    private func handleDrop(_ transfers: [BugTransfer], key: String, zoneIndex: Int) -> Bool {
+    private func handleDrop(_ transfers: [BugTransfer], zoneIndex: Int) -> Bool {
         guard let transfer = transfers.first else { return false }
         if transfer.id == bugID { return false }
-        reorder(bugID: transfer.id, key: key, zoneIndex: zoneIndex)
+        reorder(bugID: transfer.id, zoneIndex: zoneIndex)
         return true
     }
 
-    private func reorder(bugID: Bug.ID, key: String, zoneIndex: Int) {
+    private func reorder(bugID: Bug.ID, zoneIndex: Int) {
         let removeIdx = displayed.firstIndex(where: { $0.id == bugID })
         var newOrder = displayed
         if let idx = removeIdx {
@@ -2247,49 +2329,50 @@ private struct BugReorderDropModifier: ViewModifier {
         }
         newOrder.insert(bug, at: insertIdx)
 
-        let preexisting: Set<Bug.ID> = Set(
-            entries.filter { $0.endpointKey == key }.map(\.bugId)
-        )
-        let firstManualIdx = newOrder.firstIndex { $0.id == bugID || preexisting.contains($0.id) }
-            ?? newOrder.count
-
-        for i in firstManualIdx..<newOrder.count {
-            let candidate = newOrder[i]
-            let position = i - firstManualIdx
-            if let entry = entries.first(where: {
-                $0.endpointKey == key && $0.bugId == candidate.id
-            }) {
-                if entry.position != position {
-                    entry.position = position
-                }
-            } else {
-                modelContext.insert(BugOrderEntry(
-                    endpointKey: key,
-                    bugId: candidate.id,
-                    position: position
-                ))
-            }
-        }
-        try? modelContext.save()
+        let newRank = computeRank(for: bugID, in: newOrder)
+        onReorder(bugID, newRank, newOrder)
     }
+
+    /// Picks a cf_rank value that places `bugID` between its new neighbours.
+    /// Uses sparse spacing (multiples of `Self.rankStep`) so subsequent drops
+    /// can wedge bugs between without rebalancing every neighbour.
+    private func computeRank(for bugID: Bug.ID, in order: [Bug]) -> Int {
+        guard let pos = order.firstIndex(where: { $0.id == bugID }) else {
+            return Self.rankStep
+        }
+        let prev = pos > 0 ? order[pos - 1].rank : nil
+        let next = pos + 1 < order.count ? order[pos + 1].rank : nil
+        switch (prev, next) {
+        case (nil, nil):
+            return Self.rankStep
+        case (let p?, nil):
+            return p + Self.rankStep
+        case (nil, let n?):
+            return n > Self.rankStep ? n - Self.rankStep : max(1, n / 2)
+        case (let p?, let n?) where n - p > 1:
+            return p + (n - p) / 2
+        case (let p?, _):
+            return p + Self.rankStep
+        }
+    }
+
+    private static let rankStep = 100
 }
 
 extension View {
     func bugReorderDrop(
         bugID: Bug.ID,
         indexInList: Int,
-        endpointKey: String?,
         displayed: [Bug],
-        entries: [BugOrderEntry],
-        isEnabled: Bool
+        isEnabled: Bool,
+        onReorder: @escaping (Bug.ID, Int, [Bug]?) -> Void
     ) -> some View {
         modifier(BugReorderDropModifier(
             bugID: bugID,
             indexInList: indexInList,
-            endpointKey: endpointKey,
             displayed: displayed,
-            entries: entries,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            onReorder: onReorder
         ))
     }
 }

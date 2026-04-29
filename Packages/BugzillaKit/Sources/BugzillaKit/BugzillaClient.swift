@@ -214,7 +214,7 @@ public extension BugzillaClient {
             path: "bug/\(id)",
             query: [URLQueryItem(
                 name: "include_fields",
-                value: "_default,attachments,see_also,target_milestone,cf_fx_points,assigned_to_detail,creator_detail"
+                value: "_default,attachments,see_also,target_milestone,cf_fx_points,cf_rank,assigned_to_detail,creator_detail"
             )]
         )
         let response: Response = try await execute(endpoint)
@@ -254,6 +254,7 @@ public extension BugzillaClient {
             let severity: String?
             let targetMilestone: String?
             let points: String?
+            let rank: Int?
             let comment: CommentBody?
             let blocks: BugRelationUpdate?
             let dependsOn: BugRelationUpdate?
@@ -266,6 +267,7 @@ public extension BugzillaClient {
                 case targetMilestone
                 case blocks, dependsOn, seeAlso, flags
                 case points = "cfFxPoints"
+                case rank = "cfRank"
             }
 
             func encode(to encoder: Encoder) throws {
@@ -279,6 +281,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(severity, forKey: .severity)
                 try c.encodeIfPresent(targetMilestone, forKey: .targetMilestone)
                 try c.encodeIfPresent(points, forKey: .points)
+                try c.encodeIfPresent(rank, forKey: .rank)
                 try c.encodeIfPresent(comment, forKey: .comment)
                 try c.encodeIfPresent(blocks, forKey: .blocks)
                 try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
@@ -297,6 +300,7 @@ public extension BugzillaClient {
             severity: update.severity,
             targetMilestone: update.targetMilestone,
             points: update.points,
+            rank: update.rank,
             comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) },
             blocks: update.blocks,
             dependsOn: update.dependsOn,
