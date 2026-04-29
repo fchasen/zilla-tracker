@@ -67,21 +67,12 @@ struct ActivityRow: View {
     let transaction: RevisionTransaction
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            avatar
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(authorName)
-                        .font(.callout.weight(.semibold))
-                    Text(verbatim: "·")
-                        .foregroundStyle(.tertiary)
-                    Text(transaction.dateCreated, format: .relative(presentation: .named))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                bodyView
+        Group {
+            if isCompact {
+                compactRow
+            } else {
+                expandedRow
             }
-            Spacer(minLength: 0)
         }
         .padding(12)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -91,12 +82,69 @@ struct ActivityRow: View {
         )
     }
 
+    private var expandedRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            avatar(size: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                headerLine
+                bodyView
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var compactRow: some View {
+        HStack(alignment: .center, spacing: 8) {
+            avatar(size: 22)
+            headerLine
+            if hasInlineCaption {
+                Text(verbatim: "·")
+                    .foregroundStyle(.tertiary)
+                inlineCaptionView
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var headerLine: some View {
+        HStack(spacing: 6) {
+            Text(authorName)
+                .font(.callout.weight(.semibold))
+            Text(verbatim: "·")
+                .foregroundStyle(.tertiary)
+            Text(transaction.dateCreated, format: .relative(presentation: .named))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var isCompact: Bool {
+        primaryCommentBody == nil && !isInline
+    }
+
+    private var hasInlineCaption: Bool {
+        activityCaption != nil || transaction.type != nil
+    }
+
     @ViewBuilder
-    private var avatar: some View {
+    private var inlineCaptionView: some View {
+        if let caption = activityCaption {
+            Text(caption)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else if let type = transaction.type {
+            Text(type)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private func avatar(size: CGFloat) -> some View {
         let user = transaction.authorPHID.flatMap { workspace.revisionUserDirectory[$0] }
         UserAvatar(
             email: user?.primaryEmail,
-            size: 28,
+            size: size,
             imageURL: user?.image
         )
     }
@@ -124,14 +172,6 @@ struct ActivityRow: View {
             StructuredText(markdown: body)
                 .font(.callout)
                 .textSelection(.enabled)
-        } else if let caption = activityCaption {
-            Text(caption)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        } else if let type = transaction.type {
-            Text(type)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
     }
 
@@ -155,9 +195,6 @@ struct ActivityRow: View {
         HStack(spacing: 4) {
             Image(systemName: "text.bubble")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text("commented on")
-                .font(.caption)
                 .foregroundStyle(.secondary)
             let jumpButton = Button {
                 workspace.revealChangeset(path: descriptor.path)
