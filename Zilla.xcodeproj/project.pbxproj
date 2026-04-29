@@ -11,7 +11,7 @@
 		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
 		3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7082FA06FFF003FB395 /* SearchfoxKit */; };
 		3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7FF2FA15288003FB395 /* PhabricatorKit */; };
-		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; platformFilter = macos; productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
+		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -218,7 +218,7 @@
 				3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */,
 				3339A7072FA06FFF003FB395 /* XCLocalSwiftPackageReference "Packages/SearchfoxKit" */,
 				3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
-				A1B2C3D4E5F60000000F0003 /* XCRemoteSwiftPackageReference "PierreDiffsSwift" */,
+				A1B2C3D4E5F60000000F0003 /* XCLocalSwiftPackageReference "Packages/PierreDiffsSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -415,7 +415,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_ENTITLEMENTS = Zilla/Zilla.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FKN6VL994M;
@@ -678,6 +678,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/PhabricatorKit;
 		};
+		A1B2C3D4E5F60000000F0003 /* XCLocalSwiftPackageReference "Packages/PierreDiffsSwift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/PierreDiffsSwift;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -687,14 +691,6 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.3.0;
-			};
-		};
-		A1B2C3D4E5F60000000F0003 /* XCRemoteSwiftPackageReference "PierreDiffsSwift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/jamesrochabrun/PierreDiffsSwift.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.1.7;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -719,7 +715,6 @@
 		};
 		A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A1B2C3D4E5F60000000F0003 /* XCRemoteSwiftPackageReference "PierreDiffsSwift" */;
 			productName = PierreDiffsSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
