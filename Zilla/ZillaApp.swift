@@ -43,7 +43,7 @@ struct ZillaApp: App {
                 }
         }
         .defaultSize(width: 1600, height: 1024)
-        .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self, BugDraft.self])
+        .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self, BugDraft.self, BugOrderEntry.self])
         #if os(macOS)
         .commands {
             ZillaCommands(auth: auth, phab: phab, workspace: workspace, viewedBugs: viewedBugs)

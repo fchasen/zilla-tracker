@@ -88,6 +88,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     case reported
     case needsReview
     case recentlyChanged
+    case todo
 
     var id: String { rawValue }
 
@@ -97,6 +98,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
         case .reported: return "Reported"
         case .needsReview: return "Needs Info"
         case .recentlyChanged: return "Recently Changed"
+        case .todo: return "Todo"
         }
     }
 
@@ -106,6 +108,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
         case .reported: return "tray.and.arrow.up"
         case .needsReview: return "flag"
         case .recentlyChanged: return "clock"
+        case .todo: return "checklist"
         }
     }
 }
@@ -910,6 +913,8 @@ final class Workspace {
             return .needsReviewFromMe
         case .smart(.recentlyChanged):
             return .recentlyChanged(involving: BugQuery.me)
+        case .smart(.todo):
+            return BugQuery()
         case .component(let ref):
             return .openIn(component: ref)
         case .metaBug(let id):
@@ -1368,8 +1373,13 @@ struct Sidebar: View {
         List(selection: $selection) {
                 Section {
                     ForEach(SmartEndpoint.allCases) { endpoint in
-                        Label(endpoint.title, systemImage: endpoint.systemImage)
-                            .tag(SidebarSelection.smart(endpoint))
+                        if endpoint == .todo {
+                            TodoSidebarRow()
+                                .tag(SidebarSelection.smart(endpoint))
+                        } else {
+                            Label(endpoint.title, systemImage: endpoint.systemImage)
+                                .tag(SidebarSelection.smart(endpoint))
+                        }
                     }
                     Label {
                         HStack {
@@ -1707,6 +1717,37 @@ private struct FollowedComponentRow: View {
     }
 }
 
+private struct TodoSidebarRow: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(filter: #Predicate<BugOrderEntry> { $0.endpointKey == "todo" },
+           sort: [SortDescriptor(\BugOrderEntry.position)])
+    private var todoOrder: [BugOrderEntry]
+    @State private var isDropTarget = false
+
+    var body: some View {
+        Label(SmartEndpoint.todo.title, systemImage: SmartEndpoint.todo.systemImage)
+            .background(
+                isDropTarget ? Color.accentColor.opacity(0.18) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .dropDestination(for: BugTransfer.self) { transfers, _ in
+                var nextPosition = (todoOrder.last?.position ?? -1) + 1
+                var inserted = false
+                for transfer in transfers where !todoOrder.contains(where: { $0.bugId == transfer.id }) {
+                    let entry = BugOrderEntry(
+                        endpointKey: BugOrderEntry.todoKey,
+                        bugId: transfer.id,
+                        position: nextPosition
+                    )
+                    modelContext.insert(entry)
+                    nextPosition += 1
+                    inserted = true
+                }
+                return inserted
+            } isTargeted: { isDropTarget = $0 }
+    }
+}
+
 private struct FollowedMetaBugRow: View {
     let meta: FollowedMetaBug
 
@@ -1752,6 +1793,9 @@ struct BugListView: View {
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
     @Query private var followedMetaBugs: [FollowedMetaBug]
+    @Query(filter: #Predicate<BugOrderEntry> { $0.endpointKey == "todo" },
+           sort: [SortDescriptor(\BugOrderEntry.position)])
+    private var todoOrder: [BugOrderEntry]
 
     let selection: SidebarSelection?
     @Binding var selectedBugID: Bug.ID?
@@ -1777,6 +1821,10 @@ struct BugListView: View {
         workspace.bugListSort == .rank
     }
 
+    private var isTodo: Bool {
+        selection == .smart(.todo)
+    }
+
     var body: some View {
         Group {
             if !auth.isSignedIn && !isAllDrafts {
@@ -1800,11 +1848,19 @@ struct BugListView: View {
                 )
                 .textSelection(.enabled)
             } else if bugs.isEmpty {
-                ContentUnavailableView(
-                    "No bugs",
-                    systemImage: "tray",
-                    description: Text("Nothing matches this filter.")
-                )
+                if isTodo {
+                    ContentUnavailableView(
+                        "Nothing to do yet",
+                        systemImage: "checklist",
+                        description: Text("Drag bugs here from any list, or right-click a bug and choose ‘Add to Todo’.")
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "No bugs",
+                        systemImage: "tray",
+                        description: Text("Nothing matches this filter.")
+                    )
+                }
             } else {
                 let nodes = rootNodes
                 List(selection: $selectedBugID) {
@@ -1851,18 +1907,17 @@ struct BugListView: View {
                 ToolbarItem(placement: .primaryAction) {
                     refreshButton
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    sortMenu
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    filterMenu
+                if !isTodo {
+                    ToolbarItem(placement: .primaryAction) {
+                        sortMenu
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        filterMenu
+                    }
                 }
             }
         }
-        .searchable(
-            text: searchBinding,
-            prompt: "Search bugs"
-        )
+        .searchableIf(!isTodo, text: searchBinding, prompt: "Search bugs")
         .task(id: loadKey) {
             let current = workspace.bugListRefreshToken
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
@@ -1972,9 +2027,13 @@ struct BugListView: View {
                 bugID: bug.id,
                 indexInList: topIndex ?? 0,
                 displayed: displayed,
-                isEnabled: topIndex != nil && isRanked,
+                isEnabled: topIndex != nil && (isRanked || isTodo),
                 onReorder: { id, rank, order in
-                    applyRank(bugID: id, rank: rank, optimisticOrder: order)
+                    if isTodo {
+                        applyTodoOrder(order ?? sortedBugs)
+                    } else {
+                        applyRank(bugID: id, rank: rank, optimisticOrder: order)
+                    }
                 }
             )
             .contextMenu {
@@ -2017,6 +2076,16 @@ struct BugListView: View {
                 applyRank(bugID: bug.id, rank: 0, optimisticOrder: nil)
             }
         }
+        Divider()
+        if todoOrder.contains(where: { $0.bugId == bug.id }) {
+            Button("Remove from Todo") {
+                removeBugFromTodo(bug.id)
+            }
+        } else {
+            Button("Add to Todo") {
+                addBugToTodo(bug.id)
+            }
+        }
     }
 
     private func takeBug(_ bug: Bug, as username: String) {
@@ -2047,6 +2116,38 @@ struct BugListView: View {
                 workspace.lastUpdateError = error.localizedDescription
             }
             workspace.bugListRefreshToken = UUID()
+        }
+    }
+
+    private func applyTodoOrder(_ order: [Bug]) {
+        bugs = order
+        let positionByID: [Int: Int] = Dictionary(
+            uniqueKeysWithValues: order.enumerated().map { ($1.id, $0) }
+        )
+        for entry in todoOrder {
+            if let pos = positionByID[entry.bugId], entry.position != pos {
+                entry.position = pos
+            }
+        }
+    }
+
+    private func addBugToTodo(_ bugID: Bug.ID) {
+        guard !todoOrder.contains(where: { $0.bugId == bugID }) else { return }
+        let nextPosition = (todoOrder.last?.position ?? -1) + 1
+        let entry = BugOrderEntry(
+            endpointKey: BugOrderEntry.todoKey,
+            bugId: bugID,
+            position: nextPosition
+        )
+        modelContext.insert(entry)
+    }
+
+    private func removeBugFromTodo(_ bugID: Bug.ID) {
+        if let entry = todoOrder.first(where: { $0.bugId == bugID }) {
+            modelContext.delete(entry)
+        }
+        if selectedBugID == bugID {
+            selectedBugID = nil
         }
     }
 
@@ -2103,7 +2204,8 @@ struct BugListView: View {
             sort: workspace.bugListSort,
             filter: workspace.bugStatusFilter,
             refresh: workspace.bugListRefreshToken,
-            signedIn: auth.isSignedIn
+            signedIn: auth.isSignedIn,
+            todoIDs: isTodo ? todoOrder.map(\.bugId) : []
         )
     }
 
@@ -2166,6 +2268,45 @@ struct BugListView: View {
             totalMatches = nil
             canLoadMore = false
             loadError = nil
+            return
+        }
+
+        if isTodo {
+            let ids = todoOrder.map(\.bugId)
+            if ids.isEmpty {
+                bugs = []
+                dependents = [:]
+                totalMatches = 0
+                canLoadMore = false
+                loadError = nil
+                return
+            }
+            isLoading = true
+            workspace.isLoadingBugList = true
+            loadError = nil
+            defer {
+                isLoading = false
+                workspace.isLoadingBugList = false
+            }
+            do {
+                let fetched = try await auth.client.getBugs(ids: ids)
+                let positionByID: [Int: Int] = Dictionary(
+                    uniqueKeysWithValues: todoOrder.map { ($0.bugId, $0.position) }
+                )
+                bugs = fetched.sorted {
+                    (positionByID[$0.id] ?? .max) < (positionByID[$1.id] ?? .max)
+                }
+                dependents = [:]
+                totalMatches = fetched.count
+                canLoadMore = false
+            } catch is CancellationError {
+                return
+            } catch {
+                loadError = error.localizedDescription
+                bugs = []
+                totalMatches = nil
+                canLoadMore = false
+            }
             return
         }
 
@@ -2274,6 +2415,7 @@ private struct BugListLoadKey: Hashable {
     let filter: BugStatusFilter
     let refresh: UUID
     let signedIn: Bool
+    let todoIDs: [Int]
 }
 
 private struct BugReorderDropModifier: ViewModifier {
@@ -2374,6 +2516,15 @@ extension View {
             isEnabled: isEnabled,
             onReorder: onReorder
         ))
+    }
+
+    @ViewBuilder
+    func searchableIf(_ isActive: Bool, text: Binding<String>, prompt: String) -> some View {
+        if isActive {
+            self.searchable(text: text, prompt: Text(prompt))
+        } else {
+            self
+        }
     }
 }
 
