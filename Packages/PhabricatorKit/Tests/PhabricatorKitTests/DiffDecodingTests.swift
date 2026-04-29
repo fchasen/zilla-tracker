@@ -48,6 +48,31 @@ final class DiffDecodingTests: XCTestCase {
         XCTAssertEqual(diff.branch, "main")
     }
 
+    func testDateDecoderHandlesStringTimestamps() throws {
+        let json = """
+        {
+          "result": {
+            "999000": {
+              "id": "999000",
+              "phid": "PHID-DIFF-aaa",
+              "revisionPHID": "PHID-DREV-rev",
+              "repositoryPHID": "PHID-REPO-mc",
+              "sourceControlBaseRevision": "abc123",
+              "dateCreated": "1714000000",
+              "dateModified": "1714000100",
+              "changes": []
+            }
+          },
+          "error_code": null
+        }
+        """.data(using: .utf8)!
+        let decoder = PhabricatorClient.makeDecoder()
+        let envelope = try decoder.decode(ConduitEnvelope<[String: QueryDiffsRaw]>.self, from: json)
+        let raw = try XCTUnwrap(envelope.result?["999000"])
+        XCTAssertEqual(raw.dateCreated?.timeIntervalSince1970, 1714000000)
+        XCTAssertEqual(raw.dateModified?.timeIntervalSince1970, 1714000100)
+    }
+
     func testDecodesQueryDiffsWithChangesAndHunks() throws {
         let json = """
         {
@@ -63,10 +88,10 @@ final class DiffDecodingTests: XCTestCase {
               "changes": [
                 {
                   "id": "1",
-                  "oldFile": "src/foo.swift",
-                  "currentFile": "src/foo.swift",
+                  "oldPath": "src/foo.swift",
+                  "currentPath": "src/foo.swift",
                   "awayPaths": [],
-                  "changeType": 2,
+                  "type": 2,
                   "fileType": 1,
                   "oldFileType": 1,
                   "addLines": "3",
@@ -84,10 +109,10 @@ final class DiffDecodingTests: XCTestCase {
                 },
                 {
                   "id": "2",
-                  "oldFile": "img/logo.png",
-                  "currentFile": "img/logo.png",
+                  "oldPath": "img/logo.png",
+                  "currentPath": "img/logo.png",
                   "awayPaths": [],
-                  "changeType": 2,
+                  "type": 2,
                   "fileType": 3,
                   "oldFileType": 3,
                   "addLines": 0,
@@ -97,10 +122,10 @@ final class DiffDecodingTests: XCTestCase {
                 },
                 {
                   "id": "3",
-                  "oldFile": "old/path.swift",
-                  "currentFile": "new/path.swift",
+                  "oldPath": "old/path.swift",
+                  "currentPath": "new/path.swift",
                   "awayPaths": [],
-                  "changeType": 6,
+                  "type": 6,
                   "fileType": 1,
                   "oldFileType": 1,
                   "addLines": "0",

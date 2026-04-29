@@ -29,6 +29,19 @@ public struct DiffDetail: Sendable, Hashable, Identifiable {
         self.dateModified = dateModified
         self.changesets = changesets
     }
+
+    public func merging(searchMetadata diff: Diff) -> DiffDetail {
+        DiffDetail(
+            id: id,
+            phid: phid ?? diff.phid,
+            revisionPHID: revisionPHID ?? diff.fields.revisionPHID,
+            repositoryPHID: repositoryPHID ?? diff.fields.repositoryPHID,
+            baseCommit: baseCommit ?? diff.baseCommit,
+            dateCreated: dateCreated ?? diff.fields.dateCreated,
+            dateModified: dateModified ?? diff.fields.dateModified,
+            changesets: changesets
+        )
+    }
 }
 
 struct QueryDiffsRaw: Decodable, Sendable {

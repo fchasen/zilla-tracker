@@ -41,8 +41,16 @@ public actor PhabricatorClient {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
-            let seconds = try container.decode(TimeInterval.self)
-            return Date(timeIntervalSince1970: seconds)
+            if let seconds = try? container.decode(TimeInterval.self) {
+                return Date(timeIntervalSince1970: seconds)
+            }
+            if let raw = try? container.decode(String.self), let seconds = TimeInterval(raw) {
+                return Date(timeIntervalSince1970: seconds)
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Date is neither a number nor a numeric string."
+            )
         }
         return decoder
     }
@@ -126,13 +134,8 @@ public extension PhabricatorClient {
         try await call(method: "transaction.search", params: query)
     }
 
-    func getInlineComments(revisionID: Int) async throws -> [InlineComment] {
-        struct Params: Encodable { let revisionID: Int }
-        let raws: [DifferentialGetInlinesRaw] = try await call(
-            method: "differential.getinlines",
-            params: Params(revisionID: revisionID)
-        )
-        return raws.map { $0.toModel() }
+    nonisolated static func inlineComments(from transactions: [RevisionTransaction]) -> [InlineComment] {
+        transactions.compactMap { $0.inlineComment() }
     }
 
     func editRevision(
@@ -173,6 +176,8 @@ public extension PhabricatorClient {
         }
         struct FCQResult: Decodable, Sendable {
             let filePHID: String?
+            let tooSlow: Bool?
+            let tooHuge: Bool?
         }
         let result: FCQResult
         do {
@@ -180,12 +185,24 @@ public extension PhabricatorClient {
                 method: "diffusion.filecontentquery",
                 params: FCQ(repositoryPHID: repositoryPHID, commit: commit, path: path)
             )
-        } catch PhabricatorError.api {
+        } catch let PhabricatorError.api(code, info) {
+            phabricatorLog.error("filecontentquery api error: \(code) \(info) repo=\(repositoryPHID) commit=\(commit) path=\(path)")
+            return nil
+        } catch {
+            phabricatorLog.error("filecontentquery threw: \(String(describing: error)) repo=\(repositoryPHID) commit=\(commit) path=\(path)")
             return nil
         }
-        guard let phid = result.filePHID else { return nil }
-        let bytes = try await downloadFile(phid: phid)
-        return String(data: bytes, encoding: .utf8)
+        guard let phid = result.filePHID else {
+            phabricatorLog.error("filecontentquery returned no filePHID (tooSlow=\(result.tooSlow ?? false), tooHuge=\(result.tooHuge ?? false)) repo=\(repositoryPHID) commit=\(commit) path=\(path)")
+            return nil
+        }
+        do {
+            let bytes = try await downloadFile(phid: phid)
+            return String(data: bytes, encoding: .utf8)
+        } catch {
+            phabricatorLog.error("file.download failed: \(String(describing: error)) phid=\(phid)")
+            return nil
+        }
     }
 
     func downloadFile(phid: String) async throws -> Data {

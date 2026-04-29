@@ -40,14 +40,14 @@ public struct Changeset: Decodable, Sendable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id
-        case oldPath = "oldFile"
-        case currentPath = "currentFile"
+        case oldPath
+        case currentPath
         case awayPaths
-        case type = "changeType"
+        case type
         case fileType
         case oldFileType
-        case addLines = "addLines"
-        case delLines = "delLines"
+        case addLines
+        case delLines
         case metadata
         case hunks
     }

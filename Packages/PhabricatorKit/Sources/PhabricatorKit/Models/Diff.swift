@@ -11,8 +11,8 @@ public struct Diff: Decodable, Sendable, Hashable, Identifiable {
         public let revisionPHID: String?
         public let authorPHID: String?
         public let repositoryPHID: String?
-        public let dateCreated: Date
-        public let dateModified: Date
+        public let dateCreated: Date?
+        public let dateModified: Date?
         public let refs: [Ref]?
 
         public struct Ref: Decodable, Sendable, Hashable {
