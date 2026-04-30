@@ -8,13 +8,19 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
-        .library(name: "SliverModel", targets: ["SliverModel"])
+        .library(name: "SliverModel", targets: ["SliverModel"]),
+        .library(name: "SliverHighlight", targets: ["SliverHighlight"])
     ],
     targets: [
         .target(name: "SliverModel"),
+        .target(name: "SliverHighlight"),
         .testTarget(
             name: "SliverModelTests",
             dependencies: ["SliverModel"]
+        ),
+        .testTarget(
+            name: "SliverHighlightTests",
+            dependencies: ["SliverHighlight"]
         )
     ]
 )
