@@ -1,6 +1,7 @@
 import Foundation
+import SwiftTreeSitter
 
-public struct CodeLanguage: Sendable, Hashable {
+public struct CodeLanguage: @unchecked Sendable, Hashable {
     public let id: String
     public let displayName: String
     public let extensions: Set<String>
@@ -8,7 +9,9 @@ public struct CodeLanguage: Sendable, Hashable {
     public let blockCommentOpen: String?
     public let blockCommentClose: String?
     public let parentID: String?
+    public let bundle: Bundle?
     public let queryResource: String?
+    public let language: Language?
 
     public init(
         id: String,
@@ -18,7 +21,9 @@ public struct CodeLanguage: Sendable, Hashable {
         blockCommentOpen: String? = nil,
         blockCommentClose: String? = nil,
         parentID: String? = nil,
-        queryResource: String? = nil
+        bundle: Bundle? = nil,
+        queryResource: String? = nil,
+        language: Language? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -27,7 +32,9 @@ public struct CodeLanguage: Sendable, Hashable {
         self.blockCommentOpen = blockCommentOpen
         self.blockCommentClose = blockCommentClose
         self.parentID = parentID
+        self.bundle = bundle
         self.queryResource = queryResource
+        self.language = language
     }
 
     public static let plain = CodeLanguage(
@@ -35,4 +42,12 @@ public struct CodeLanguage: Sendable, Hashable {
         displayName: "Plain",
         extensions: []
     )
+
+    public static func == (lhs: CodeLanguage, rhs: CodeLanguage) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }

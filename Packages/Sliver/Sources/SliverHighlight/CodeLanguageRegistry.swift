@@ -1,7 +1,9 @@
 import Foundation
 
 public enum CodeLanguageRegistry {
-    public static let all: [CodeLanguage] = []
+    public static let all: [CodeLanguage] = [
+        .javascript
+    ]
 
     public static func detect(path: String) -> CodeLanguage {
         let fileName = (path as NSString).lastPathComponent
