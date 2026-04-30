@@ -8,7 +8,9 @@ public enum CodeLanguageRegistry {
         .rust,
         .c,
         .cpp,
-        .json
+        .json,
+        .html,
+        .css
     ]
 
     public static func detect(path: String) -> CodeLanguage {

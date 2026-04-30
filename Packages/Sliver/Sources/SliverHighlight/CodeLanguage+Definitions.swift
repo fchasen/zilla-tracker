@@ -7,6 +7,8 @@ import TreeSitterRust
 import TreeSitterC
 import TreeSitterCPP
 import TreeSitterJSON
+import TreeSitterHTML
+import TreeSitterCSS
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -87,5 +89,27 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "json-highlights",
         language: Language(language: tree_sitter_json())
+    )
+
+    static let html = CodeLanguage(
+        id: "html",
+        displayName: "HTML",
+        extensions: ["html", "htm", "xhtml"],
+        blockCommentOpen: "<!--",
+        blockCommentClose: "-->",
+        bundle: .module,
+        queryResource: "html-highlights",
+        language: Language(language: tree_sitter_html())
+    )
+
+    static let css = CodeLanguage(
+        id: "css",
+        displayName: "CSS",
+        extensions: ["css"],
+        blockCommentOpen: "/*",
+        blockCommentClose: "*/",
+        bundle: .module,
+        queryResource: "css-highlights",
+        language: Language(language: tree_sitter_css())
     )
 }
