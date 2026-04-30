@@ -89,7 +89,7 @@ struct MarkdownEditor: View {
             .custom(
                 id: "bugPicker",
                 label: "Insert Bug",
-                systemImage: "ladybug",
+                systemImage: "ant",
                 shortcut: KeyboardShortcut("k", modifiers: .command),
                 topLevel: true,
                 action: { showingLinkPicker = true }
