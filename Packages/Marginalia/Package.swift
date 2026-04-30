@@ -8,6 +8,7 @@ let package = Package(
         .iOS(.v17)
     ],
     products: [
+        .library(name: "Marginalia", targets: ["Marginalia"]),
         .library(name: "MarginaliaSyntax", targets: ["MarginaliaSyntax"])
     ],
     dependencies: [
@@ -22,9 +23,25 @@ let package = Package(
                 .product(name: "TreeSitterMarkdown", package: "tree-sitter-markdown")
             ]
         ),
+        .target(
+            name: "MarginaliaRendering",
+            dependencies: ["MarginaliaSyntax"]
+        ),
+        .target(
+            name: "MarginaliaView",
+            dependencies: ["MarginaliaSyntax", "MarginaliaRendering"]
+        ),
+        .target(
+            name: "Marginalia",
+            dependencies: ["MarginaliaSyntax", "MarginaliaRendering", "MarginaliaView"]
+        ),
         .testTarget(
             name: "MarginaliaSyntaxTests",
             dependencies: ["MarginaliaSyntax"]
+        ),
+        .testTarget(
+            name: "MarginaliaViewTests",
+            dependencies: ["MarginaliaView", "MarginaliaSyntax"]
         )
     ]
 )
