@@ -300,10 +300,15 @@ struct RevisionInspector: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayName(for: phid))
                     .font(.callout.weight(.medium))
-                if let user = workspace.revisionUserDirectory[phid],
+                if phid.hasPrefix("PHID-USER-"),
+                   let user = workspace.revisionUserDirectory[phid],
                    let real = user.realName, !real.isEmpty,
                    real != user.userName {
                     Text("@\(user.userName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if phid.hasPrefix("PHID-PROJ-") {
+                    Text("Review group")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -315,7 +320,13 @@ struct RevisionInspector: View {
 
     @ViewBuilder
     private func avatar(phid: String) -> some View {
-        if let user = workspace.revisionUserDirectory[phid], let url = user.image {
+        if phid.hasPrefix("PHID-PROJ-") {
+            Image(systemName: "person.2.fill")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .foregroundStyle(.secondary)
+        } else if let user = workspace.revisionUserDirectory[phid], let url = user.image {
             AsyncImage(url: url) { image in
                 image.resizable()
             } placeholder: {
@@ -334,6 +345,10 @@ struct RevisionInspector: View {
     }
 
     private func displayName(for phid: String) -> String {
+        if phid.hasPrefix("PHID-PROJ-"),
+           let project = workspace.revisionProjectDirectory[phid] {
+            return project.name
+        }
         if let user = workspace.revisionUserDirectory[phid] {
             return user.realName ?? user.userName
         }
@@ -347,7 +362,7 @@ struct RevisionInspector: View {
         case Reviewer.Status.rejected, Reviewer.Status.rejectedPrior:
             return AnyView(Image(systemName: "xmark.seal.fill").foregroundStyle(.red))
         case Reviewer.Status.blocking:
-            return AnyView(Image(systemName: "lock.fill").foregroundStyle(.orange))
+            return AnyView(Image(systemName: "nosign").foregroundStyle(.red))
         case Reviewer.Status.resigned:
             return AnyView(Image(systemName: "person.slash").foregroundStyle(.secondary))
         default:

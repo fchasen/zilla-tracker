@@ -737,13 +737,19 @@ final class Workspace {
 
     @MainActor
     private func resolveProjectDirectory(using client: PhabricatorClient) async {
-        guard let phids = loadedRevision?.attachments?.projects?.projectPHIDs, !phids.isEmpty else {
-            return
+        var phids: Set<String> = []
+        for phid in loadedRevision?.attachments?.projects?.projectPHIDs ?? [] {
+            phids.insert(phid)
+        }
+        for reviewer in loadedRevision?.attachments?.reviewers?.reviewers ?? [] {
+            if reviewer.reviewerPHID.hasPrefix("PHID-PROJ-") {
+                phids.insert(reviewer.reviewerPHID)
+            }
         }
         let missing = phids.filter { revisionProjectDirectory[$0] == nil }
         guard !missing.isEmpty else { return }
         do {
-            let result = try await client.searchProjects(.byPHIDs(missing))
+            let result = try await client.searchProjects(.byPHIDs(Array(missing)))
             for project in result.data {
                 revisionProjectDirectory[project.phid] = project
             }
@@ -767,10 +773,11 @@ final class Workspace {
         for inline in loadedRevisionInlines {
             if let phid = inline.authorPHID { phids.insert(phid) }
         }
+        let userPHIDs = phids.filter { $0.hasPrefix("PHID-USER-") }
         if let cache {
-            let resolved = await cache.resolveUsers(phids: Array(phids), using: client)
+            let resolved = await cache.resolveUsers(phids: Array(userPHIDs), using: client)
             revisionUserDirectory.merge(resolved) { _, new in new }
-        } else if let users = try? await client.searchUsers(phids: Array(phids)) {
+        } else if let users = try? await client.searchUsers(phids: Array(userPHIDs)) {
             for user in users {
                 revisionUserDirectory[user.phid] = user
             }
