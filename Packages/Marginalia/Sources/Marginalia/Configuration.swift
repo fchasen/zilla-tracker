@@ -27,7 +27,7 @@ extension Marginalia {
         case action(Action)
         case divider
         case spacer
-        case custom(id: String, label: LocalizedStringKey, systemImage: String, action: () -> Void)
+        case custom(id: String, label: LocalizedStringKey, systemImage: String, shortcut: KeyboardShortcut? = nil, action: () -> Void)
     }
 
     /// One slot in the status bar.

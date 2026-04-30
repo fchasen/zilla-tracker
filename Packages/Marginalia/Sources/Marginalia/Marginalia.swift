@@ -57,7 +57,6 @@ public struct Marginalia: View {
                     selection: $selection,
                     canPreview: previewRenderer != nil
                 )
-                .disabled(showPreview)
             }
             if showPreview, let renderer = previewRenderer {
                 MarginaliaPreview(source: text, dialect: dialect, renderer: renderer)
@@ -74,7 +73,9 @@ public struct Marginalia: View {
         }
         .onAppear {
             hosting.ensureController(initialText: text, dialect: dialect, theme: theme)
-            hosting.controller?.setText(text)
+            if let controller = hosting.controller, controller.text != text {
+                controller.setText(text)
+            }
         }
         .onChange(of: dialect) { _, newDialect in
             hosting.controller?.dialect = newDialect
@@ -86,19 +87,24 @@ public struct Marginalia: View {
         if let controller = hosting.controller {
             #if os(macOS)
             MarginaliaTextViewMac(controller: controller, text: $text, selection: $selection)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             #else
             MarginaliaTextViewIOS(controller: controller, text: $text, selection: $selection)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             #endif
         } else {
             ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
 
 /// Holder around the `EditorController` so SwiftUI's `@StateObject` lifecycle
-/// keeps it alive across body re-evaluations.
+/// keeps it alive across body re-evaluations. `controller` is `@Published`
+/// so the body re-renders past the initial `ProgressView` once the
+/// controller finishes setting up.
 final class MarginaliaHosting: ObservableObject {
-    var controller: EditorController?
+    @Published var controller: EditorController?
 
     func ensureController(initialText: String, dialect: Highlighter.Dialect, theme: MarginaliaTheme) {
         if controller == nil {

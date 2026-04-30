@@ -30,14 +30,32 @@ struct MarginaliaToolbar: View {
             ToolbarButton(action: action, label: label(for: action), help: help(for: action), shortcut: shortcut(for: action)) {
                 perform(action)
             }
-            .disabled(action == .togglePreview && !canPreview)
-        case .custom(_, let label, let symbol, let perform):
-            Button(action: perform) {
-                Image(systemName: symbol)
-                    .frame(width: 24, height: 22)
+            .disabled(isDisabled(action))
+        case let .custom(_, label, symbol, shortcut, perform):
+            Group {
+                if let shortcut {
+                    Button(action: perform) {
+                        Image(systemName: symbol)
+                            .frame(width: 24, height: 22)
+                    }
+                    .keyboardShortcut(shortcut)
+                } else {
+                    Button(action: perform) {
+                        Image(systemName: symbol)
+                            .frame(width: 24, height: 22)
+                    }
+                }
             }
             .help(label)
+            .disabled(showPreview)
         }
+    }
+
+    private func isDisabled(_ action: Marginalia.Action) -> Bool {
+        if action == .togglePreview {
+            return !canPreview
+        }
+        return showPreview
     }
 
     // MARK: - perform
@@ -94,7 +112,7 @@ struct MarginaliaToolbar: View {
         case .codeBlock: return "curlybraces"
         case .link: return "link"
         case .horizontalRule: return "minus"
-        case .togglePreview: return "eye"
+        case .togglePreview: return showPreview ? "pencil" : "eye"
         }
     }
 
@@ -112,7 +130,7 @@ struct MarginaliaToolbar: View {
         case .codeBlock: return "Code block"
         case .link: return "Link (⌘K)"
         case .horizontalRule: return "Horizontal rule"
-        case .togglePreview: return "Toggle preview"
+        case .togglePreview: return showPreview ? "Edit" : "Preview"
         }
     }
 

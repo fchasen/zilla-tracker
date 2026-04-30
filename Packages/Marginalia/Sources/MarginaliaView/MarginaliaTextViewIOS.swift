@@ -5,7 +5,10 @@ import MarginaliaSyntax
 import MarginaliaRendering
 
 /// iOS `UIViewRepresentable` that hosts a TextKit-2 `UITextView` configured
-/// against the same `EditorController` the macOS path uses.
+/// against the same `EditorController` the macOS path uses. The text view is
+/// initialized with the controller's `NSTextContainer` so it shares the
+/// controller's TK2 stack — that way attribute updates the controller pushes
+/// into its `NSTextStorage` are automatically reflected in the view.
 public struct MarginaliaTextViewIOS: UIViewRepresentable {
     @Binding public var text: String
     @Binding public var selection: NSRange
@@ -18,7 +21,11 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
     }
 
     public func makeUIView(context: Context) -> UITextView {
-        let textView = MarginaliaUITextView(usingTextLayoutManager: true)
+        // `init(frame:textContainer:)` is the designated init; UITextView uses
+        // TextKit 2 when the container's `textLayoutManager` is non-nil, which
+        // it is here because the controller wired the container into its
+        // `NSTextLayoutManager`.
+        let textView = MarginaliaUITextView(frame: .zero, textContainer: controller.textContainer)
         textView.delegate = context.coordinator
         textView.font = controller.theme.bodyFont
         textView.smartQuotesType = .no
@@ -27,41 +34,56 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
         textView.autocorrectionType = .default
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         textView.adjustsFontForContentSizeCategory = true
-        textView.text = controller.textStorage.string
         if #available(iOS 16.0, *) {
             textView.findInteractionEnabled = true
         }
-        // Wire the controller's storage as the text view's storage. UITextView
-        // doesn't expose a designated init for an existing layout manager, so
-        // we mirror the controller's text into the view's own storage and
-        // re-apply attributes on each refresh.
+        context.coordinator.textView = textView
         return textView
     }
 
     public func updateUIView(_ uiView: UITextView, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-            controller.setText(text)
+        let coordinator = context.coordinator
+        coordinator.parent = self
+
+        if text != coordinator.lastObservedText {
+            if controller.textStorage.string != text {
+                controller.setText(text)
+            }
+            coordinator.lastObservedText = text
         }
-        let storageLength = (text as NSString).length
-        let clamped = NSRange(
-            location: max(0, min(selection.location, storageLength)),
-            length: max(0, min(selection.length, storageLength - max(0, min(selection.location, storageLength))))
-        )
-        if uiView.selectedRange != clamped {
-            uiView.selectedRange = clamped
+
+        if selection != coordinator.lastObservedSelection {
+            let clamped = clamp(selection, to: controller.textStorage.length)
+            if uiView.selectedRange != clamped {
+                uiView.selectedRange = clamped
+            }
+            coordinator.lastObservedSelection = selection
         }
-        controller.selection = clamped
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+    private func clamp(_ range: NSRange, to length: Int) -> NSRange {
+        let location = max(0, min(range.location, length))
+        let remaining = max(0, length - location)
+        return NSRange(location: location, length: max(0, min(range.length, remaining)))
+    }
+
     public final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarginaliaTextViewIOS
-        init(_ parent: MarginaliaTextViewIOS) { self.parent = parent }
+        weak var textView: UITextView?
+        var lastObservedText: String
+        var lastObservedSelection: NSRange
+
+        init(_ parent: MarginaliaTextViewIOS) {
+            self.parent = parent
+            self.lastObservedText = parent.text
+            self.lastObservedSelection = parent.selection
+        }
 
         public func textViewDidChange(_ textView: UITextView) {
             let newText = textView.text ?? ""
+            lastObservedText = newText
             if parent.text != newText {
                 parent.text = newText
             }
@@ -69,10 +91,11 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
 
         public func textViewDidChangeSelection(_ textView: UITextView) {
             let r = textView.selectedRange
+            lastObservedSelection = r
+            parent.controller.selection = r
             if parent.selection != r {
                 parent.selection = r
             }
-            parent.controller.selection = r
         }
 
         public func textView(_ textView: UITextView,
@@ -80,14 +103,16 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
                              replacementText text: String) -> Bool {
             if text == "\n",
                let result = ListContinuation.handleReturn(
-                in: textView.text,
+                in: textView.text ?? "",
                 cursor: range.location
                ) {
-                textView.text = result.text
+                parent.controller.setText(result.text)
                 textView.selectedRange = result.selection
+                lastObservedText = result.text
+                lastObservedSelection = result.selection
+                parent.controller.selection = result.selection
                 parent.text = result.text
                 parent.selection = result.selection
-                parent.controller.setText(result.text)
                 return false
             }
             return true

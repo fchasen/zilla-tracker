@@ -55,34 +55,53 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
 
     public func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
-        if textView.string != text {
-            controller.setText(text)
+        let coordinator = context.coordinator
+        coordinator.parent = self
+
+        if text != coordinator.lastObservedText {
+            if textView.string != text {
+                controller.setText(text)
+            }
+            coordinator.lastObservedText = text
         }
-        let storageLength = controller.textStorage.length
-        let clampedSelection = NSRange(
-            location: max(0, min(selection.location, storageLength)),
-            length: max(0, min(selection.length, storageLength - max(0, min(selection.location, storageLength))))
-        )
-        if textView.selectedRange() != clampedSelection {
-            textView.setSelectedRange(clampedSelection)
+
+        if selection != coordinator.lastObservedSelection {
+            let clamped = clamp(selection, to: controller.textStorage.length)
+            if textView.selectedRange() != clamped {
+                textView.setSelectedRange(clamped)
+            }
+            coordinator.lastObservedSelection = selection
         }
-        controller.selection = clampedSelection
     }
 
     public func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
+    private func clamp(_ range: NSRange, to length: Int) -> NSRange {
+        let location = max(0, min(range.location, length))
+        let remaining = max(0, length - location)
+        return NSRange(location: location, length: max(0, min(range.length, remaining)))
+    }
+
     public final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: MarginaliaTextViewMac
         weak var textView: NSTextView?
+        var lastObservedText: String
+        var lastObservedSelection: NSRange
 
-        init(_ parent: MarginaliaTextViewMac) { self.parent = parent }
+        init(_ parent: MarginaliaTextViewMac) {
+            self.parent = parent
+            self.lastObservedText = parent.text
+            self.lastObservedSelection = parent.selection
+        }
 
         public func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             let newString = tv.string
-            DispatchQueue.main.async {
+            lastObservedText = newString
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
                 if self.parent.text != newString {
                     self.parent.text = newString
                 }
@@ -92,11 +111,13 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
         public func textViewDidChangeSelection(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             let r = tv.selectedRange()
-            DispatchQueue.main.async {
+            lastObservedSelection = r
+            parent.controller.selection = r
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
                 if self.parent.selection != r {
                     self.parent.selection = r
                 }
-                self.parent.controller.selection = r
             }
         }
 
@@ -107,8 +128,11 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
                 if range.length == 0,
                    let result = ListContinuation.handleReturn(in: textView.string, cursor: range.location) {
                     parent.controller.setText(result.text)
-                    parent.text = result.text
+                    textView.setSelectedRange(result.selection)
+                    lastObservedText = result.text
+                    lastObservedSelection = result.selection
                     parent.controller.selection = result.selection
+                    parent.text = result.text
                     parent.selection = result.selection
                     return true
                 }
