@@ -12,7 +12,6 @@ struct RevisionActionSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var commentBody: String = ""
-    @State private var selection: TextSelection?
     @State private var isSubmitting: Bool = false
 
     var body: some View {
@@ -21,9 +20,9 @@ struct RevisionActionSheet: View {
                 Section {
                     MarkdownEditor(
                         text: $commentBody,
-                        selection: $selection,
                         headerLabel: nil,
-                        isDisabled: isSubmitting
+                        isDisabled: isSubmitting,
+                        dialect: .remarkup
                     )
                     .frame(minHeight: 140)
                 } header: {

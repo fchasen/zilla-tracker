@@ -47,7 +47,6 @@ struct BugDetailView: View {
     let bugID: Bug.ID?
 
     @State private var composerText: String = ""
-    @State private var composerSelection: TextSelection?
     @State private var isPostingComment = false
     @State private var composerError: String?
     @State private var dupePrompt: DupePromptIdentifier?
@@ -78,7 +77,6 @@ struct BugDetailView: View {
                     comments: comments,
                     loadError: loadError,
                     composerText: $composerText,
-                    composerSelection: $composerSelection,
                     isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
@@ -220,7 +218,6 @@ struct BugDetailView: View {
 
     private func reload() async {
         composerText = ""
-        composerSelection = nil
         composerError = nil
         guard let id = bugID else {
             workspace.clearLoadedBug()
@@ -242,7 +239,6 @@ struct BugDetailView: View {
         do {
             _ = try await client.addComment(bugID: id, text: trimmed, isMarkdown: true)
             composerText = ""
-            composerSelection = nil
             await workspace.refreshLoadedComments(using: client)
         } catch {
             composerError = error.localizedDescription
@@ -255,7 +251,6 @@ private struct BugContent: View {
     let comments: [Comment]
     let loadError: String?
     @Binding var composerText: String
-    @Binding var composerSelection: TextSelection?
     let isPosting: Bool
     let composerError: String?
     let onPost: () -> Void
@@ -291,7 +286,6 @@ private struct BugContent: View {
                 Divider()
                 CommentComposer(
                     text: $composerText,
-                    selection: $composerSelection,
                     isPosting: isPosting,
                     error: composerError,
                     onPost: onPost
@@ -1580,7 +1574,6 @@ private struct DescriptionBlock: View {
     @Environment(AuthStore.self) private var auth
     @State private var isEditing = false
     @State private var editedText = ""
-    @State private var editorSelection: TextSelection?
     @State private var saveError: String?
 
     var body: some View {
@@ -1615,7 +1608,6 @@ private struct DescriptionBlock: View {
                     if isEditing {
                         MarkdownEditor(
                             text: $editedText,
-                            selection: $editorSelection,
                             minHeight: 160,
                             isDisabled: workspace.isUpdatingBug
                         )
@@ -1692,7 +1684,6 @@ private struct CommentBlock: View {
 
     @State private var isEditing = false
     @State private var editedText = ""
-    @State private var editorSelection: TextSelection?
     @State private var saveError: String?
 
     var body: some View {
@@ -1718,7 +1709,6 @@ private struct CommentBlock: View {
                 if isEditing {
                     MarkdownEditor(
                         text: $editedText,
-                        selection: $editorSelection,
                         minHeight: 120,
                         isDisabled: workspace.isUpdatingBug
                     )
@@ -2301,7 +2291,6 @@ struct DupeOfSheet: View {
 
 private struct CommentComposer: View {
     @Binding var text: String
-    @Binding var selection: TextSelection?
     let isPosting: Bool
     let error: String?
     let onPost: () -> Void
@@ -2310,7 +2299,6 @@ private struct CommentComposer: View {
         VStack(alignment: .leading, spacing: 8) {
             MarkdownEditor(
                 text: $text,
-                selection: $selection,
                 headerLabel: "Add a comment",
                 isDisabled: isPosting
             )

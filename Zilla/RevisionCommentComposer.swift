@@ -6,7 +6,6 @@ struct RevisionCommentComposer: View {
     @Environment(PhabricatorAuthStore.self) private var phab
 
     @State private var draftText: String = ""
-    @State private var selection: TextSelection?
     @State private var isPosting: Bool = false
 
     var body: some View {
@@ -14,9 +13,9 @@ struct RevisionCommentComposer: View {
             InspectorSectionHeader(title: "Add comment")
             MarkdownEditor(
                 text: $draftText,
-                selection: $selection,
                 headerLabel: nil,
-                isDisabled: isPosting
+                isDisabled: isPosting,
+                dialect: .remarkup
             )
             .frame(minHeight: 100)
 
@@ -51,6 +50,5 @@ struct RevisionCommentComposer: View {
             return
         }
         draftText = ""
-        selection = nil
     }
 }

@@ -15,7 +15,6 @@ struct DraftEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var matchingDrafts: [BugDraft]
 
-    @State private var descriptionSelection: TextSelection?
     @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var showDiscardConfirm = false
@@ -62,7 +61,6 @@ struct DraftEditorView: View {
                     Text("Description").font(.headline)
                     MarkdownEditor(
                         text: $draft.bugDescription,
-                        selection: $descriptionSelection,
                         minHeight: 240,
                         isDisabled: isSubmitting,
                         emptyPreviewLabel: "Nothing to preview yet."
