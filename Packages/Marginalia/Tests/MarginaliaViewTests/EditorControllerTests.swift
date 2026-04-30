@@ -76,4 +76,34 @@ final class EditorControllerTests: XCTestCase {
         XCTAssertEqual(c.markupRanges, [])
         XCTAssertEqual(c.hiddenRanges, [])
     }
+
+    // MARK: - applyEdit(EditResult)
+
+    func testApplyEditUpdatesTextAndSelection() throws {
+        let c = try EditorController(initialText: "hello")
+        let result = EditResult(text: "hello world", selection: NSRange(location: 6, length: 5))
+        c.applyEdit(result)
+        XCTAssertEqual(c.text, "hello world")
+        XCTAssertEqual(c.selection, NSRange(location: 6, length: 5))
+    }
+
+    func testApplyEditClampsSelectionPastNewTextEnd() throws {
+        let c = try EditorController(initialText: "")
+        // EditResult points to a selection past the new text — should clamp,
+        // not crash.
+        let result = EditResult(
+            text: "1. ",
+            selection: NSRange(location: 159, length: 28)
+        )
+        c.applyEdit(result)
+        XCTAssertEqual(c.text, "1. ")
+        XCTAssertEqual(c.selection.location, 3)
+        XCTAssertEqual(c.selection.length, 0)
+    }
+
+    func testClampedRangeShrinksOutOfBoundsRange() throws {
+        let c = try EditorController(initialText: "hello")
+        let clamped = c.clampedRange(NSRange(location: 159, length: 28))
+        XCTAssertEqual(clamped, NSRange(location: 5, length: 0))
+    }
 }

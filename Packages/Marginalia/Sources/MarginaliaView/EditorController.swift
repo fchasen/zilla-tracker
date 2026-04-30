@@ -42,6 +42,18 @@ public final class EditorController {
 
     public private(set) var hiddenRanges: [NSRange] = []
 
+    /// The platform text view backed by `textContainer`. Held weakly so the
+    /// view can be torn down by SwiftUI without leaking; set by the
+    /// `MarginaliaTextView*` representables in `make…View`. The toolbar's
+    /// `applyEdit` path uses this to push the new selection back into the
+    /// view after replacing storage.
+    public weak var hostTextView: AnyObject?
+
+    /// Hook the representable installs so storage edits invalidate the
+    /// host view's intrinsic content size — that's how the editor grows
+    /// with its content in `EditorSizing.fitsContent` mode.
+    public var intrinsicSizeInvalidator: (() -> Void)?
+
     private var highlighter: Highlighter
     private let parser: MarkdownParser
     private let storageDelegate: StorageDelegateProxy
@@ -71,7 +83,10 @@ public final class EditorController {
         self.layoutDelegate = LayoutManagerDelegate()
 
         textStorage.delegate = storageDelegate
-        storageDelegate.onProcessed = { [weak self] in self?.scheduleRefresh() }
+        storageDelegate.onProcessed = { [weak self] in
+            self?.scheduleRefresh()
+            self?.intrinsicSizeInvalidator?()
+        }
         layoutManager.delegate = layoutDelegate
         layoutDelegate.controller = self
 
@@ -99,6 +114,58 @@ public final class EditorController {
         parser.applyEdit(replacing: range, with: replacement, newSource: newText)
         _ = oldText  // (held for symmetry; future incremental path can compare)
         scheduleRefresh()
+    }
+
+    /// Apply a toolbar-style edit: replace the entire text with `result.text`
+    /// and move the cursor to `result.selection`, clamping the selection to
+    /// the new text bounds. Also pushes the new selection into the host text
+    /// view so the user sees the cursor land in the right place.
+    ///
+    /// This is the path the formatting toolbar uses, so it must tolerate a
+    /// stale or out-of-bounds input range without crashing — that's the
+    /// regression behind the `NSRangeException` from the task-list button
+    /// when the binding's selection points past the current text.
+    public func applyEdit(_ result: EditResult) {
+        let length = (result.text as NSString).length
+        let location = max(0, min(result.selection.location, length))
+        let remaining = max(0, length - location)
+        let clamped = NSRange(
+            location: location,
+            length: max(0, min(result.selection.length, remaining))
+        )
+        setText(result.text)
+        // Clamp the cached selection BEFORE refreshing — `recomputeHidden`
+        // (called inside `refreshNow`) reads `self.selection` and would
+        // crash on `lineRange(for:)` if it's still pointing into the old,
+        // longer text.
+        selection = clamped
+        // Apply highlights + paragraph styles synchronously so the freshly
+        // inserted text doesn't render unstyled for one frame. Without this,
+        // a newly continued list line is rendered without its hanging-indent
+        // paragraph style until the next runloop tick.
+        refreshNow()
+        #if canImport(AppKit) && os(macOS)
+        if let tv = hostTextView as? NSTextView {
+            tv.setSelectedRange(clamped)
+        }
+        #elseif canImport(UIKit)
+        if let tv = hostTextView as? UITextView {
+            tv.selectedRange = clamped
+        }
+        #endif
+    }
+
+    /// Clamps `range` to the current text's bounds, useful when the toolbar
+    /// receives a stale selection (e.g. from a `.constant` SwiftUI binding)
+    /// and needs to defend against `NSRangeException` in `EditingOps`.
+    public func clampedRange(_ range: NSRange) -> NSRange {
+        let length = textStorage.length
+        let location = max(0, min(range.location, length))
+        let remaining = max(0, length - location)
+        return NSRange(
+            location: location,
+            length: max(0, min(range.length, remaining))
+        )
     }
 
     /// Force the highlight + classify pass to run synchronously, e.g. from tests.
@@ -131,14 +198,14 @@ public final class EditorController {
     private func runRefresh() {
         let source = textStorage.string
 
-        let runs = highlighter.runs(for: source)
-        markupRanges = highlighter.markupRanges(for: source)
-
         if let tree = parser.parse(source), let root = tree.rootNode {
             blockRegions = BlockClassifier.classify(rootNode: root, mapping: parser.mapping)
         } else {
             blockRegions = []
         }
+
+        let runs = highlighter.runs(for: source, blockRegions: blockRegions)
+        markupRanges = highlighter.markupRanges(for: source, blockRegions: blockRegions)
 
         applyAttributes(runs: runs, full: source)
         recomputeHidden()
@@ -160,7 +227,42 @@ public final class EditorController {
             }
             textStorage.addAttributes(typedAttrs, range: valid)
         }
+        applyBulletAttachments(in: total, source: source)
         textStorage.endEditing()
+    }
+
+    /// Substitutes each `-` / `*` / `+` list marker with a rendered bullet
+    /// glyph that varies by nesting level (• ◦ ▪ ▫ cycling), so the text
+    /// reads as a real bulleted list rather than ASCII source. The
+    /// underlying source character is unchanged — only its display.
+    private func applyBulletAttachments(in total: NSRange, source: String) {
+        let pattern = #"^([ \t]*)([-*+])(?=[ \t])"#
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.anchorsMatchLines]
+        ) else { return }
+        let ns = source as NSString
+        let matches = regex.matches(in: source, options: [], range: total)
+        let cfFont = theme.bodyFont as CTFont
+        for match in matches {
+            let leadingRange = match.range(at: 1)
+            let markerRange = match.range(at: 2)
+            guard markerRange.location != NSNotFound else { continue }
+            let leading = leadingRange.location == NSNotFound
+                ? ""
+                : ns.substring(with: leadingRange)
+            let level = BulletAttachment.level(forLeading: leading)
+            let glyphString = BulletAttachment.glyph(forLevel: level)
+            let nsGlyph = glyphString as NSString
+            var bulletChars: [unichar] = []
+            for i in 0..<nsGlyph.length { bulletChars.append(nsGlyph.character(at: i)) }
+            var cgGlyphs = [CGGlyph](repeating: 0, count: bulletChars.count)
+            guard CTFontGetGlyphsForCharacters(cfFont, bulletChars, &cgGlyphs, bulletChars.count) else { continue }
+            let baseChar = ns.substring(with: markerRange) as CFString
+            guard let info = CTGlyphInfoCreateWithGlyph(cgGlyphs[0], cfFont, baseChar) else { continue }
+            textStorage.addAttribute(.glyphInfoCompat, value: info, range: markerRange)
+            textStorage.addAttribute(.font, value: theme.bodyFont, range: markerRange)
+        }
     }
 
     private var baseAttributes: [NSAttributedString.Key: Any] {

@@ -6,9 +6,8 @@ import MarginaliaView
 struct MarginaliaToolbar: View {
     let items: [Marginalia.ToolbarItem]
     @Binding var showPreview: Bool
-    @Binding var text: String
-    @Binding var selection: NSRange
     let canPreview: Bool
+    let perform: (Marginalia.Action) -> Void
 
     var body: some View {
         HStack(spacing: 2) {
@@ -27,20 +26,25 @@ struct MarginaliaToolbar: View {
         case .spacer:
             Spacer()
         case .action(let action):
-            ToolbarButton(action: action, label: label(for: action), help: help(for: action), shortcut: shortcut(for: action)) {
+            ToolbarButton(
+                action: action,
+                label: label(for: action),
+                help: help(for: action),
+                shortcut: shortcut(for: action)
+            ) {
                 perform(action)
             }
             .disabled(isDisabled(action))
-        case let .custom(_, label, symbol, shortcut, perform):
+        case let .custom(_, label, symbol, shortcut, customPerform):
             Group {
                 if let shortcut {
-                    Button(action: perform) {
+                    Button(action: customPerform) {
                         Image(systemName: symbol)
                             .frame(width: 24, height: 22)
                     }
                     .keyboardShortcut(shortcut)
                 } else {
-                    Button(action: perform) {
+                    Button(action: customPerform) {
                         Image(systemName: symbol)
                             .frame(width: 24, height: 22)
                     }
@@ -56,44 +60,6 @@ struct MarginaliaToolbar: View {
             return !canPreview
         }
         return showPreview
-    }
-
-    // MARK: - perform
-
-    private func perform(_ action: Marginalia.Action) {
-        switch action {
-        case .bold:
-            applyEdit(EditingOps.wrap(in: text, selection: selection, prefix: "**", suffix: "**", placeholder: "bold"))
-        case .italic:
-            applyEdit(EditingOps.wrap(in: text, selection: selection, prefix: "*", suffix: "*", placeholder: "italic"))
-        case .strikethrough:
-            applyEdit(EditingOps.wrap(in: text, selection: selection, prefix: "~~", suffix: "~~", placeholder: "strike"))
-        case .heading(let level):
-            applyEdit(EditingOps.prefixLines(in: text, selection: selection, marker: String(repeating: "#", count: level) + " "))
-        case .unorderedList:
-            applyEdit(EditingOps.prefixLines(in: text, selection: selection, marker: "- "))
-        case .orderedList:
-            applyEdit(EditingOps.numberedList(in: text, selection: selection))
-        case .taskList:
-            applyEdit(EditingOps.prefixLines(in: text, selection: selection, marker: "- [ ] "))
-        case .blockquote:
-            applyEdit(EditingOps.prefixLines(in: text, selection: selection, marker: "> "))
-        case .codeSpan:
-            applyEdit(EditingOps.wrap(in: text, selection: selection, prefix: "`", suffix: "`", placeholder: "code"))
-        case .codeBlock:
-            applyEdit(EditingOps.wrapCodeBlock(in: text, selection: selection))
-        case .link:
-            applyEdit(EditingOps.wrap(in: text, selection: selection, prefix: "[", suffix: "](url)", placeholder: "label"))
-        case .horizontalRule:
-            applyEdit(EditingOps.prefixLines(in: text, selection: selection, marker: "---\n"))
-        case .togglePreview:
-            showPreview.toggle()
-        }
-    }
-
-    private func applyEdit(_ result: EditResult) {
-        text = result.text
-        selection = result.selection
     }
 
     // MARK: - labels
@@ -169,5 +135,65 @@ private struct ToolbarButton: View {
             }
         }
         .help(help)
+    }
+}
+
+/// The toolbar's perform logic, extracted from the SwiftUI view so it's
+/// directly unit-testable. Reads the *current* text and selection from the
+/// `EditorController` (the source of truth — the SwiftUI selection binding
+/// may be `.constant`, in which case the toolbar would otherwise wrap at
+/// position 0 regardless of where the user's cursor is) and applies the
+/// resulting `EditResult` back through `controller.applyEdit`, which clamps
+/// out-of-bounds selections rather than crashing.
+enum MarginaliaToolbarActions {
+    static func perform(
+        _ action: Marginalia.Action,
+        controller: EditorController,
+        text: Binding<String>,
+        showPreview: Binding<Bool>
+    ) {
+        if action == .togglePreview {
+            showPreview.wrappedValue.toggle()
+            return
+        }
+
+        let currentText = controller.text
+        let currentSelection = controller.clampedRange(controller.selection)
+
+        let result: EditResult
+        switch action {
+        case .bold:
+            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "**", suffix: "**", placeholder: "bold")
+        case .italic:
+            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "*", suffix: "*", placeholder: "italic")
+        case .strikethrough:
+            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "~~", suffix: "~~", placeholder: "strike")
+        case .heading(let level):
+            result = EditingOps.prefixLines(in: currentText, selection: currentSelection, marker: String(repeating: "#", count: level) + " ")
+        case .unorderedList:
+            result = EditingOps.applyListMarker(in: currentText, selection: currentSelection, kind: .bullet)
+                ?? EditResult(text: currentText, selection: currentSelection)
+        case .orderedList:
+            result = EditingOps.applyListMarker(in: currentText, selection: currentSelection, kind: .numbered)
+                ?? EditResult(text: currentText, selection: currentSelection)
+        case .taskList:
+            result = EditingOps.applyListMarker(in: currentText, selection: currentSelection, kind: .task)
+                ?? EditResult(text: currentText, selection: currentSelection)
+        case .blockquote:
+            result = EditingOps.prefixLines(in: currentText, selection: currentSelection, marker: "> ")
+        case .codeSpan:
+            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "`", suffix: "`", placeholder: "code")
+        case .codeBlock:
+            result = EditingOps.wrapCodeBlock(in: currentText, selection: currentSelection)
+        case .link:
+            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "[", suffix: "](url)", placeholder: "label")
+        case .horizontalRule:
+            result = EditingOps.insertHorizontalRule(in: currentText, selection: currentSelection)
+        case .togglePreview:
+            return
+        }
+
+        controller.applyEdit(result)
+        text.wrappedValue = result.text
     }
 }

@@ -46,7 +46,11 @@ public final class Highlighter {
     }
 
     /// Compute highlight runs for the given source text.
-    public func runs(for source: String) -> [Run] {
+    ///
+    /// `blockRegions`, if provided, lets the highlighter look up the heading
+    /// level for each `text.title` span so H1 gets a bigger font than H2,
+    /// etc. When empty, the textTitle attributes fall back to the H2 scale.
+    public func runs(for source: String, blockRegions: [BlockRegion] = []) -> [Run] {
         guard let tree = parser.parse(source), let root = tree.rootNode else { return [] }
         let mapping = parser.mapping
         var spans = applier.highlights(rootNode: root, in: tree, mapping: mapping, grammar: .block)
@@ -71,7 +75,7 @@ public final class Highlighter {
         }
 
         return spans.compactMap { span in
-            let attrs = attributes(for: span.tag)
+            let attrs = attributes(for: span.tag, in: span.range, blockRegions: blockRegions)
             guard !attrs.isEmpty else { return nil }
             return Run(range: span.range, attributes: attrs)
         }
@@ -79,8 +83,8 @@ public final class Highlighter {
 
     /// Compute the markup-character ranges that should be hidden when the
     /// cursor is *not* on those lines (caret-aware focus mode).
-    public func markupRanges(for source: String) -> [NSRange] {
-        runs(for: source).filter { isMarkupRun($0) }.map(\.range)
+    public func markupRanges(for source: String, blockRegions: [BlockRegion] = []) -> [NSRange] {
+        runs(for: source, blockRegions: blockRegions).filter { isMarkupRun($0) }.map(\.range)
     }
 
     private func isMarkupRun(_ run: Run) -> Bool {
@@ -88,11 +92,17 @@ public final class Highlighter {
         return color == theme.markupColor
     }
 
-    private func attributes(for tag: HighlightTag) -> [NSAttributedString.Key: AnyHashable] {
+    private func attributes(
+        for tag: HighlightTag,
+        in range: NSRange,
+        blockRegions: [BlockRegion]
+    ) -> [NSAttributedString.Key: AnyHashable] {
         switch tag {
         case .textTitle:
+            let level = headingLevel(at: range, in: blockRegions) ?? 2
+            let scale = theme.headingScale[level] ?? 1.0
             return [
-                .font: italicizedOrBold(theme.bodyFont, scale: 1.4, bold: true),
+                .font: italicizedOrBold(theme.bodyFont, scale: scale, bold: true),
                 .foregroundColor: theme.foregroundColor
             ]
         case .textStrong:
@@ -104,13 +114,30 @@ public final class Highlighter {
                 .font: theme.monospaceFont,
                 .backgroundColor: theme.codeBackground
             ]
-        case .textURI, .textReference:
+        case .textURI:
+            // The URL portion of a markdown link — render dimmed so the
+            // bracket text reads as the actual hyperlink label.
+            return [.foregroundColor: theme.linkURLColor]
+        case .textReference:
             return [.foregroundColor: theme.linkColor]
         case .punctuationSpecial, .punctuationDelimiter, .stringEscape:
             return [.foregroundColor: theme.markupColor]
         case .none, .unknown:
             return [:]
         }
+    }
+
+    private func headingLevel(at range: NSRange, in blockRegions: [BlockRegion]) -> Int? {
+        for region in blockRegions {
+            guard region.range.contains(range.location)
+                || (range.location == region.range.upperBound && range.length == 0) else { continue }
+            switch region.kind {
+            case .heading(let level): return level
+            case .setextHeading(let level): return level
+            default: continue
+            }
+        }
+        return nil
     }
 
     private func italicizedOrBold(

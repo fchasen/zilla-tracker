@@ -42,6 +42,10 @@ let package = Package(
         .testTarget(
             name: "MarginaliaViewTests",
             dependencies: ["MarginaliaView", "MarginaliaSyntax"]
+        ),
+        .testTarget(
+            name: "MarginaliaTests",
+            dependencies: ["Marginalia", "MarginaliaView", "MarginaliaSyntax"]
         )
     ]
 )

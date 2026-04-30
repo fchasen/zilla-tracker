@@ -245,6 +245,199 @@ final class EditingOpsTests: XCTestCase {
         XCTAssertEqual(result.selection, NSRange(location: 4, length: 5))
     }
 
+    // MARK: - insertHorizontalRule
+
+    func testInsertHorizontalRuleAtStartOfEmptyText() {
+        let result = EditingOps.insertHorizontalRule(
+            in: "",
+            selection: NSRange(location: 0, length: 0)
+        )
+        XCTAssertEqual(result.text, "---\n\n")
+        XCTAssertEqual(result.selection, NSRange(location: 5, length: 0))
+    }
+
+    func testInsertHorizontalRuleAtStartOfLineSkipsLeadingNewline() {
+        let result = EditingOps.insertHorizontalRule(
+            in: "first\n",
+            selection: NSRange(location: 6, length: 0)
+        )
+        XCTAssertEqual(result.text, "first\n---\n\n")
+    }
+
+    func testInsertHorizontalRuleMidLineAddsLeadingNewline() {
+        let result = EditingOps.insertHorizontalRule(
+            in: "hello world",
+            selection: NSRange(location: 6, length: 0)
+        )
+        XCTAssertEqual(result.text, "hello \n---\n\nworld")
+    }
+
+    // MARK: - indentListLines / outdentListLines
+
+    func testIndentBulletListItem() {
+        let result = EditingOps.indentListLines(
+            in: "- one",
+            selection: NSRange(location: 5, length: 0)
+        )
+        XCTAssertEqual(result?.text, "  - one")
+        XCTAssertEqual(result?.selection, NSRange(location: 7, length: 0))
+    }
+
+    func testIndentNumberedListItem() {
+        let result = EditingOps.indentListLines(
+            in: "1. one",
+            selection: NSRange(location: 6, length: 0)
+        )
+        XCTAssertEqual(result?.text, "  1. one")
+    }
+
+    func testIndentNonListLineReturnsNil() {
+        let result = EditingOps.indentListLines(
+            in: "just prose",
+            selection: NSRange(location: 4, length: 0)
+        )
+        XCTAssertNil(result)
+    }
+
+    func testOutdentRemovesTwoSpaceIndent() {
+        let result = EditingOps.outdentListLines(
+            in: "  - nested",
+            selection: NSRange(location: 5, length: 0)
+        )
+        XCTAssertEqual(result?.text, "- nested")
+        XCTAssertEqual(result?.selection, NSRange(location: 3, length: 0))
+    }
+
+    func testOutdentRemovesTab() {
+        let result = EditingOps.outdentListLines(
+            in: "\t- nested",
+            selection: NSRange(location: 4, length: 0)
+        )
+        XCTAssertEqual(result?.text, "- nested")
+    }
+
+    func testOutdentWithoutLeadingIndentReturnsNil() {
+        let result = EditingOps.outdentListLines(
+            in: "- top-level",
+            selection: NSRange(location: 5, length: 0)
+        )
+        XCTAssertNil(result)
+    }
+
+    func testIndentMultipleLinesPrefixesEachListLine() {
+        let result = EditingOps.indentListLines(
+            in: "- one\n- two\nplain",
+            selection: NSRange(location: 0, length: 17)
+        )
+        XCTAssertEqual(result?.text, "  - one\n  - two\nplain")
+    }
+
+    // MARK: - applyListMarker (smart list-button behavior)
+
+    func testApplyBulletOnBulletIndents() {
+        let result = EditingOps.applyListMarker(
+            in: "- one",
+            selection: NSRange(location: 5, length: 0),
+            kind: .bullet
+        )
+        XCTAssertEqual(result?.text, "  - one")
+    }
+
+    func testApplyBulletOnNumberedSwitchesToBullet() {
+        let result = EditingOps.applyListMarker(
+            in: "1. one",
+            selection: NSRange(location: 6, length: 0),
+            kind: .bullet
+        )
+        XCTAssertEqual(result?.text, "- one")
+    }
+
+    func testApplyNumberedOnTaskSwitchesToNumbered() {
+        let result = EditingOps.applyListMarker(
+            in: "- [ ] task",
+            selection: NSRange(location: 10, length: 0),
+            kind: .numbered
+        )
+        XCTAssertEqual(result?.text, "1. task")
+    }
+
+    func testApplyTaskOnBulletSwitchesToTask() {
+        let result = EditingOps.applyListMarker(
+            in: "- one",
+            selection: NSRange(location: 5, length: 0),
+            kind: .task
+        )
+        XCTAssertEqual(result?.text, "- [ ] one")
+    }
+
+    func testApplyBulletOnPlainAddsMarker() {
+        let result = EditingOps.applyListMarker(
+            in: "plain prose",
+            selection: NSRange(location: 5, length: 0),
+            kind: .bullet
+        )
+        XCTAssertEqual(result?.text, "- plain prose")
+    }
+
+    func testApplyTaskOnTaskIndents() {
+        let result = EditingOps.applyListMarker(
+            in: "- [ ] task",
+            selection: NSRange(location: 10, length: 0),
+            kind: .task
+        )
+        XCTAssertEqual(result?.text, "  - [ ] task")
+    }
+
+    func testApplyNumberedOnNumberedIndents() {
+        let result = EditingOps.applyListMarker(
+            in: "1. one",
+            selection: NSRange(location: 6, length: 0),
+            kind: .numbered
+        )
+        XCTAssertEqual(result?.text, "  1. one")
+    }
+
+    func testSwitchPreservesLeadingIndent() {
+        let result = EditingOps.applyListMarker(
+            in: "  - nested",
+            selection: NSRange(location: 10, length: 0),
+            kind: .numbered
+        )
+        XCTAssertEqual(result?.text, "  1. nested")
+    }
+
+    // MARK: - defensive bounds
+
+    func testPrefixLinesWithStaleSelectionDoesNotCrash() {
+        // `lineRangeExcludingTerminator` used to crash inside `lineRange(for:)`
+        // when handed a selection past the text end. Clamping internally
+        // turns it into a no-op insert at the end.
+        let result = EditingOps.prefixLines(
+            in: "short",
+            selection: NSRange(location: 999, length: 100),
+            marker: "- "
+        )
+        XCTAssertNotNil(result)
+    }
+
+    func testIndentListLinesWithStaleSelectionDoesNotCrash() {
+        let result = EditingOps.indentListLines(
+            in: "- item",
+            selection: NSRange(location: 999, length: 100)
+        )
+        // May return nil (not a list line at the clamped position) but
+        // must not crash.
+        _ = result
+    }
+
+    func testOutdentListLinesWithStaleSelectionDoesNotCrash() {
+        let result = EditingOps.outdentListLines(
+            in: "  - item",
+            selection: NSRange(location: 999, length: 100)
+        )
+        _ = result
+    }
+
     // MARK: - EditResult
 
     func testEditResultEquality() {

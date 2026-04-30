@@ -42,13 +42,26 @@ extension Marginalia {
     public struct Configuration {
         public var toolbar: [ToolbarItem]
         public var statusItems: [StatusItem]
+        /// How the editor sizes itself within its SwiftUI parent. Defaults
+        /// to `.fitsContent` — the editor's height tracks its content.
+        /// Use `.fillContainer` for a fixed-height pane that scrolls
+        /// internally.
+        public var sizing: EditorSizing
+        /// In `.fitsContent` mode, the editor starts at this height even
+        /// when empty, then grows as content gets taller. Has no effect in
+        /// `.fillContainer` mode.
+        public var minHeight: CGFloat
 
         public init(
             toolbar: [ToolbarItem] = Configuration.defaultToolbar,
-            statusItems: [StatusItem] = [.words, .characters, .cursor]
+            statusItems: [StatusItem] = [.words, .characters, .cursor],
+            sizing: EditorSizing = .fitsContent,
+            minHeight: CGFloat = 96
         ) {
             self.toolbar = toolbar
             self.statusItems = statusItems
+            self.sizing = sizing
+            self.minHeight = minHeight
         }
 
         public static let defaultToolbar: [ToolbarItem] = [

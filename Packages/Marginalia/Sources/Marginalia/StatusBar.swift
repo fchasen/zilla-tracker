@@ -44,13 +44,13 @@ struct MarginaliaStatusBar: View {
 
     private var line: Int {
         let ns = text as NSString
-        let upTo = ns.substring(to: min(selection.location, ns.length)) as NSString
+        let upTo = ns.substring(to: min(max(0, selection.location), ns.length)) as NSString
         return upTo.components(separatedBy: "\n").count
     }
 
     private var column: Int {
         let ns = text as NSString
-        let upTo = min(selection.location, ns.length)
+        let upTo = min(max(0, selection.location), ns.length)
         let lineRange = ns.lineRange(for: NSRange(location: upTo, length: 0))
         return upTo - lineRange.location + 1
     }

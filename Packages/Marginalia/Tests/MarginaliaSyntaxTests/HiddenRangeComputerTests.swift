@@ -89,6 +89,37 @@ final class HiddenRangeComputerTests: XCTestCase {
         XCTAssertEqual(hidden, [line0M])
     }
 
+    // MARK: - defensive clamping
+
+    func testStaleCursorRangePastEndDoesNotCrash() {
+        // The historical NSRangeException: cursor at 62 against a 58-length
+        // text (e.g. after a Shift-Tab outdent that shrunk the text but
+        // before `selection` was clamped). Must clamp internally.
+        let text = "short text only 58 characters long ........... yes" + "..."
+        XCTAssertEqual((text as NSString).length, 53)
+        let cursor = NSRange(location: 200, length: 0)
+        let markup = [NSRange(location: 0, length: 1)]
+        // No crash:
+        let hidden = HiddenRangeComputer.hiddenRanges(
+            markupRanges: markup,
+            cursorRange: cursor,
+            in: text
+        )
+        XCTAssertNotNil(hidden)
+    }
+
+    func testStaleMarkupRangePastEndDoesNotCrash() {
+        let text = "abc"
+        let stale = [NSRange(location: 100, length: 5)]
+        let cursor = NSRange(location: 0, length: 0)
+        let hidden = HiddenRangeComputer.hiddenRanges(
+            markupRanges: stale,
+            cursorRange: cursor,
+            in: text
+        )
+        XCTAssertNotNil(hidden)
+    }
+
     func testHeadingHashHiddenWhenCursorElsewhere() {
         let text = "# heading\nbody\n"
         let headingHash = NSRange(location: 0, length: 1)

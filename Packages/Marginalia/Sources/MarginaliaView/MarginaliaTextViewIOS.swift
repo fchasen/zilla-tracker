@@ -13,11 +13,21 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
     @Binding public var text: String
     @Binding public var selection: NSRange
     public let controller: EditorController
+    public let sizing: EditorSizing
+    public let minHeight: CGFloat
 
-    public init(controller: EditorController, text: Binding<String>, selection: Binding<NSRange>) {
+    public init(
+        controller: EditorController,
+        text: Binding<String>,
+        selection: Binding<NSRange>,
+        sizing: EditorSizing = .fitsContent,
+        minHeight: CGFloat = 96
+    ) {
         self.controller = controller
         self._text = text
         self._selection = selection
+        self.sizing = sizing
+        self.minHeight = minHeight
     }
 
     public func makeUIView(context: Context) -> UITextView {
@@ -34,64 +44,94 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
         textView.autocorrectionType = .default
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         textView.adjustsFontForContentSizeCategory = true
+        textView.isScrollEnabled = (sizing == .fillContainer)
         if #available(iOS 16.0, *) {
-            textView.findInteractionEnabled = true
+            textView.findInteractionEnabled = (sizing == .fillContainer)
         }
         context.coordinator.textView = textView
+        controller.hostTextView = textView
+        if sizing == .fitsContent {
+            controller.intrinsicSizeInvalidator = { [weak textView] in
+                textView?.invalidateIntrinsicContentSize()
+            }
+        }
         return textView
     }
 
     public func updateUIView(_ uiView: UITextView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+        coordinator.apply(text: text, selection: selection, to: uiView)
+    }
 
-        if text != coordinator.lastObservedText {
-            if controller.textStorage.string != text {
-                controller.setText(text)
-            }
-            coordinator.lastObservedText = text
+    public func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard sizing == .fitsContent else { return nil }
+        if let proposedWidth = proposal.width, proposedWidth > 0 {
+            let inset = uiView.textContainerInset
+            controller.textContainer.size = CGSize(
+                width: max(0, proposedWidth - inset.left - inset.right),
+                height: .greatestFiniteMagnitude
+            )
         }
-
-        if selection != coordinator.lastObservedSelection {
-            let clamped = clamp(selection, to: controller.textStorage.length)
-            if uiView.selectedRange != clamped {
-                uiView.selectedRange = clamped
-            }
-            coordinator.lastObservedSelection = selection
-        }
+        let intrinsic = uiView.intrinsicContentSize
+        let width = proposal.width ?? intrinsic.width
+        return CGSize(width: width, height: max(intrinsic.height, minHeight))
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    private func clamp(_ range: NSRange, to length: Int) -> NSRange {
-        let location = max(0, min(range.location, length))
-        let remaining = max(0, length - location)
-        return NSRange(location: location, length: max(0, min(range.length, remaining)))
-    }
-
     public final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarginaliaTextViewIOS
         weak var textView: UITextView?
-        var lastObservedText: String
-        var lastObservedSelection: NSRange
+        var lastAppliedText: String
+        var lastAppliedSelection: NSRange
+        var isApplyingFromBinding = false
 
         init(_ parent: MarginaliaTextViewIOS) {
             self.parent = parent
-            self.lastObservedText = parent.text
-            self.lastObservedSelection = parent.selection
+            self.lastAppliedText = parent.text
+            self.lastAppliedSelection = parent.selection
+        }
+
+        /// See `MarginaliaTextViewMac.Coordinator.apply` for the rationale.
+        /// Same logic, different platform types.
+        public func apply(text: String, selection: NSRange, to textView: UITextView) {
+            isApplyingFromBinding = true
+            defer { isApplyingFromBinding = false }
+
+            if text != lastAppliedText {
+                if parent.controller.textStorage.string != text {
+                    parent.controller.setText(text)
+                }
+                lastAppliedText = text
+            }
+
+            if selection != lastAppliedSelection {
+                let length = parent.controller.textStorage.length
+                let location = max(0, min(selection.location, length))
+                let remaining = max(0, length - location)
+                let clamped = NSRange(
+                    location: location,
+                    length: max(0, min(selection.length, remaining))
+                )
+                if textView.selectedRange != clamped {
+                    textView.selectedRange = clamped
+                }
+                lastAppliedSelection = selection
+            }
         }
 
         public func textViewDidChange(_ textView: UITextView) {
+            guard !isApplyingFromBinding else { return }
             let newText = textView.text ?? ""
-            lastObservedText = newText
             if parent.text != newText {
                 parent.text = newText
             }
         }
 
         public func textViewDidChangeSelection(_ textView: UITextView) {
+            guard !isApplyingFromBinding else { return }
             let r = textView.selectedRange
-            lastObservedSelection = r
             parent.controller.selection = r
             if parent.selection != r {
                 parent.selection = r
@@ -106,13 +146,16 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
                 in: textView.text ?? "",
                 cursor: range.location
                ) {
-                parent.controller.setText(result.text)
-                textView.selectedRange = result.selection
-                lastObservedText = result.text
-                lastObservedSelection = result.selection
-                parent.controller.selection = result.selection
-                parent.text = result.text
-                parent.selection = result.selection
+                isApplyingFromBinding = true
+                // Delegate to controller.applyEdit so the selection is
+                // clamped BEFORE the synchronous refresh reads it — same
+                // crash-prevention ordering the macOS coordinator uses.
+                parent.controller.applyEdit(result)
+                isApplyingFromBinding = false
+                parent.text = parent.controller.text
+                parent.selection = parent.controller.selection
+                lastAppliedText = parent.text
+                lastAppliedSelection = parent.selection
                 return false
             }
             return true

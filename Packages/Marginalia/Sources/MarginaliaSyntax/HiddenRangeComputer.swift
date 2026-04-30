@@ -22,10 +22,14 @@ public enum HiddenRangeComputer {
     ) -> [NSRange] {
         guard !markupRanges.isEmpty else { return [] }
         let ns = text as NSString
-        let activeLineRange = ns.lineRange(for: cursorRange)
+        // Both `cursorRange` and the markup ranges can be stale relative
+        // to `text` (e.g. computed against a longer prior text and not yet
+        // updated). Clamp before handing to NSString.lineRange so a stale
+        // input is silently bounded instead of crashing.
+        let activeLineRange = ns.lineRange(for: cursorRange.clamped(to: ns.length))
 
         return markupRanges.filter { mr in
-            let mrLine = ns.lineRange(for: mr)
+            let mrLine = ns.lineRange(for: mr.clamped(to: ns.length))
             return !rangesOverlap(mrLine, activeLineRange)
         }
     }
