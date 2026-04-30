@@ -34,7 +34,7 @@ struct RevisionHeader: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
-                    .help("Open D\(revision.id) in browser")
+                    .help("Open D\(String(revision.id)) in browser")
                 }
                 StatusBadge(status: revision.fields.status)
                 if revision.fields.isDraft {

@@ -59,7 +59,7 @@ struct RevisionDetailView: View {
                     } label: {
                         Label("Open in Browser", systemImage: "arrow.up.right.square")
                     }
-                    .help("Open D\(revision.id) in your browser")
+                    .help("Open D\(String(revision.id)) in your browser")
                 }
             }
             ToolbarItem(placement: .primaryAction) {

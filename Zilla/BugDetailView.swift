@@ -98,9 +98,9 @@ struct BugDetailView: View {
                     Button {
                         workspace.returnToPendingRevision()
                     } label: {
-                        Label("Back to D\(revID)", systemImage: "chevron.backward")
+                        Label("Back to D\(String(revID))", systemImage: "chevron.backward")
                     }
-                    .help("Return to D\(revID)")
+                    .help("Return to D\(String(revID))")
                 }
             }
             if let bug {

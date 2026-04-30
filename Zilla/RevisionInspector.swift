@@ -279,7 +279,7 @@ struct RevisionInspector: View {
         VStack(alignment: .leading, spacing: 6) {
             InspectorSectionHeader(title: "Latest diff")
             HStack(spacing: 8) {
-                Text("Diff \(latest.id)")
+                Text(verbatim: "Diff \(latest.id)")
                     .font(.callout.monospaced())
                 Text(verbatim: "·")
                     .foregroundStyle(.tertiary)
