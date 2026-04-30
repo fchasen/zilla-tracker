@@ -1,13 +1,3 @@
-//
-//  MarkdownEditor.swift
-//  Zilla
-//
-//  Thin wrapper around `Marginalia` that preserves the prior `MarkdownEditor`
-//  call sites and adds the Zilla-specific link pickers (bug + user mention via
-//  QuickSearchSheet, and Searchfox via SearchfoxPickerSheet) inline with
-//  Marginalia's standard formatting toolbar.
-//
-
 import SwiftUI
 import BugzillaKit
 import Marginalia
@@ -24,13 +14,11 @@ struct MarkdownEditor: View {
     var headerLabel: String? = nil
     var minHeight: CGFloat = 96
     var isDisabled: Bool = false
-    var emptyPreviewLabel: String = "Nothing to preview yet."
     var dialect: TextDialect = .commonMark
 
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
-    @AppStorage("MarkdownEditor.toolbarVisible") private var toolbarVisible = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -41,18 +29,13 @@ struct MarkdownEditor: View {
             Marginalia(text: $text)
                 .marginaliaDialect(marginaliaDialect)
                 .marginaliaPreviewRenderer(previewRenderer)
-                .marginaliaConfiguration(toolbarConfiguration)
+                .marginaliaConfiguration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
                 .frame(minHeight: minHeight)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
                 .disabled(isDisabled)
-                .contextMenu {
-                    Toggle(isOn: $toolbarVisible) {
-                        Label("Show Toolbar", systemImage: "richtext.page")
-                    }
-                }
         }
         .sheet(isPresented: $showingLinkPicker) {
             QuickSearchSheet(
@@ -93,21 +76,8 @@ struct MarkdownEditor: View {
         }
     }
 
-    private var toolbarConfiguration: Marginalia.Configuration {
-        let menuItems: [Marginalia.ContextMenuItem] = [
-            .init(
-                title: "Show Toolbar",
-                systemImage: "richtext.page",
-                isOn: toolbarVisible,
-                action: { toolbarVisible.toggle() }
-            )
-        ]
-
-        guard toolbarVisible else {
-            return Marginalia.Configuration(toolbar: [], contextMenuItems: menuItems)
-        }
-
-        let toolbar: [Marginalia.ToolbarItem] = [
+    private var toolbar: [Marginalia.ToolbarItem] {
+        let leading: [Marginalia.ToolbarItem] = [
             .custom(
                 id: "searchfoxPicker",
                 label: "Searchfox",
@@ -125,34 +95,21 @@ struct MarkdownEditor: View {
                 action: { showingLinkPicker = true }
             ),
             .divider,
-            .action(.bold),
-            .action(.italic),
-            .action(.strikethrough),
-            .divider,
-            .action(.heading(level: 1)),
-            .action(.heading(level: 2)),
-            .action(.heading(level: 3)),
-            .divider,
-            .action(.unorderedList),
-            .action(.orderedList),
-            .action(.taskList),
-            .action(.blockquote),
-            .divider,
-            .action(.codeSpan),
-            .action(.codeBlock),
-            .action(.horizontalRule),
-            .divider,
-            .custom(
-                id: "linkInsert",
-                label: "Insert Link",
-                systemImage: "link",
-                action: { showingLinkInsert = true }
-            ),
-            .spacer,
-            .action(.togglePreview)
         ]
 
-        return Marginalia.Configuration(toolbar: toolbar, contextMenuItems: menuItems)
+        let linkInsert: Marginalia.ToolbarItem = .custom(
+            id: "linkInsert",
+            label: "Insert Link",
+            systemImage: "link",
+            action: { showingLinkInsert = true }
+        )
+
+        let defaults: [Marginalia.ToolbarItem] = Marginalia.Configuration.defaultToolbar.map { item in
+            if case .action(.link) = item { return linkInsert }
+            return item
+        }
+
+        return leading + defaults
     }
 
     private func insertBugLink(_ bugID: Bug.ID) {

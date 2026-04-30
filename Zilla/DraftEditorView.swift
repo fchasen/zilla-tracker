@@ -62,8 +62,7 @@ struct DraftEditorView: View {
                     MarkdownEditor(
                         text: $draft.bugDescription,
                         minHeight: 240,
-                        isDisabled: isSubmitting,
-                        emptyPreviewLabel: "Nothing to preview yet."
+                        isDisabled: isSubmitting
                     )
                 }
 
