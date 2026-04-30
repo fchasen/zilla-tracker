@@ -300,7 +300,14 @@ private struct BugContent: View {
     private func quoteIntoComposer(_ text: String) {
         let quoted = text
             .components(separatedBy: "\n")
-            .map { line in line.isEmpty ? ">" : "> \(line)" }
+            .map { line -> String in
+                var stripped = Substring(line)
+                while stripped.first == ">" {
+                    stripped = stripped.dropFirst()
+                    if stripped.first == " " { stripped = stripped.dropFirst() }
+                }
+                return stripped.isEmpty ? ">" : "> \(stripped)"
+            }
             .joined(separator: "\n")
         let separator: String
         if composerText.isEmpty {
