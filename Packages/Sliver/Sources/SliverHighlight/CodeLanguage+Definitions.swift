@@ -6,6 +6,7 @@ import TreeSitterPython
 import TreeSitterRust
 import TreeSitterC
 import TreeSitterCPP
+import TreeSitterJSON
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -77,5 +78,14 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "cpp-highlights",
         language: Language(language: tree_sitter_cpp())
+    )
+
+    static let json = CodeLanguage(
+        id: "json",
+        displayName: "JSON",
+        extensions: ["json", "jsonc"],
+        bundle: .module,
+        queryResource: "json-highlights",
+        language: Language(language: tree_sitter_json())
     )
 }

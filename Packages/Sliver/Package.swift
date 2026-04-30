@@ -96,6 +96,19 @@ let package = Package(
             publicHeadersPath: "bindings/swift/TreeSitterCPP",
             cSettings: [.headerSearchPath("src")]
         ),
+        .target(
+            name: "TreeSitterJSON",
+            path: "Vendor/tree-sitter-json",
+            exclude: [
+                "grammar.js",
+                "src/grammar.json",
+                "src/node-types.json",
+                "queries"
+            ],
+            sources: ["src/parser.c"],
+            publicHeadersPath: "bindings/swift/TreeSitterJSON",
+            cSettings: [.headerSearchPath("src")]
+        ),
 
         .target(
             name: "SliverHighlight",
@@ -106,7 +119,8 @@ let package = Package(
                 "TreeSitterPython",
                 "TreeSitterRust",
                 "TreeSitterC",
-                "TreeSitterCPP"
+                "TreeSitterCPP",
+                "TreeSitterJSON"
             ],
             resources: [.copy("Queries")]
         ),
