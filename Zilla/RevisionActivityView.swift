@@ -1,6 +1,9 @@
 import SwiftUI
 import PhabricatorKit
 import Textual
+import Sliver
+import SliverModel
+import SliverHighlight
 
 struct RevisionActivityView: View {
     @Environment(Workspace.self) private var workspace
@@ -64,6 +67,7 @@ struct RevisionActivityView: View {
 
 struct ActivityRow: View {
     @Environment(Workspace.self) private var workspace
+    @Environment(\.colorScheme) private var colorScheme
     let transaction: RevisionTransaction
 
     var body: some View {
@@ -160,8 +164,23 @@ struct ActivityRow: View {
     @ViewBuilder
     private var bodyView: some View {
         if isInline, let inlineDescriptor {
-            VStack(alignment: .leading, spacing: 4) {
-                inlineFileLink(inlineDescriptor)
+            VStack(alignment: .leading, spacing: 6) {
+                if isThreadHead, let hunk = anchoredHunk(for: inlineDescriptor) {
+                    SliverView(
+                        path: inlineDescriptor.path,
+                        hunk: hunk,
+                        anchor: AnchorRange(
+                            line: inlineDescriptor.line,
+                            length: max(1, (transaction.fields.length ?? 0) + 1),
+                            side: (transaction.fields.isNewFile ?? true) ? .newFile : .oldFile
+                        ),
+                        isOutdated: isOutdatedAgainstLatestDiff,
+                        theme: colorScheme == .dark ? .dark : .light,
+                        onPathTap: { workspace.revealChangeset(path: inlineDescriptor.path) }
+                    )
+                } else {
+                    inlineFileLink(inlineDescriptor)
+                }
                 if let body = primaryCommentBody, !body.isEmpty {
                     RemarkupText(source: body)
                         .font(.callout)
@@ -173,6 +192,27 @@ struct ActivityRow: View {
                 .font(.callout)
                 .textSelection(.enabled)
         }
+    }
+
+    private var isThreadHead: Bool {
+        transaction.fields.replyToCommentPHID == nil
+    }
+
+    private var isOutdatedAgainstLatestDiff: Bool {
+        guard let txDiffID = transaction.fields.diffID,
+              let loadedID = workspace.loadedRevisionDiff?.id else {
+            return false
+        }
+        return txDiffID != loadedID
+    }
+
+    private func anchoredHunk(for descriptor: InlineDescriptor) -> DiffHunk? {
+        SliverActivityIntegration.anchoredHunk(
+            in: workspace.loadedRevisionDiff,
+            path: descriptor.path,
+            line: descriptor.line,
+            side: (transaction.fields.isNewFile ?? true) ? .newFile : .oldFile
+        )
     }
 
     private var isInline: Bool {
