@@ -11,9 +11,11 @@
 		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
 		3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7082FA06FFF003FB395 /* SearchfoxKit */; };
 		3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7FF2FA15288003FB395 /* PhabricatorKit */; };
+		3339DB4D2FA40E4D0060FCCE /* Sliver in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4C2FA40E4D0060FCCE /* Sliver */; };
+		3339DB4F2FA40E4D0060FCCE /* SliverHighlight in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4E2FA40E4D0060FCCE /* SliverHighlight */; };
+		3339DB512FA40E4D0060FCCE /* SliverModel in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB502FA40E4D0060FCCE /* SliverModel */; };
 		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
 		B0C1D2E3F4A50000000F0001 /* Marginalia in Frameworks */ = {isa = PBXBuildFile; productRef = B0C1D2E3F4A50000000F0002 /* Marginalia */; };
-		C1D2E3F4A5B60000000F0001 /* Sliver in Frameworks */ = {isa = PBXBuildFile; productRef = C1D2E3F4A5B60000000F0002 /* Sliver */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,9 +68,11 @@
 				3339A5C22FA00C00003FB395 /* Textual in Frameworks */,
 				3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */,
 				3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */,
+				3339DB4F2FA40E4D0060FCCE /* SliverHighlight in Frameworks */,
 				A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */,
 				B0C1D2E3F4A50000000F0001 /* Marginalia in Frameworks */,
-				C1D2E3F4A5B60000000F0001 /* Sliver in Frameworks */,
+				3339DB512FA40E4D0060FCCE /* SliverModel in Frameworks */,
+				3339DB4D2FA40E4D0060FCCE /* Sliver in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,7 +139,9 @@
 				3339A7FF2FA15288003FB395 /* PhabricatorKit */,
 				A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */,
 				B0C1D2E3F4A50000000F0002 /* Marginalia */,
-				C1D2E3F4A5B60000000F0002 /* Sliver */,
+				3339DB4C2FA40E4D0060FCCE /* Sliver */,
+				3339DB4E2FA40E4D0060FCCE /* SliverHighlight */,
+				3339DB502FA40E4D0060FCCE /* SliverModel */,
 			);
 			productName = Zilla;
 			productReference = 3339A5902FA001FC003FB395 /* Zilla.app */;
@@ -226,7 +232,7 @@
 				3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
 				A1B2C3D4E5F60000000F0003 /* XCLocalSwiftPackageReference "Packages/PierreDiffsSwift" */,
 				B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/Marginalia" */,
-				C1D2E3F4A5B60000000F0003 /* XCLocalSwiftPackageReference "Packages/Sliver" */,
+				3339DB4B2FA40E4D0060FCCE /* XCLocalSwiftPackageReference "Packages/Sliver" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -686,6 +692,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/PhabricatorKit;
 		};
+		3339DB4B2FA40E4D0060FCCE /* XCLocalSwiftPackageReference "Packages/Sliver" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Sliver;
+		};
 		A1B2C3D4E5F60000000F0003 /* XCLocalSwiftPackageReference "Packages/PierreDiffsSwift" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/PierreDiffsSwift;
@@ -693,10 +703,6 @@
 		B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/Marginalia" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/Marginalia;
-		};
-		C1D2E3F4A5B60000000F0003 /* XCLocalSwiftPackageReference "Packages/Sliver" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/Sliver;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -729,6 +735,18 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = PhabricatorKit;
 		};
+		3339DB4C2FA40E4D0060FCCE /* Sliver */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Sliver;
+		};
+		3339DB4E2FA40E4D0060FCCE /* SliverHighlight */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SliverHighlight;
+		};
+		3339DB502FA40E4D0060FCCE /* SliverModel */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SliverModel;
+		};
 		A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PierreDiffsSwift;
@@ -737,11 +755,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/Marginalia" */;
 			productName = Marginalia;
-		};
-		C1D2E3F4A5B60000000F0002 /* Sliver */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C1D2E3F4A5B60000000F0003 /* XCLocalSwiftPackageReference "Packages/Sliver" */;
-			productName = Sliver;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

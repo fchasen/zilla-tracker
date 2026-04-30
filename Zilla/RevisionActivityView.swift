@@ -171,7 +171,7 @@ struct ActivityRow: View {
                         hunk: hunk,
                         anchor: AnchorRange(
                             line: inlineDescriptor.line,
-                            length: max(1, (transaction.fields.length ?? 0) + 1),
+                            length: max(1, transaction.fields.length ?? 1),
                             side: (transaction.fields.isNewFile ?? true) ? .newFile : .oldFile
                         ),
                         isOutdated: isOutdatedAgainstLatestDiff,

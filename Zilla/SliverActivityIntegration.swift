@@ -9,28 +9,21 @@ enum SliverActivityIntegration {
         line: Int,
         side: AnchorRange.Side
     ) -> DiffHunk? {
-        guard let diff,
-              let changeset = diff.changesets.first(where: { $0.currentPath == path }) else {
+        guard let diff else { return nil }
+        guard let changeset = diff.changesets.first(where: { $0.currentPath == path }) else {
             return nil
         }
+        let anchor = AnchorRange(line: line, length: 1, side: side)
         for hunk in changeset.hunks {
-            if covers(hunk: hunk, line: line, side: side) {
-                return UnifiedDiffParser.parse(
-                    corpus: hunk.corpus,
-                    oldStart: hunk.oldOffset,
-                    newStart: hunk.newOffset
-                )
+            let parsed = UnifiedDiffParser.parse(
+                corpus: hunk.corpus,
+                oldStart: hunk.oldOffset,
+                newStart: hunk.newOffset
+            )
+            if parsed.contains(anchor) {
+                return parsed
             }
         }
         return nil
-    }
-
-    private static func covers(hunk: Hunk, line: Int, side: AnchorRange.Side) -> Bool {
-        switch side {
-        case .newFile:
-            return line >= hunk.newOffset && line < hunk.newOffset + max(hunk.newLen, 1)
-        case .oldFile:
-            return line >= hunk.oldOffset && line < hunk.oldOffset + max(hunk.oldLen, 1)
-        }
     }
 }
