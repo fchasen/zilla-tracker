@@ -9,6 +9,7 @@ import TreeSitterCPP
 import TreeSitterJSON
 import TreeSitterHTML
 import TreeSitterCSS
+import TreeSitterSwift
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -111,5 +112,17 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "css-highlights",
         language: Language(language: tree_sitter_css())
+    )
+
+    static let swift = CodeLanguage(
+        id: "swift",
+        displayName: "Swift",
+        extensions: ["swift"],
+        lineComment: "//",
+        blockCommentOpen: "/*",
+        blockCommentClose: "*/",
+        bundle: .module,
+        queryResource: "swift-highlights",
+        language: Language(language: tree_sitter_swift())
     )
 }

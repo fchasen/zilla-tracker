@@ -10,7 +10,8 @@ public enum CodeLanguageRegistry {
         .cpp,
         .json,
         .html,
-        .css
+        .css,
+        .swift
     ]
 
     public static func detect(path: String) -> CodeLanguage {
