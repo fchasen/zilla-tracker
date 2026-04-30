@@ -362,7 +362,7 @@ struct RevisionInspector: View {
         case Reviewer.Status.rejected, Reviewer.Status.rejectedPrior:
             return AnyView(Image(systemName: "xmark.seal.fill").foregroundStyle(.red))
         case Reviewer.Status.blocking:
-            return AnyView(Image(systemName: "nosign").foregroundStyle(.red))
+            return AnyView(Image(systemName: "wrongwaysign.fill").foregroundStyle(.red))
         case Reviewer.Status.resigned:
             return AnyView(Image(systemName: "person.slash").foregroundStyle(.secondary))
         default:
