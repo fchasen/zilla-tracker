@@ -4,6 +4,8 @@ import TreeSitterJavaScript
 import TreeSitterTypeScript
 import TreeSitterPython
 import TreeSitterRust
+import TreeSitterC
+import TreeSitterCPP
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -50,5 +52,30 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "rust-highlights",
         language: Language(language: tree_sitter_rust())
+    )
+
+    static let c = CodeLanguage(
+        id: "c",
+        displayName: "C",
+        extensions: ["c", "h"],
+        lineComment: "//",
+        blockCommentOpen: "/*",
+        blockCommentClose: "*/",
+        bundle: .module,
+        queryResource: "c-highlights",
+        language: Language(language: tree_sitter_c())
+    )
+
+    static let cpp = CodeLanguage(
+        id: "cpp",
+        displayName: "C++",
+        extensions: ["cpp", "cc", "cxx", "hpp", "hh", "hxx", "ipp"],
+        lineComment: "//",
+        blockCommentOpen: "/*",
+        blockCommentClose: "*/",
+        parentID: "c",
+        bundle: .module,
+        queryResource: "cpp-highlights",
+        language: Language(language: tree_sitter_cpp())
     )
 }
