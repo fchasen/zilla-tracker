@@ -870,7 +870,6 @@ final class Workspace {
         length: Int,
         isNewFile: Bool,
         content: String,
-        replyTo replyToCommentPHID: String?,
         using client: PhabricatorClient
     ) async -> Error? {
         guard let diff = loadedRevisionDiff, let revision = loadedRevision else { return nil }
@@ -881,8 +880,7 @@ final class Workspace {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                content: content,
-                replyToCommentPHID: replyToCommentPHID
+                content: content
             )
             cache?.invalidate(.revisionTransactions(revision.id))
             await refreshRevisionActivity(using: client)
@@ -912,7 +910,6 @@ final class Workspace {
         line: Int,
         length: Int,
         isNewFile: Bool,
-        replyTo replyToCommentPHID: String?,
         newContent: String,
         using client: PhabricatorClient
     ) async -> Error? {
@@ -925,7 +922,6 @@ final class Workspace {
             length: length,
             isNewFile: isNewFile,
             content: newContent,
-            replyTo: replyToCommentPHID,
             using: client
         )
     }

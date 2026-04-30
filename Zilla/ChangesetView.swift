@@ -197,7 +197,6 @@ struct ChangesetView: View {
                 length: composer.length,
                 isNewFile: composer.isNewFile,
                 content: trimmed,
-                replyTo: composer.replyTo,
                 using: phab.client
             ) {
                 workspace.lastUpdateError = error.localizedDescription

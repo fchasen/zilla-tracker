@@ -224,8 +224,7 @@ public extension PhabricatorClient {
         line: Int,
         length: Int,
         isNewFile: Bool,
-        content: String,
-        replyToCommentPHID: String? = nil
+        content: String
     ) async throws -> InlineComment {
         struct Params: Encodable {
             let diffID: Int
@@ -234,7 +233,6 @@ public extension PhabricatorClient {
             let lineLength: Int
             let isNewFile: Bool
             let content: String
-            let replyToCommentPHID: String?
         }
         let raw: DifferentialGetInlinesRaw = try await call(
             method: "differential.createinline",
@@ -244,8 +242,7 @@ public extension PhabricatorClient {
                 lineNumber: line,
                 lineLength: max(0, length - 1),
                 isNewFile: isNewFile,
-                content: content,
-                replyToCommentPHID: replyToCommentPHID
+                content: content
             )
         )
         return raw.toModel()
