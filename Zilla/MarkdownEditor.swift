@@ -29,6 +29,8 @@ struct MarkdownEditor: View {
 
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
+    @State private var showingLinkInsert = false
+    @AppStorage("MarkdownEditor.toolbarVisible") private var toolbarVisible = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -41,13 +43,16 @@ struct MarkdownEditor: View {
                 .marginaliaPreviewRenderer(previewRenderer)
                 .marginaliaConfiguration(toolbarConfiguration)
                 .frame(minHeight: minHeight)
-                .padding(8)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
                 .disabled(isDisabled)
+                .contextMenu {
+                    Toggle(isOn: $toolbarVisible) {
+                        Label("Show Toolbar", systemImage: "richtext.page")
+                    }
+                }
         }
         .sheet(isPresented: $showingLinkPicker) {
             QuickSearchSheet(
@@ -58,6 +63,11 @@ struct MarkdownEditor: View {
         .sheet(isPresented: $showingSearchfoxPicker) {
             SearchfoxPickerSheet { hit, symbol in
                 insertSearchfoxLink(hit, symbol: symbol)
+            }
+        }
+        .sheet(isPresented: $showingLinkInsert) {
+            LinkInsertSheet { label, url in
+                insertMarkdownLink(label: label, url: url)
             }
         }
     }
@@ -83,41 +93,75 @@ struct MarkdownEditor: View {
         }
     }
 
-    /// Replaces Marginalia's plain `.action(.link)` with a custom item that
-    /// opens the bug/user picker, and adds a Searchfox picker right after.
-    /// Both sit inline with bold/italic/etc. so the toolbar stays a single row.
     private var toolbarConfiguration: Marginalia.Configuration {
-        let replacements: [Marginalia.ToolbarItem] = [
-            .custom(
-                id: "linkPicker",
-                label: "Insert bug or user link (⌘K)",
-                systemImage: "link",
-                shortcut: KeyboardShortcut("k", modifiers: .command),
-                action: { showingLinkPicker = true }
-            ),
-            .custom(
-                id: "searchfoxPicker",
-                label: "Insert Searchfox link (⌘F)",
-                systemImage: "magnifyingglass",
-                shortcut: KeyboardShortcut("f", modifiers: .command),
-                action: { showingSearchfoxPicker = true }
+        let menuItems: [Marginalia.ContextMenuItem] = [
+            .init(
+                title: "Show Toolbar",
+                systemImage: "richtext.page",
+                isOn: toolbarVisible,
+                action: { toolbarVisible.toggle() }
             )
         ]
 
-        var items: [Marginalia.ToolbarItem] = []
-        for item in Marginalia.Configuration.defaultToolbar {
-            if case .action(.link) = item {
-                items.append(contentsOf: replacements)
-            } else {
-                items.append(item)
-            }
+        guard toolbarVisible else {
+            return Marginalia.Configuration(toolbar: [], contextMenuItems: menuItems)
         }
-        return Marginalia.Configuration(toolbar: items)
+
+        let toolbar: [Marginalia.ToolbarItem] = [
+            .custom(
+                id: "searchfoxPicker",
+                label: "Searchfox",
+                systemImage: "magnifyingglass",
+                shortcut: KeyboardShortcut("f", modifiers: .command),
+                topLevel: true,
+                action: { showingSearchfoxPicker = true }
+            ),
+            .custom(
+                id: "bugPicker",
+                label: "Insert Bug",
+                systemImage: "ladybug",
+                shortcut: KeyboardShortcut("k", modifiers: .command),
+                topLevel: true,
+                action: { showingLinkPicker = true }
+            ),
+            .divider,
+            .action(.bold),
+            .action(.italic),
+            .action(.strikethrough),
+            .divider,
+            .action(.heading(level: 1)),
+            .action(.heading(level: 2)),
+            .action(.heading(level: 3)),
+            .divider,
+            .action(.unorderedList),
+            .action(.orderedList),
+            .action(.taskList),
+            .action(.blockquote),
+            .divider,
+            .action(.codeSpan),
+            .action(.codeBlock),
+            .action(.horizontalRule),
+            .divider,
+            .custom(
+                id: "linkInsert",
+                label: "Insert Link",
+                systemImage: "link",
+                action: { showingLinkInsert = true }
+            ),
+            .spacer,
+            .action(.togglePreview)
+        ]
+
+        return Marginalia.Configuration(toolbar: toolbar, contextMenuItems: menuItems)
     }
 
     private func insertBugLink(_ bugID: Bug.ID) {
         let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)"
         text += "[bug \(bugID)](\(url))"
+    }
+
+    private func insertMarkdownLink(label: String, url: String) {
+        text += "[\(label)](\(url))"
     }
 
     private func insertUserMention(_ user: User) {
