@@ -10,6 +10,7 @@ import TreeSitterJSON
 import TreeSitterHTML
 import TreeSitterCSS
 import TreeSitterSwift
+import TreeSitterMarkdown
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -124,5 +125,14 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "swift-highlights",
         language: Language(language: tree_sitter_swift())
+    )
+
+    static let markdown = CodeLanguage(
+        id: "markdown",
+        displayName: "Markdown",
+        extensions: ["md", "markdown", "mdx"],
+        bundle: .module,
+        queryResource: "markdown-highlights",
+        language: Language(language: tree_sitter_markdown())
     )
 }

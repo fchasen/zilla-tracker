@@ -45,4 +45,14 @@ final class JavaScriptHighlighterTests: XCTestCase {
         XCTAssertTrue(stringColors.contains(HighlightTheme.light.string),
                       "expected string color among runs, got \(runs.map(\.color))")
     }
+
+    func testMarkdownDetectionByExtension() {
+        XCTAssertEqual(CodeLanguageRegistry.detect(path: "README.md").id, CodeLanguage.markdown.id)
+    }
+
+    func testMarkdownHeadingIsHighlighted() {
+        let highlighter = SliverHighlighter(theme: .light)
+        let runs = highlighter.runs(for: "# Title\n\nbody", language: .markdown)
+        XCTAssertFalse(runs.isEmpty, "expected non-empty highlight runs for markdown")
+    }
 }
