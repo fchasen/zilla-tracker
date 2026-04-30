@@ -17,10 +17,24 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "TreeSitterRemarkup",
+            path: "Vendor/tree-sitter-remarkup",
+            exclude: [
+                "grammar.js",
+                "src/grammar.json",
+                "src/node-types.json",
+            ],
+            sources: ["src/parser.c"],
+            resources: [.copy("queries")],
+            publicHeadersPath: "bindings/swift/TreeSitterRemarkup",
+            cSettings: [.headerSearchPath("src")]
+        ),
+        .target(
             name: "MarginaliaSyntax",
             dependencies: [
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),
-                .product(name: "TreeSitterMarkdown", package: "tree-sitter-markdown")
+                .product(name: "TreeSitterMarkdown", package: "tree-sitter-markdown"),
+                "TreeSitterRemarkup",
             ]
         ),
         .target(
