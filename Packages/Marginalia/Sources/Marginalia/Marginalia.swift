@@ -40,6 +40,7 @@ public struct Marginalia: View {
     @Environment(\.marginaliaPreviewRenderer) private var previewRenderer
 
     @State private var showPreview = false
+    @AppStorage("marginalia.toolbarVisible") private var toolbarVisible = true
     @StateObject private var hosting = MarginaliaHosting()
 
     public init(text: Binding<String>, selection: Binding<NSRange> = .constant(NSRange(location: 0, length: 0))) {
@@ -50,7 +51,7 @@ public struct Marginalia: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             #if os(macOS)
-            if !configuration.toolbar.isEmpty || !configuration.statusItems.isEmpty {
+            if toolbarVisible, !configuration.toolbar.isEmpty || !configuration.statusItems.isEmpty {
                 HStack(spacing: 12) {
                     if !configuration.toolbar.isEmpty {
                         MarginaliaToolbar(
@@ -120,14 +121,7 @@ public struct Marginalia: View {
                 selection: $selection,
                 sizing: configuration.sizing,
                 minHeight: configuration.minHeight,
-                contextMenuItems: configuration.contextMenuItems.map { item in
-                    MarginaliaContextMenuItem(
-                        title: item.title,
-                        systemImage: item.systemImage,
-                        isOn: item.isOn,
-                        action: item.action
-                    )
-                }
+                contextMenuItems: macContextMenuItems()
             )
             .modifier(SizingFrame(sizing: configuration.sizing))
             #else
@@ -146,6 +140,30 @@ public struct Marginalia: View {
                 .frame(maxWidth: .infinity, minHeight: configuration.minHeight)
         }
     }
+
+    #if os(macOS)
+    private func macContextMenuItems() -> [MarginaliaContextMenuItem] {
+        var items: [MarginaliaContextMenuItem] = []
+        if !configuration.toolbar.isEmpty {
+            let visible = toolbarVisible
+            items.append(MarginaliaContextMenuItem(
+                title: "Show Toolbar",
+                systemImage: "richtext.page",
+                isOn: visible,
+                action: { toolbarVisible.toggle() }
+            ))
+        }
+        items.append(contentsOf: configuration.contextMenuItems.map { item in
+            MarginaliaContextMenuItem(
+                title: item.title,
+                systemImage: item.systemImage,
+                isOn: item.isOn,
+                action: item.action
+            )
+        })
+        return items
+    }
+    #endif
 
     #if os(iOS)
     private func makeIOSEditMenuBuilder(controller: EditorController) -> MarginaliaTextViewIOS.EditMenuBuilder? {
