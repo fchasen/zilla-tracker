@@ -10,48 +10,60 @@ struct MarginaliaToolbar: View {
     let perform: (Marginalia.Action) -> Void
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(items.indices, id: \.self) { i in
-                view(for: items[i])
+        let groups = makeGroups(from: items)
+        HStack(spacing: 8) {
+            ForEach(groups.indices, id: \.self) { i in
+                groupView(groups[i])
             }
         }
         .buttonStyle(.borderless)
+        .controlSize(.small)
     }
 
     @ViewBuilder
-    private func view(for item: Marginalia.ToolbarItem) -> some View {
-        switch item {
-        case .divider:
-            Divider().frame(height: 16)
+    private func groupView(_ group: ToolbarGroup) -> some View {
+        switch group {
         case .spacer:
             Spacer()
-        case .action(let action):
-            ToolbarButton(
-                action: action,
-                label: label(for: action),
-                help: help(for: action),
-                shortcut: shortcut(for: action)
-            ) {
-                perform(action)
-            }
-            .disabled(isDisabled(action))
-        case let .custom(_, label, symbol, shortcut, customPerform):
-            Group {
-                if let shortcut {
-                    Button(action: customPerform) {
-                        Image(systemName: symbol)
-                            .frame(width: 24, height: 22)
-                    }
-                    .keyboardShortcut(shortcut)
-                } else {
-                    Button(action: customPerform) {
-                        Image(systemName: symbol)
-                            .frame(width: 24, height: 22)
-                    }
+        case .items(let items):
+            ControlGroup {
+                ForEach(items.indices, id: \.self) { i in
+                    button(for: items[i])
                 }
             }
-            .help(label)
+            .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private func button(for item: Marginalia.ToolbarItem) -> some View {
+        switch item {
+        case .action(.heading(let level)):
+            ToolbarLabelButton(
+                label: "H\(level)",
+                help: help(for: .heading(level: level)),
+                shortcut: shortcut(for: .heading(level: level)),
+                action: { perform(.heading(level: level)) }
+            )
+            .disabled(isDisabled(.heading(level: level)))
+        case .action(let action):
+            ToolbarActionButton(
+                systemImage: label(for: action),
+                help: help(for: action),
+                shortcut: shortcut(for: action),
+                action: { perform(action) }
+            )
+            .disabled(isDisabled(action))
+        case let .custom(_, label, symbol, shortcut, _, customPerform):
+            ToolbarActionButton(
+                systemImage: symbol,
+                help: label,
+                shortcut: shortcut,
+                action: customPerform
+            )
             .disabled(showPreview)
+        case .divider, .spacer:
+            EmptyView()
         }
     }
 
@@ -62,14 +74,12 @@ struct MarginaliaToolbar: View {
         return showPreview
     }
 
-    // MARK: - labels
-
     private func label(for action: Marginalia.Action) -> String {
         switch action {
         case .bold: return "bold"
         case .italic: return "italic"
         case .strikethrough: return "strikethrough"
-        case .heading(let level): return "h\(level)"
+        case .heading(let level): return "h\(level).square"
         case .unorderedList: return "list.bullet"
         case .orderedList: return "list.number"
         case .taskList: return "checklist"
@@ -112,29 +122,83 @@ struct MarginaliaToolbar: View {
     }
 }
 
-private struct ToolbarButton: View {
-    let action: Marginalia.Action
+/// Splits the toolbar list into runs separated by `.divider` (which becomes a
+/// group break) and `.spacer` (which becomes a flexible spacer). Each run of
+/// actions becomes one `ControlGroup` in the rendered toolbar so the buttons
+/// read as related clusters rather than a single flat row.
+private enum ToolbarGroup {
+    case items([Marginalia.ToolbarItem])
+    case spacer
+}
+
+private func makeGroups(from items: [Marginalia.ToolbarItem]) -> [ToolbarGroup] {
+    var groups: [ToolbarGroup] = []
+    var current: [Marginalia.ToolbarItem] = []
+
+    func flush() {
+        if !current.isEmpty {
+            groups.append(.items(current))
+            current.removeAll()
+        }
+    }
+
+    for item in items {
+        switch item {
+        case .divider:
+            flush()
+        case .spacer:
+            flush()
+            groups.append(.spacer)
+        default:
+            current.append(item)
+        }
+    }
+    flush()
+    return groups
+}
+
+private struct ToolbarActionButton: View {
+    let systemImage: String
+    let help: String
+    let shortcut: KeyboardShortcut?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 22, height: 20)
+        }
+        .help(help)
+        .modifier(OptionalShortcut(shortcut: shortcut))
+    }
+}
+
+private struct ToolbarLabelButton: View {
     let label: String
     let help: String
     let shortcut: KeyboardShortcut?
-    let perform: () -> Void
+    let action: () -> Void
 
     var body: some View {
-        Group {
-            if let shortcut {
-                Button(action: perform) {
-                    Image(systemName: label)
-                        .frame(width: 24, height: 22)
-                }
-                .keyboardShortcut(shortcut)
-            } else {
-                Button(action: perform) {
-                    Image(systemName: label)
-                        .frame(width: 24, height: 22)
-                }
-            }
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 22, height: 20)
         }
         .help(help)
+        .modifier(OptionalShortcut(shortcut: shortcut))
+    }
+}
+
+private struct OptionalShortcut: ViewModifier {
+    let shortcut: KeyboardShortcut?
+
+    func body(content: Content) -> some View {
+        if let shortcut {
+            content.keyboardShortcut(shortcut)
+        } else {
+            content
+        }
     }
 }
 

@@ -48,7 +48,8 @@ public struct Marginalia: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            #if os(macOS)
             if !configuration.toolbar.isEmpty || !configuration.statusItems.isEmpty {
                 HStack(spacing: 12) {
                     if !configuration.toolbar.isEmpty {
@@ -76,7 +77,21 @@ public struct Marginalia: View {
                         )
                     }
                 }
+                .padding(6)
             }
+            #else
+            if !configuration.statusItems.isEmpty {
+                HStack(spacing: 12) {
+                    Spacer()
+                    MarginaliaStatusBar(
+                        items: configuration.statusItems,
+                        text: text,
+                        selection: selection
+                    )
+                }
+                .padding(6)
+            }
+            #endif
             if showPreview, let renderer = previewRenderer {
                 MarginaliaPreview(source: text, dialect: dialect, renderer: renderer)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -104,7 +119,15 @@ public struct Marginalia: View {
                 text: $text,
                 selection: $selection,
                 sizing: configuration.sizing,
-                minHeight: configuration.minHeight
+                minHeight: configuration.minHeight,
+                contextMenuItems: configuration.contextMenuItems.map { item in
+                    MarginaliaContextMenuItem(
+                        title: item.title,
+                        systemImage: item.systemImage,
+                        isOn: item.isOn,
+                        action: item.action
+                    )
+                }
             )
             .modifier(SizingFrame(sizing: configuration.sizing))
             #else
@@ -113,7 +136,8 @@ public struct Marginalia: View {
                 text: $text,
                 selection: $selection,
                 sizing: configuration.sizing,
-                minHeight: configuration.minHeight
+                minHeight: configuration.minHeight,
+                editMenuBuilder: makeIOSEditMenuBuilder(controller: controller)
             )
             .modifier(SizingFrame(sizing: configuration.sizing))
             #endif
@@ -122,7 +146,122 @@ public struct Marginalia: View {
                 .frame(maxWidth: .infinity, minHeight: configuration.minHeight)
         }
     }
+
+    #if os(iOS)
+    private func makeIOSEditMenuBuilder(controller: EditorController) -> MarginaliaTextViewIOS.EditMenuBuilder? {
+        let toolbar = configuration.toolbar
+        guard !toolbar.isEmpty else { return nil }
+        let canPreview = previewRenderer != nil
+        let textBinding = $text
+        let showPreviewBinding = $showPreview
+        let isShowingPreview = showPreview
+        return { _, suggested in
+            var topLevel: [UIAction] = []
+            var sections: [UIMenuElement] = []
+            var current: [UIAction] = []
+            func flush() {
+                if !current.isEmpty {
+                    sections.append(UIMenu(title: "", options: .displayInline, children: current))
+                    current.removeAll()
+                }
+            }
+            for item in toolbar {
+                switch item {
+                case .action(.togglePreview):
+                    guard canPreview else { continue }
+                    flush()
+                    topLevel.append(UIAction(
+                        title: editMenuTitle(for: .togglePreview, showPreview: isShowingPreview),
+                        image: UIImage(systemName: editMenuSymbol(for: .togglePreview, showPreview: isShowingPreview))
+                    ) { _ in
+                        MarginaliaToolbarActions.perform(
+                            .togglePreview,
+                            controller: controller,
+                            text: textBinding,
+                            showPreview: showPreviewBinding
+                        )
+                    })
+                case .action(let action):
+                    current.append(UIAction(
+                        title: editMenuTitle(for: action, showPreview: isShowingPreview),
+                        image: UIImage(systemName: editMenuSymbol(for: action, showPreview: isShowingPreview))
+                    ) { _ in
+                        MarginaliaToolbarActions.perform(
+                            action,
+                            controller: controller,
+                            text: textBinding,
+                            showPreview: showPreviewBinding
+                        )
+                    })
+                case .custom(_, let label, let symbol, _, let isTopLevel, let custom):
+                    let action = UIAction(
+                        title: label,
+                        image: UIImage(systemName: symbol),
+                        handler: { _ in custom() }
+                    )
+                    if isTopLevel {
+                        flush()
+                        topLevel.append(action)
+                    } else {
+                        current.append(action)
+                    }
+                case .divider, .spacer:
+                    flush()
+                }
+            }
+            flush()
+            var children: [UIMenuElement] = suggested
+            children.append(contentsOf: topLevel)
+            if !sections.isEmpty {
+                children.append(UIMenu(
+                    title: "Format",
+                    image: UIImage(systemName: "textformat"),
+                    children: sections
+                ))
+            }
+            return UIMenu(children: children)
+        }
+    }
+    #endif
 }
+
+#if os(iOS)
+private func editMenuTitle(for action: Marginalia.Action, showPreview: Bool) -> String {
+    switch action {
+    case .bold: return "Bold"
+    case .italic: return "Italic"
+    case .strikethrough: return "Strikethrough"
+    case .heading(let level): return "Heading \(level)"
+    case .unorderedList: return "Bullet List"
+    case .orderedList: return "Numbered List"
+    case .taskList: return "Task List"
+    case .blockquote: return "Quote"
+    case .codeSpan: return "Inline Code"
+    case .codeBlock: return "Code Block"
+    case .link: return "Link"
+    case .horizontalRule: return "Horizontal Rule"
+    case .togglePreview: return showPreview ? "Edit" : "Preview"
+    }
+}
+
+private func editMenuSymbol(for action: Marginalia.Action, showPreview: Bool) -> String {
+    switch action {
+    case .bold: return "bold"
+    case .italic: return "italic"
+    case .strikethrough: return "strikethrough"
+    case .heading(let level): return "h\(level).square"
+    case .unorderedList: return "list.bullet"
+    case .orderedList: return "list.number"
+    case .taskList: return "checklist"
+    case .blockquote: return "text.quote"
+    case .codeSpan: return "chevron.left.slash.chevron.right"
+    case .codeBlock: return "curlybraces"
+    case .link: return "link"
+    case .horizontalRule: return "minus"
+    case .togglePreview: return showPreview ? "pencil" : "eye"
+    }
+}
+#endif
 
 /// In `.fitsContent` mode the representable reports its content height via
 /// `intrinsicContentSize`/`sizeThatFits`, so the SwiftUI frame must NOT be

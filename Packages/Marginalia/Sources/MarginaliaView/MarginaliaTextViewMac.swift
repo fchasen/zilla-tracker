@@ -18,19 +18,22 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
     public let controller: EditorController
     public let sizing: EditorSizing
     public let minHeight: CGFloat
+    public let contextMenuItems: [MarginaliaContextMenuItem]
 
     public init(
         controller: EditorController,
         text: Binding<String>,
         selection: Binding<NSRange>,
         sizing: EditorSizing = .fitsContent,
-        minHeight: CGFloat = 96
+        minHeight: CGFloat = 96,
+        contextMenuItems: [MarginaliaContextMenuItem] = []
     ) {
         self.controller = controller
         self._text = text
         self._selection = selection
         self.sizing = sizing
         self.minHeight = minHeight
+        self.contextMenuItems = contextMenuItems
     }
 
     public func makeNSView(context: Context) -> NSView {
@@ -46,6 +49,7 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
+        textView.drawsBackground = false
         textView.font = controller.theme.bodyFont
         textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.minSize = NSSize(width: 0, height: 0)
@@ -187,6 +191,33 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             }
         }
 
+        public func textView(_ view: NSTextView,
+                             menu: NSMenu,
+                             for event: NSEvent,
+                             at charIndex: Int) -> NSMenu? {
+            guard !parent.contextMenuItems.isEmpty else { return menu }
+            menu.addItem(NSMenuItem.separator())
+            for item in parent.contextMenuItems {
+                let menuItem = NSMenuItem(
+                    title: item.title,
+                    action: #selector(invokeContextMenuItem(_:)),
+                    keyEquivalent: ""
+                )
+                menuItem.target = self
+                menuItem.state = item.isOn ? .on : .off
+                if let symbol = item.systemImage {
+                    menuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+                }
+                menuItem.representedObject = ContextMenuActionBox(item.action)
+                menu.addItem(menuItem)
+            }
+            return menu
+        }
+
+        @objc private func invokeContextMenuItem(_ sender: NSMenuItem) {
+            (sender.representedObject as? ContextMenuActionBox)?.action()
+        }
+
         public func textView(_ textView: NSTextView,
                              doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
@@ -239,6 +270,13 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             lastAppliedSelection = parent.selection
         }
     }
+}
+
+/// Reference wrapper for a `() -> Void` closure so it can ride along on
+/// `NSMenuItem.representedObject` (which requires an Objective-C class).
+private final class ContextMenuActionBox {
+    let action: () -> Void
+    init(_ action: @escaping () -> Void) { self.action = action }
 }
 
 /// `NSTextView` subclass that reports its content height as

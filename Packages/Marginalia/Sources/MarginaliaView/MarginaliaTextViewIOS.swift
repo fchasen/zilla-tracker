@@ -10,24 +10,29 @@ import MarginaliaRendering
 /// controller's TK2 stack — that way attribute updates the controller pushes
 /// into its `NSTextStorage` are automatically reflected in the view.
 public struct MarginaliaTextViewIOS: UIViewRepresentable {
+    public typealias EditMenuBuilder = @MainActor (NSRange, [UIMenuElement]) -> UIMenu?
+
     @Binding public var text: String
     @Binding public var selection: NSRange
     public let controller: EditorController
     public let sizing: EditorSizing
     public let minHeight: CGFloat
+    public let editMenuBuilder: EditMenuBuilder?
 
     public init(
         controller: EditorController,
         text: Binding<String>,
         selection: Binding<NSRange>,
         sizing: EditorSizing = .fitsContent,
-        minHeight: CGFloat = 96
+        minHeight: CGFloat = 96,
+        editMenuBuilder: EditMenuBuilder? = nil
     ) {
         self.controller = controller
         self._text = text
         self._selection = selection
         self.sizing = sizing
         self.minHeight = minHeight
+        self.editMenuBuilder = editMenuBuilder
     }
 
     public func makeUIView(context: Context) -> UITextView {
@@ -136,6 +141,12 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
             if parent.selection != r {
                 parent.selection = r
             }
+        }
+
+        public func textView(_ textView: UITextView,
+                             editMenuForTextIn range: NSRange,
+                             suggestedActions: [UIMenuElement]) -> UIMenu? {
+            parent.editMenuBuilder?(range, suggestedActions)
         }
 
         public func textView(_ textView: UITextView,
