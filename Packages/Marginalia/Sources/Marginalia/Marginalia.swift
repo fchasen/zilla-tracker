@@ -14,18 +14,18 @@ import UIKit
 ///
 /// ```swift
 /// Marginalia(text: $draft.bugDescription, selection: $selection)
-///     .marginaliaDialect(.commonMark)
-///     .marginaliaInlineContentProvider { content in
+///     .dialect(.commonMark)
+///     .inlineContentProvider { content in
 ///         MarginaliaChip.attachment(for: content)
 ///     }
-///     .marginaliaPreviewRenderer { source, dialect in
+///     .previewRenderer { source, dialect in
 ///         AttributedString(source)
 ///     }
 ///     .frame(minHeight: 240)
 /// ```
 ///
 /// `Marginalia` is intentionally a **value** view: bindings come in via
-/// `init`, configuration comes in via the `.marginalia*` modifiers (which
+/// `init`, configuration comes in via the editor modifiers (which
 /// flow through SwiftUI's environment). Everything else (the `EditorController`,
 /// the TextKit 2 stack, the parser, the highlighter) is an implementation
 /// detail held in `@StateObject` storage so it survives view recreation.

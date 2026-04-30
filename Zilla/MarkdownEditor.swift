@@ -4,76 +4,48 @@ import Marginalia
 import PhabricatorKit
 import SearchfoxKit
 
-enum TextDialect {
-    case commonMark
-    case remarkup
-}
-
 struct MarkdownEditor: View {
     @Binding var text: String
-    var headerLabel: String? = nil
     var minHeight: CGFloat = 96
     var isDisabled: Bool = false
-    var dialect: TextDialect = .commonMark
+    var dialect: Highlighter.Dialect = .commonMark
 
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let headerLabel {
-                Text(headerLabel)
-                    .font(.headline)
-            }
-            Marginalia(text: $text)
-                .marginaliaDialect(marginaliaDialect)
-                .marginaliaPreviewRenderer(previewRenderer)
-                .marginaliaConfiguration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
-                .frame(minHeight: minHeight)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                )
-                .disabled(isDisabled)
-        }
-        .sheet(isPresented: $showingLinkPicker) {
-            QuickSearchSheet(
-                onPickBug: { bugID in insertBugLink(bugID) },
-                onPickUser: { user in insertUserMention(user) }
+        Marginalia(text: $text)
+            .dialect(dialect)
+            .defaultPreview(normalize: { source, dialect in
+                switch dialect {
+                case .remarkup:   return Remarkup.toCommonMark(source)
+                case .commonMark: return source
+                }
+            })
+            .configuration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
+            .frame(minHeight: minHeight)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
             )
-        }
-        .sheet(isPresented: $showingSearchfoxPicker) {
-            SearchfoxPickerSheet { hit, symbol in
-                insertSearchfoxLink(hit, symbol: symbol)
+            .disabled(isDisabled)
+            .sheet(isPresented: $showingLinkPicker) {
+                QuickSearchSheet(
+                    onPickBug: { bugID in insertBugLink(bugID) },
+                    onPickUser: { user in insertUserMention(user) }
+                )
             }
-        }
-        .sheet(isPresented: $showingLinkInsert) {
-            LinkInsertSheet { label, url in
-                insertMarkdownLink(label: label, url: url)
+            .sheet(isPresented: $showingSearchfoxPicker) {
+                SearchfoxPickerSheet { hit, symbol in
+                    insertSearchfoxLink(hit, symbol: symbol)
+                }
             }
-        }
-    }
-
-    private var marginaliaDialect: Highlighter.Dialect {
-        switch dialect {
-        case .commonMark: return .commonMark
-        case .remarkup:   return .remarkup
-        }
-    }
-
-    private var previewRenderer: MarginaliaPreviewRenderer {
-        { source, dialect in
-            let normalized: String
-            switch dialect {
-            case .commonMark: normalized = source
-            case .remarkup:   normalized = Remarkup.toCommonMark(source)
+            .sheet(isPresented: $showingLinkInsert) {
+                LinkInsertSheet { label, url in
+                    insertMarkdownLink(label: label, url: url)
+                }
             }
-            if let attr = try? AttributedString(markdown: normalized) {
-                return attr
-            }
-            return AttributedString(normalized)
-        }
     }
 
     private var toolbar: [Marginalia.ToolbarItem] {
@@ -104,12 +76,7 @@ struct MarkdownEditor: View {
             action: { showingLinkInsert = true }
         )
 
-        let defaults: [Marginalia.ToolbarItem] = Marginalia.Configuration.defaultToolbar.map { item in
-            if case .action(.link) = item { return linkInsert }
-            return item
-        }
-
-        return leading + defaults
+        return leading + Marginalia.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
     }
 
     private func insertBugLink(_ bugID: Bug.ID) {

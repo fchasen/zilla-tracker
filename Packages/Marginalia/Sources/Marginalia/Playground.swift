@@ -22,13 +22,8 @@ public struct MarginaliaPlayground: View {
             VStack(alignment: .leading, spacing: 8) {
                 fixturePicker
                 Marginalia(text: $text)
-                    .marginaliaDialect(dialect)
-                    .marginaliaPreviewRenderer { source, _ in
-                        if let attr = try? AttributedString(markdown: source) {
-                            return attr
-                        }
-                        return AttributedString(source)
-                    }
+                    .dialect(dialect)
+                    .defaultPreview()
                     .frame(minHeight: 320)
             }
             .padding(12)

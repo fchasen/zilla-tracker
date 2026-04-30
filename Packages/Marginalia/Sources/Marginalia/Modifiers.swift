@@ -57,27 +57,36 @@ extension EnvironmentValues {
 // MARK: - public modifiers
 
 extension View {
-    public func marginaliaDialect(_ dialect: Highlighter.Dialect) -> some View {
+    public func dialect(_ dialect: Highlighter.Dialect) -> some View {
         environment(\.marginaliaDialect, dialect)
     }
 
-    public func marginaliaTheme(_ theme: MarginaliaTheme) -> some View {
+    public func theme(_ theme: MarginaliaTheme) -> some View {
         environment(\.marginaliaTheme, theme)
     }
 
-    public func marginaliaConfiguration(_ configuration: Marginalia.Configuration) -> some View {
+    public func configuration(_ configuration: Marginalia.Configuration) -> some View {
         environment(\.marginaliaConfiguration, configuration)
     }
 
-    public func marginaliaInlineContentProvider(
+    public func inlineContentProvider(
         _ provider: @escaping (MarginaliaInlineContent) -> NSTextAttachment?
     ) -> some View {
         environment(\.marginaliaInlineContentProvider, provider)
     }
 
-    public func marginaliaPreviewRenderer(
+    public func previewRenderer(
         _ renderer: @escaping MarginaliaPreviewRenderer
     ) -> some View {
         environment(\.marginaliaPreviewRenderer, renderer)
+    }
+
+    public func defaultPreview(
+        normalize: @escaping @Sendable (String, Highlighter.Dialect) -> String = { source, _ in source }
+    ) -> some View {
+        previewRenderer { source, dialect in
+            let normalized = normalize(source, dialect)
+            return (try? AttributedString(markdown: normalized)) ?? AttributedString(normalized)
+        }
     }
 }

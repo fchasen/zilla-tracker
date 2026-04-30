@@ -1,4 +1,5 @@
 import SwiftUI
+import Marginalia
 import PhabricatorKit
 
 struct RevisionCommentComposer: View {
@@ -13,7 +14,6 @@ struct RevisionCommentComposer: View {
             InspectorSectionHeader(title: "Add comment")
             MarkdownEditor(
                 text: $draftText,
-                headerLabel: nil,
                 isDisabled: isPosting,
                 dialect: .remarkup
             )

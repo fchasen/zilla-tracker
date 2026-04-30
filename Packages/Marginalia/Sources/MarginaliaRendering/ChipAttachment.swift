@@ -9,7 +9,7 @@ import UIKit
 /// (rounded pill with a label and SF Symbol) for inline rich content.
 ///
 /// The host wires `MarginaliaInlineContent` through
-/// `.marginaliaInlineContentProvider(_:)`; Marginalia turns each one into one
+/// `.inlineContentProvider(_:)`; Marginalia turns each one into one
 /// of these attachments.
 public enum ChipAttachment {
     public static func make(for content: MarginaliaInlineContent) -> NSTextAttachment {

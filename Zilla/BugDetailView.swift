@@ -2326,9 +2326,10 @@ private struct CommentComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text("Add a comment")
+                .font(.headline)
             MarkdownEditor(
                 text: $text,
-                headerLabel: "Add a comment",
                 isDisabled: isPosting
             )
 
