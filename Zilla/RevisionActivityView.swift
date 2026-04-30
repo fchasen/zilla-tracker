@@ -163,13 +163,13 @@ struct ActivityRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 inlineFileLink(inlineDescriptor)
                 if let body = primaryCommentBody, !body.isEmpty {
-                    StructuredText(markdown: body)
+                    RemarkupText(source: body)
                         .font(.callout)
                         .textSelection(.enabled)
                 }
             }
         } else if let body = primaryCommentBody {
-            StructuredText(markdown: body)
+            RemarkupText(source: body)
                 .font(.callout)
                 .textSelection(.enabled)
         }

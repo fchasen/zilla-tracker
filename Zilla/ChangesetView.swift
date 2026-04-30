@@ -327,7 +327,7 @@ struct OutdatedInlineRow: View {
                     Text(user.realName ?? user.userName)
                         .font(.callout.weight(.medium))
                 }
-                Text(inline.content)
+                RemarkupText(source: inline.content)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Button("View in Browser") {

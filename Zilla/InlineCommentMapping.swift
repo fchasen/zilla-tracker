@@ -69,7 +69,7 @@ extension Array where Element == InlineComment {
                 return AnnotationMetadata.Comment(
                     id: inline.phid,
                     author: author?.realName ?? author?.userName ?? "Unknown",
-                    body: inline.content,
+                    body: Remarkup.toCommonMark(inline.content),
                     avatarURL: author?.image?.absoluteString,
                     subtitle: subtitleParts.isEmpty ? nil : subtitleParts.joined(separator: " · ")
                 )
@@ -98,7 +98,7 @@ extension Array where Element == InlineComment {
                 metadata: AnnotationMetadata(
                     id: root.phid,
                     author: rootAuthor?.realName ?? rootAuthor?.userName ?? "Unknown",
-                    body: root.content,
+                    body: Remarkup.toCommonMark(root.content),
                     avatarURL: rootAuthor?.image?.absoluteString,
                     subtitle: rootSubtitleParts.isEmpty ? nil : rootSubtitleParts.joined(separator: " · "),
                     comments: comments

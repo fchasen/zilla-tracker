@@ -98,7 +98,7 @@ struct RevisionDetailView: View {
                     RevisionHeader(revision: revision)
                     if let summary = revision.fields.summary, !summary.isEmpty {
                         Divider()
-                        StructuredText(markdown: summary)
+                        RemarkupText(source: summary)
                             .textSelection(.enabled)
                     }
                     Divider()
