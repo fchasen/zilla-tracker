@@ -3,6 +3,7 @@ import SwiftTreeSitter
 import TreeSitterJavaScript
 import TreeSitterTypeScript
 import TreeSitterPython
+import TreeSitterRust
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -37,5 +38,17 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "python-highlights",
         language: Language(language: tree_sitter_python())
+    )
+
+    static let rust = CodeLanguage(
+        id: "rust",
+        displayName: "Rust",
+        extensions: ["rs"],
+        lineComment: "//",
+        blockCommentOpen: "/*",
+        blockCommentClose: "*/",
+        bundle: .module,
+        queryResource: "rust-highlights",
+        language: Language(language: tree_sitter_rust())
     )
 }

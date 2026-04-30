@@ -4,7 +4,8 @@ public enum CodeLanguageRegistry {
     public static let all: [CodeLanguage] = [
         .javascript,
         .typescript,
-        .python
+        .python,
+        .rust
     ]
 
     public static func detect(path: String) -> CodeLanguage {
