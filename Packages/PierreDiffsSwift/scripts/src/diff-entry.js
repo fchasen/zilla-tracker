@@ -170,23 +170,6 @@ function injectShadowStyle(root, markerAttr, cssText) {
 }
 
 /**
- * Hides @pierre/diffs' built-in file headers (`[data-diffs-header]`) so they
- * don't duplicate the host-rendered header. Direct hide in light DOM, plus a
- * style sheet inside every shadow root.
- */
-function hidePierreHeaders(root) {
-  if (!root || !root.querySelectorAll) return;
-  root.querySelectorAll('[data-diffs-header]').forEach((el) => {
-    el.style.display = 'none';
-  });
-  injectShadowStyle(
-    root,
-    'data-zilla-hide-headers',
-    '[data-diffs-header] { display: none !important; }'
-  );
-}
-
-/**
  * On touch devices Pierre's hover-only gutter "+" affordance never appears,
  * because there's no `:hover` to trigger it. Force it visible so iOS users
  * can tap to start an inline comment.
@@ -199,6 +182,142 @@ function applyTouchAffordances(root) {
     }
   `;
   injectShadowStyle(root, 'data-zilla-touch-affordances', css);
+}
+
+/**
+ * Minimal markdown-ish renderer for inline-comment bodies. Supports
+ * paragraphs, blockquotes, ATX headers, fenced code blocks, inline code,
+ * markdown links, bold/italic/strike, plus a `<u>` passthrough used by the
+ * Remarkup→CommonMark converter for underline.
+ */
+function renderInlineMarkdown(text) {
+  if (!text) return '';
+  const escapeHtml = (s) => s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const escapeAttr = (s) => s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;');
+
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let para = [];
+  let quote = [];
+  let codeFence = null;
+  let codeLang = '';
+  let codeBuf = [];
+
+  const flushPara = () => {
+    if (para.length) {
+      out.push('<p>' + para.map(processInline).join('<br>') + '</p>');
+      para = [];
+    }
+  };
+  const flushQuote = () => {
+    if (quote.length) {
+      out.push('<blockquote>' + quote.map(processInline).join('<br>') + '</blockquote>');
+      quote = [];
+    }
+  };
+
+  for (const line of lines) {
+    const fenceMatch = line.match(/^\s*(```|~~~)(.*)$/);
+    if (fenceMatch) {
+      if (codeFence === null) {
+        flushPara();
+        flushQuote();
+        codeFence = fenceMatch[1];
+        codeLang = fenceMatch[2].trim();
+      } else if (line.includes(codeFence)) {
+        const langClass = codeLang ? ` class="language-${escapeAttr(codeLang)}"` : '';
+        out.push(`<pre><code${langClass}>${escapeHtml(codeBuf.join('\n'))}</code></pre>`);
+        codeFence = null;
+        codeLang = '';
+        codeBuf = [];
+      }
+      continue;
+    }
+    if (codeFence !== null) {
+      codeBuf.push(line);
+      continue;
+    }
+    const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headerMatch) {
+      flushPara();
+      flushQuote();
+      const level = headerMatch[1].length;
+      out.push(`<h${level}>${processInline(headerMatch[2])}</h${level}>`);
+      continue;
+    }
+    if (line.startsWith('> ')) {
+      flushPara();
+      quote.push(line.slice(2));
+      continue;
+    }
+    if (line.trim() === '') {
+      flushPara();
+      flushQuote();
+      continue;
+    }
+    flushQuote();
+    para.push(line);
+  }
+  if (codeFence !== null && codeBuf.length) {
+    out.push(`<pre><code>${escapeHtml(codeBuf.join('\n'))}</code></pre>`);
+  }
+  flushPara();
+  flushQuote();
+  return out.join('');
+
+  function processInline(line) {
+    const codeSpans = [];
+    const safe = [];
+    let s = line;
+
+    s = s.replace(/`([^`]+)`/g, (_m, c) => {
+      codeSpans.push('<code>' + escapeHtml(c) + '</code>');
+      return `CS${codeSpans.length - 1}`;
+    });
+
+    s = s.replace(/<u>([\s\S]*?)<\/u>/g, (_m, c) => {
+      safe.push('<u>' + escapeHtml(c) + '</u>');
+      return `SF${safe.length - 1}`;
+    });
+
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, t, u) => {
+      safe.push(`<a href="${escapeAttr(u)}">${escapeHtml(t)}</a>`);
+      return `SF${safe.length - 1}`;
+    });
+
+    s = escapeHtml(s);
+
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+
+    s = s.replace(/CS(\d+)/g, (_m, i) => codeSpans[+i]);
+    s = s.replace(/SF(\d+)/g, (_m, i) => safe[+i]);
+
+    return s;
+  }
+}
+
+/**
+ * Wires up link clicks inside a body element so navigation flows through the
+ * Swift bridge instead of WKWebView's default load.
+ */
+function attachLinkClickHandlers(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('a[href]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const url = a.getAttribute('href') || '';
+      postToSwift('linkClicked', { url });
+    });
+  });
 }
 
 /**
@@ -363,7 +482,8 @@ function createAnnotationDOM(annotation) {
     } else {
       const body = document.createElement('div');
       body.className = 'pierre-annotation-body';
-      body.textContent = comment.body || '';
+      body.innerHTML = renderInlineMarkdown(comment.body || '');
+      attachLinkClickHandlers(body);
       content.appendChild(body);
     }
 
@@ -408,7 +528,6 @@ window.pierreBridge = {
       // Clear container
       const container = getContainer();
       container.innerHTML = '';
-      hidePierreHeaders(document);
       applyTouchAffordances(document);
 
       // Update current settings
@@ -624,11 +743,9 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
 });
 
 
-// Hide built-in file headers and apply touch-only affordances as soon as
-// Pierre attaches its DOM.
+// Apply touch-only affordances as soon as Pierre attaches its DOM.
 (function() {
   const tick = () => {
-    hidePierreHeaders(document);
     applyTouchAffordances(document);
   };
   tick();

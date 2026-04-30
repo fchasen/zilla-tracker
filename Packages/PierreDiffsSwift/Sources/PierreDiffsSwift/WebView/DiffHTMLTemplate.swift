@@ -83,7 +83,7 @@ enum DiffHTMLTemplate {
   /// painted bottom — what the user perceives as the diff's height.
   private static let contentHeightObserverScript = """
   (function() {
-    const PADDING_BOTTOM = 8;
+    const PADDING_BOTTOM = 6;
     const measure = () => {
       // Walk only direct children of <body>; Pierre's custom element + our
       // any sibling annotations all live there. The lowest bounding rect
@@ -213,21 +213,6 @@ enum DiffHTMLTemplate {
   /* Selection styling */
   ::selection {
     background-color: rgba(59, 130, 246, 0.3);
-  }
-
-  /* Hide @pierre/diffs' built-in file headers — the host renders its own
-     header row outside the WebView, so showing them again is redundant. */
-  .diffs-header,
-  .diff-header,
-  .diff-file-header {
-    display: none !important;
-  }
-
-  /* A top inset that matches Pierre's default side gap (--diffs-gap-fallback
-     is 8px) so the first hunk doesn't butt up against the host's disclosure
-     row and the spacing reads as symmetric with the left/right gutter. */
-  #diff-container {
-    padding-top: 8px;
   }
 
   /* Inline annotation styles */
