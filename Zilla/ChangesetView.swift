@@ -151,7 +151,8 @@ struct ChangesetView: View {
             onAnnotationClick: handleAnnotationClick,
             onAnnotationDelete: handleAnnotationDelete,
             onAnnotationDraftSubmit: handleDraftSubmit,
-            onAnnotationDraftCancel: handleDraftCancel
+            onAnnotationDraftCancel: handleDraftCancel,
+            onLinkClick: handleLinkClick
         )
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
@@ -166,6 +167,15 @@ struct ChangesetView: View {
             latestDiffID: latestDiffID,
             activeComposer: workspace.activeInlineComposer
         )
+    }
+
+    private func handleLinkClick(_ rawURL: String) {
+        guard let url = URL(string: rawURL) else { return }
+        if let id = bugzillaBugID(from: url) {
+            workspace.selectedBugID = id
+        } else {
+            openURL(url)
+        }
     }
 
     private func handleLineClick(position: LineClickPosition, localPoint: CGPoint) {

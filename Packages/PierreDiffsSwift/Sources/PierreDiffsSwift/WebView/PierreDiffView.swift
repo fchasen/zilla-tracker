@@ -45,6 +45,7 @@ public struct PierreDiffView {
   var onAnnotationDraftCancel: ((String, String, String, Int) -> Void)?
   var onContentHeightChange: ((CGFloat) -> Void)?
   var onReady: (() -> Void)?
+  var onLinkClick: ((String) -> Void)?
 
   // MARK: - Environment
 
@@ -68,7 +69,8 @@ public struct PierreDiffView {
     onAnnotationDraftCancel: ((String, String, String, Int) -> Void)? = nil,
     onContentHeightChange: ((CGFloat) -> Void)? = nil,
     onExpandRequest: (() -> Void)? = nil,
-    onReady: (() -> Void)? = nil
+    onReady: (() -> Void)? = nil,
+    onLinkClick: ((String) -> Void)? = nil
   ) {
     self.oldContent = oldContent
     self.newContent = newContent
@@ -86,6 +88,7 @@ public struct PierreDiffView {
     self.onContentHeightChange = onContentHeightChange
     self.onExpandRequest = onExpandRequest
     self.onReady = onReady
+    self.onLinkClick = onLinkClick
   }
 
   // MARK: - Coordinator
@@ -101,7 +104,8 @@ public struct PierreDiffView {
       onAnnotationDelete: onAnnotationDelete,
       onAnnotationDraftSubmit: onAnnotationDraftSubmit,
       onAnnotationDraftCancel: onAnnotationDraftCancel,
-      onContentHeightChange: onContentHeightChange
+      onContentHeightChange: onContentHeightChange,
+      onLinkClick: onLinkClick
     )
   }
 

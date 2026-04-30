@@ -55,6 +55,10 @@ public final class DiffWebViewCoordinator: NSObject {
   /// containing view so the diff renders at full intrinsic height.
   var onContentHeightChange: ((CGFloat) -> Void)?
 
+  /// Callback when a link inside an annotation body is clicked. The string is
+  /// the raw href as it appeared in the markdown source.
+  var onLinkClick: ((String) -> Void)?
+
   /// Whether the web view has finished loading and is ready
   private(set) var isReady = false
 
@@ -83,7 +87,8 @@ public final class DiffWebViewCoordinator: NSObject {
     onAnnotationDelete: ((String, String, Int) -> Void)? = nil,
     onAnnotationDraftSubmit: ((String, String, String, String, Int) -> Void)? = nil,
     onAnnotationDraftCancel: ((String, String, String, Int) -> Void)? = nil,
-    onContentHeightChange: ((CGFloat) -> Void)? = nil
+    onContentHeightChange: ((CGFloat) -> Void)? = nil,
+    onLinkClick: ((String) -> Void)? = nil
   ) {
     self.onLineClick = onLineClick
     self.onLineClickWithPosition = onLineClickWithPosition
@@ -95,6 +100,7 @@ public final class DiffWebViewCoordinator: NSObject {
     self.onAnnotationDraftSubmit = onAnnotationDraftSubmit
     self.onAnnotationDraftCancel = onAnnotationDraftCancel
     self.onContentHeightChange = onContentHeightChange
+    self.onLinkClick = onLinkClick
     super.init()
   }
 
@@ -366,6 +372,9 @@ public final class DiffWebViewCoordinator: NSObject {
     case .systemThemeChanged(let isDark):
       DiffLogger.info("System theme changed: isDark=\(isDark)")
 
+    case .linkClicked(let url):
+      onLinkClick?(url)
+
     case .error(let errorMessage):
       DiffLogger.error("DiffWebViewCoordinator: JS error: \(errorMessage)")
     }
@@ -465,6 +474,10 @@ extension DiffWebViewCoordinator: WKScriptMessageHandler {
     case "systemThemeChanged":
       let isDark = body["isDark"] as? Bool ?? false
       event = .systemThemeChanged(isDark: isDark)
+
+    case "linkClicked":
+      let url = body["url"] as? String ?? ""
+      event = .linkClicked(url: url)
 
     case "error":
       let errorMessage = body["message"] as? String ?? "Unknown error"

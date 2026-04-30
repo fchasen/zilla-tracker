@@ -87,6 +87,7 @@ struct RevisionDetailView: View {
                 }
             }
         }
+        .interceptingMozillaLinks(workspace: workspace)
     }
 
     @ViewBuilder

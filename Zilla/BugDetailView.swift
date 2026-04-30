@@ -154,6 +154,7 @@ struct BugDetailView: View {
                 }
             }
         }
+        .interceptingMozillaLinks(workspace: workspace)
         .task(id: bugID) { await reload() }
     }
 

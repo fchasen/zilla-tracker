@@ -42,6 +42,10 @@ enum DiffWebViewEvent {
   /// container to this value to avoid an inner scrollbar.
   case contentHeightChanged(height: CGFloat)
 
+  /// A link inside an annotation body was clicked. The host decides routing
+  /// (open externally, navigate in-app, etc).
+  case linkClicked(url: String)
+
   /// An error occurred in the JavaScript layer
   case error(message: String)
 }
