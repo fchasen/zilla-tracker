@@ -353,17 +353,6 @@ function createAnnotationDOM(annotation) {
     if (index > 0) row.classList.add('pierre-annotation-reply');
     if (isEditable) row.classList.add('pierre-annotation-editor');
 
-    const avatar = document.createElement('div');
-    avatar.className = 'pierre-annotation-avatar';
-    if (comment.avatarURL) {
-      const img = document.createElement('img');
-      img.src = comment.avatarURL;
-      img.alt = comment.author || '';
-      avatar.appendChild(img);
-    } else {
-      avatar.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4Z"/></svg>';
-    }
-
     const content = document.createElement('div');
     content.className = 'pierre-annotation-content';
 
@@ -487,7 +476,6 @@ function createAnnotationDOM(annotation) {
       content.appendChild(body);
     }
 
-    row.appendChild(avatar);
     row.appendChild(content);
     container.appendChild(row);
   });

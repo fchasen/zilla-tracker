@@ -240,32 +240,6 @@ enum DiffHTMLTemplate {
     align-items: flex-start;
   }
 
-  .pierre-annotation-avatar {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(96, 165, 250, 0.15);
-    color: rgba(96, 165, 250, 0.8);
-    margin-top: 1px;
-  }
-
-  .pierre-annotation-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 50%;
-  }
-
-  .pierre-annotation-avatar svg {
-    width: 14px;
-    height: 14px;
-  }
-
   .pierre-annotation-content {
     flex: 1;
     min-width: 0;
@@ -448,11 +422,6 @@ enum DiffHTMLTemplate {
       background-color: rgba(36, 38, 46, 0.95);
       border-color: rgba(200, 200, 220, 0.18);
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
-    }
-
-    .pierre-annotation-avatar {
-      background-color: rgba(96, 165, 250, 0.12);
-      color: rgba(96, 165, 250, 0.7);
     }
   }
   """
