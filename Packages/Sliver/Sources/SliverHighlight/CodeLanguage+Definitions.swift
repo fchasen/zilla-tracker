@@ -2,6 +2,7 @@ import Foundation
 import SwiftTreeSitter
 import TreeSitterJavaScript
 import TreeSitterTypeScript
+import TreeSitterPython
 
 public extension CodeLanguage {
     static let javascript = CodeLanguage(
@@ -26,5 +27,15 @@ public extension CodeLanguage {
         bundle: .module,
         queryResource: "typescript-highlights",
         language: Language(language: tree_sitter_typescript())
+    )
+
+    static let python = CodeLanguage(
+        id: "python",
+        displayName: "Python",
+        extensions: ["py", "pyi", "pyw"],
+        lineComment: "#",
+        bundle: .module,
+        queryResource: "python-highlights",
+        language: Language(language: tree_sitter_python())
     )
 }
