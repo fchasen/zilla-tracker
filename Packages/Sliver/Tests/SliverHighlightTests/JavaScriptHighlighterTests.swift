@@ -27,6 +27,17 @@ final class JavaScriptHighlighterTests: XCTestCase {
         XCTAssertEqual(highlighter.runs(for: "", language: .javascript), [])
     }
 
+    func testTypeScriptDetectionByExtension() {
+        XCTAssertEqual(CodeLanguageRegistry.detect(path: "Module.ts").id, CodeLanguage.typescript.id)
+        XCTAssertEqual(CodeLanguageRegistry.detect(path: "esm.mts").id, CodeLanguage.typescript.id)
+    }
+
+    func testTypeScriptTypeAnnotationIsHighlighted() {
+        let highlighter = SliverHighlighter(theme: .light)
+        let runs = highlighter.runs(for: "let x: number = 1;", language: .typescript)
+        XCTAssertFalse(runs.isEmpty, "expected non-empty highlight runs for TS")
+    }
+
     func testStringLiteralReceivesStringColor() {
         let highlighter = SliverHighlighter(theme: .light)
         let runs = highlighter.runs(for: "let x = \"hi\";", language: .javascript)

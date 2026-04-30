@@ -2,7 +2,8 @@ import Foundation
 
 public enum CodeLanguageRegistry {
     public static let all: [CodeLanguage] = [
-        .javascript
+        .javascript,
+        .typescript
     ]
 
     public static func detect(path: String) -> CodeLanguage {

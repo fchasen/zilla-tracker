@@ -31,12 +31,26 @@ let package = Package(
             publicHeadersPath: "bindings/swift/TreeSitterJavaScript",
             cSettings: [.headerSearchPath("src")]
         ),
+        .target(
+            name: "TreeSitterTypeScript",
+            path: "Vendor/tree-sitter-typescript",
+            exclude: [
+                "grammar.js",
+                "src/grammar.json",
+                "src/node-types.json",
+                "queries"
+            ],
+            sources: ["src/parser.c", "src/scanner.c"],
+            publicHeadersPath: "bindings/swift/TreeSitterTypeScript",
+            cSettings: [.headerSearchPath("src")]
+        ),
 
         .target(
             name: "SliverHighlight",
             dependencies: [
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),
-                "TreeSitterJavaScript"
+                "TreeSitterJavaScript",
+                "TreeSitterTypeScript"
             ],
             resources: [.copy("Queries")]
         ),
