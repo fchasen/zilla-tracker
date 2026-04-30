@@ -1640,7 +1640,7 @@ private struct DescriptionBlock: View {
                             .disabled(workspace.isUpdatingBug || !canSave)
                         }
                     } else if !stripped.isEmpty {
-                        StructuredText(markdown: stripped)
+                        StructuredText(markdown: flattenBlockquotes(stripped))
                             .font(.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1740,7 +1740,7 @@ private struct CommentBlock: View {
                         .disabled(workspace.isUpdatingBug || !canSave)
                     }
                 } else if !stripped.isEmpty {
-                    StructuredText(markdown: stripped)
+                    StructuredText(markdown: flattenBlockquotes(stripped))
                         .font(.body)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1802,6 +1802,21 @@ private struct CommentBlock: View {
         isEditing = false
         saveError = nil
     }
+}
+
+private func flattenBlockquotes(_ markdown: String) -> String {
+    markdown
+        .components(separatedBy: "\n")
+        .map { line -> String in
+            guard line.first == ">" else { return line }
+            var rest = Substring(line)
+            while rest.first == ">" {
+                rest = rest.dropFirst()
+                if rest.first == " " { rest = rest.dropFirst() }
+            }
+            return rest.isEmpty ? ">" : "> \(rest)"
+        }
+        .joined(separator: "\n")
 }
 
 private func stripAttachmentHeader(_ text: String, hasAttachment: Bool) -> String {
