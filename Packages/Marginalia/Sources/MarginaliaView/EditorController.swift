@@ -287,10 +287,19 @@ public final class EditorController {
 final class StorageDelegateProxy: NSObject, NSTextStorageDelegate {
     var onProcessed: (() -> Void)?
 
+#if os(macOS)
     func textStorage(_ textStorage: NSTextStorage,
                      didProcessEditing editedMask: NSTextStorageEditActions,
                      range editedRange: NSRange,
                      changeInLength delta: Int) {
         onProcessed?()
     }
+#else
+    func textStorage(_ textStorage: NSTextStorage,
+                     didProcessEditing editedMask: NSTextStorage.EditActions,
+                     range editedRange: NSRange,
+                     changeInLength delta: Int) {
+        onProcessed?()
+    }
+#endif
 }

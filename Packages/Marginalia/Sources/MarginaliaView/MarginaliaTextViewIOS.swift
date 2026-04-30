@@ -46,7 +46,7 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
         textView.adjustsFontForContentSizeCategory = true
         textView.isScrollEnabled = (sizing == .fillContainer)
         if #available(iOS 16.0, *) {
-            textView.findInteractionEnabled = (sizing == .fillContainer)
+            textView.isFindInteractionEnabled = (sizing == .fillContainer)
         }
         context.coordinator.textView = textView
         controller.hostTextView = textView
