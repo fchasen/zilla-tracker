@@ -71,8 +71,13 @@ struct RevisionListView: View {
                 .help("Refresh")
                 .disabled(isLoading || !phab.isSignedIn)
             }
+            if list != .landed {
+                ToolbarItem(placement: .primaryAction) {
+                    filterMenu
+                }
+            }
         }
-        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, refresh: workspace.revisionListRefreshToken)) {
+        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, refresh: workspace.revisionListRefreshToken, filter: workspace.revisionStatusFilter(for: list))) {
             let current = workspace.revisionListRefreshToken
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
             lastSeenRefreshToken = current
@@ -89,6 +94,31 @@ struct RevisionListView: View {
             get: { workspace.activeRevisionID },
             set: { workspace.activeRevisionID = $0 }
         )
+    }
+
+    private var filterBinding: Binding<RevisionStatusFilter> {
+        Binding(
+            get: { workspace.revisionStatusFilter(for: list) },
+            set: { workspace.revisionStatusFilters[list] = $0 }
+        )
+    }
+
+    private var filterMenu: some View {
+        Menu {
+            Picker(selection: filterBinding) {
+                ForEach(RevisionStatusFilter.allCases) { option in
+                    Label(option.label, systemImage: option.systemImage).tag(option)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label("Filter", systemImage: filterBinding.wrappedValue == .all
+                ? "line.3.horizontal.decrease.circle"
+                : "line.3.horizontal.decrease.circle.fill")
+        }
+        .help("Filter by status")
     }
 
     private var emptyDescription: String {
@@ -120,10 +150,13 @@ struct RevisionListView: View {
         isLoading = true
         loadError = nil
         defer { isLoading = false }
+        let filter = workspace.revisionStatusFilter(for: list)
         let query: RevisionQuery = {
             switch list {
-            case .active: return .active(authorPHID: phid)
-            case .review: return .reviewing(responsiblePHID: phid)
+            case .active:
+                return .active(authorPHID: phid, statuses: filter.queryStatuses)
+            case .review:
+                return .reviewing(responsiblePHID: phid, statuses: filter.queryStatuses)
             case .landed:
                 let cal = Calendar.current
                 let anchor = cal.dateInterval(of: .hour, for: .now)?.start ?? .now
@@ -150,6 +183,7 @@ struct RevisionListView: View {
         let list: ReviewList
         let signedIn: Bool
         let refresh: UUID
+        let filter: RevisionStatusFilter
     }
 }
 

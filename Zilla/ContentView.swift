@@ -137,6 +137,50 @@ enum ReviewList: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum RevisionStatusFilter: String, CaseIterable, Identifiable, Hashable {
+    case all
+    case draft
+    case needsReview
+    case needsRevision
+    case accepted
+    case changesPlanned
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .draft: return "Draft"
+        case .needsReview: return "Needs Review"
+        case .needsRevision: return "Needs Revision"
+        case .accepted: return "Accepted"
+        case .changesPlanned: return "Changes Planned"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: return "tray.full"
+        case .draft: return "pencil.line"
+        case .needsReview: return "eye"
+        case .needsRevision: return "arrow.triangle.2.circlepath"
+        case .accepted: return "checkmark.seal"
+        case .changesPlanned: return "calendar"
+        }
+    }
+
+    var queryStatuses: [String]? {
+        switch self {
+        case .all: return nil
+        case .draft: return [RevisionStatus.Value.draft]
+        case .needsReview: return [RevisionStatus.Value.needsReview]
+        case .needsRevision: return [RevisionStatus.Value.needsRevision]
+        case .accepted: return [RevisionStatus.Value.accepted]
+        case .changesPlanned: return [RevisionStatus.Value.changesPlanned]
+        }
+    }
+}
+
 enum SidebarSelection: Hashable {
     case smart(SmartEndpoint)
     case allDrafts
@@ -336,6 +380,19 @@ final class Workspace {
     var metaBugFilter: BugStatusFilter = .open
     var bugListRefreshToken: UUID = UUID()
     var revisionListRefreshToken: UUID = UUID()
+    var revisionStatusFilters: [ReviewList: RevisionStatusFilter] = [:]
+
+    func revisionStatusFilter(for list: ReviewList) -> RevisionStatusFilter {
+        revisionStatusFilters[list] ?? Self.defaultRevisionStatusFilter(for: list)
+    }
+
+    private static func defaultRevisionStatusFilter(for list: ReviewList) -> RevisionStatusFilter {
+        switch list {
+        case .active: return .all
+        case .review: return .needsReview
+        case .landed: return .all
+        }
+    }
 
     var typeSizeIndex: Int = (UserDefaults.standard.object(forKey: TypeSizeSettings.storageKey) as? Int) ?? TypeSizeSettings.defaultIndex {
         didSet {

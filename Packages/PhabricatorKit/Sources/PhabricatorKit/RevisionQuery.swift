@@ -84,21 +84,21 @@ public struct RevisionQuery: Sendable, Hashable, Encodable {
 }
 
 public extension RevisionQuery {
-    static func active(authorPHID: String) -> RevisionQuery {
+    static func active(authorPHID: String, statuses: [String]? = nil) -> RevisionQuery {
         RevisionQuery(
             constraints: Constraints(
                 authorPHIDs: [authorPHID],
-                statuses: RevisionStatus.Value.openValues
+                statuses: statuses ?? RevisionStatus.Value.openValues
             ),
             order: "updated"
         )
     }
 
-    static func reviewing(responsiblePHID: String) -> RevisionQuery {
+    static func reviewing(responsiblePHID: String, statuses: [String]? = nil) -> RevisionQuery {
         RevisionQuery(
             constraints: Constraints(
                 responsiblePHIDs: [responsiblePHID],
-                statuses: [RevisionStatus.Value.needsReview]
+                statuses: statuses ?? [RevisionStatus.Value.needsReview]
             ),
             attachments: Attachments(reviewers: true),
             order: "updated"
