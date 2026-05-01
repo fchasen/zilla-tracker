@@ -170,7 +170,7 @@ private struct RevisionRow: View {
                         StatusBadge(status: RevisionStatus(value: "draft", name: "Draft", closed: false))
                     }
                 }
-                Text(revision.fields.title)
+                Text(revisionTitleAttributed(revision.fields.title))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 6) {

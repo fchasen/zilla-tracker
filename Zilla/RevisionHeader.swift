@@ -42,7 +42,7 @@ struct RevisionHeader: View {
                 }
                 Spacer()
             }
-            Text(revision.fields.title)
+            Text(revisionTitleAttributed(revision.fields.title))
                 .font(.title2)
                 .textSelection(.enabled)
             HStack(spacing: 6) {
