@@ -17,6 +17,7 @@ struct RevisionListView: View {
     @State private var isLoading: Bool = false
     @State private var loadError: String?
     @State private var lastSeenRefreshToken: UUID?
+    @State private var lastSeenList: ReviewList?
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -80,12 +81,14 @@ struct RevisionListView: View {
         .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, refresh: workspace.revisionListRefreshToken, filter: workspace.revisionStatusFilter(for: list))) {
             let current = workspace.revisionListRefreshToken
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
+            let listChanged = lastSeenList != nil && lastSeenList != list
             lastSeenRefreshToken = current
+            lastSeenList = list
+            if listChanged {
+                revisions = []
+                loadError = nil
+            }
             await load(force: force)
-        }
-        .onChange(of: list) { _, _ in
-            revisions = []
-            loadError = nil
         }
     }
 
