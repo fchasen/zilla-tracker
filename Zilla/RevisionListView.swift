@@ -42,7 +42,12 @@ struct RevisionListView: View {
             } else {
                 List(selection: revisionSelectionBinding) {
                     ForEach(revisions) { revision in
-                        RevisionRow(revision: revision, showsUnseenIndicator: list == .review)
+                        RevisionRow(
+                            revision: revision,
+                            showsUnseenIndicator: list == .review,
+                            viewerPHID: list == .review ? phab.currentUser?.phid : nil,
+                            viewerProjectPHIDs: list == .review ? phab.viewerProjectPHIDs : []
+                        )
                             .tag(Optional(revision.id))
                     }
                 }
@@ -154,6 +159,8 @@ private struct RevisionRow: View {
     @Environment(\.openURL) private var openURL
     let revision: Revision
     let showsUnseenIndicator: Bool
+    let viewerPHID: String?
+    let viewerProjectPHIDs: Set<String>
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -168,7 +175,9 @@ private struct RevisionRow: View {
                     Text(revision.revisionLabel)
                         .font(.callout.weight(.semibold).monospaced())
                         .foregroundStyle(.blue)
-                    StatusBadge(status: revision.fields.status)
+                    if shouldShowStatusBadge {
+                        StatusBadge(status: revision.fields.status)
+                    }
                     if revision.fields.isDraft {
                         StatusBadge(status: RevisionStatus(value: "draft", name: "Draft", closed: false))
                     }
@@ -203,6 +212,34 @@ private struct RevisionRow: View {
 
     private var revisionURL: URL? {
         URL(string: "https://phabricator.services.mozilla.com/D\(revision.id)")
+    }
+
+    private var shouldShowStatusBadge: Bool {
+        guard revision.fields.status.value == RevisionStatus.Value.needsReview else { return true }
+        guard viewerPHID != nil else { return true }
+        let entries = relevantReviewerEntries
+        guard !entries.isEmpty else { return true }
+        if entries.contains(where: { Self.statusStillNeedsAction($0.status) }) {
+            return true
+        }
+        return !entries.contains(where: \.isBlocking)
+    }
+
+    private var relevantReviewerEntries: [Reviewer] {
+        guard let reviewers = revision.attachments?.reviewers?.reviewers else { return [] }
+        return reviewers.filter { reviewer in
+            if reviewer.reviewerPHID == viewerPHID { return true }
+            return viewerProjectPHIDs.contains(reviewer.reviewerPHID)
+        }
+    }
+
+    private static func statusStillNeedsAction(_ status: String) -> Bool {
+        switch status {
+        case Reviewer.Status.accepted, Reviewer.Status.rejected, Reviewer.Status.resigned:
+            return false
+        default:
+            return true
+        }
     }
 
     @ViewBuilder

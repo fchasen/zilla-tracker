@@ -84,6 +84,7 @@ final class RevisionDecodingTests: XCTestCase {
         let query = RevisionQuery.reviewing(responsiblePHID: "PHID-USER-bbb")
         XCTAssertEqual(query.constraints?.responsiblePHIDs, ["PHID-USER-bbb"])
         XCTAssertEqual(query.constraints?.statuses, [RevisionStatus.Value.needsReview])
+        XCTAssertEqual(query.attachments?.reviewers, true)
     }
 
     func testLandedQueryConstrainsByAuthorPublishedAndModifiedStart() throws {

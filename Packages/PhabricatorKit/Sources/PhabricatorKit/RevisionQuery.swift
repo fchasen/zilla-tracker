@@ -100,6 +100,7 @@ public extension RevisionQuery {
                 responsiblePHIDs: [responsiblePHID],
                 statuses: [RevisionStatus.Value.needsReview]
             ),
+            attachments: Attachments(reviewers: true),
             order: "updated"
         )
     }

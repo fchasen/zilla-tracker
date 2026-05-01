@@ -30,19 +30,22 @@ public struct ProjectQuery: Sendable, Hashable, Encodable {
         public var name: String?
         public var slugs: [String]?
         public var query: String?
+        public var members: [String]?
 
         public init(
             ids: [Int]? = nil,
             phids: [String]? = nil,
             name: String? = nil,
             slugs: [String]? = nil,
-            query: String? = nil
+            query: String? = nil,
+            members: [String]? = nil
         ) {
             self.ids = ids
             self.phids = phids
             self.name = name
             self.slugs = slugs
             self.query = query
+            self.members = members
         }
     }
 }
@@ -59,6 +62,13 @@ public extension ProjectQuery {
         ProjectQuery(
             constraints: Constraints(phids: phids),
             limit: max(phids.count, 1)
+        )
+    }
+
+    static func forMember(_ userPHID: String, limit: Int = 100) -> ProjectQuery {
+        ProjectQuery(
+            constraints: Constraints(members: [userPHID]),
+            limit: limit
         )
     }
 }
