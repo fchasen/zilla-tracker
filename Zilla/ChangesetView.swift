@@ -93,7 +93,6 @@ struct ChangesetView: View {
 
     @ViewBuilder
     private func body(for content: ChangesetContentSource?) -> some View {
-        outdatedSection
         switch content {
         case .none:
             ProgressView()
@@ -109,24 +108,6 @@ struct ChangesetView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case .hunks(let old, let new):
             pierreView(old: old, new: new)
-        }
-    }
-
-    @ViewBuilder
-    private var outdatedSection: some View {
-        let outdated = workspace.loadedRevisionInlines.filter {
-            $0.path == changeset.currentPath && $0.diffID != latestDiffID && !$0.isDeleted
-        }
-        if !outdated.isEmpty {
-            DisclosureGroup("Outdated comments (\(outdated.count))") {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(outdated, id: \.phid) { inline in
-                        OutdatedInlineRow(inline: inline)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-            .font(.callout)
         }
     }
 
@@ -172,7 +153,7 @@ struct ChangesetView: View {
     private func handleLinkClick(_ rawURL: String) {
         guard let url = URL(string: rawURL) else { return }
         if let id = bugzillaBugID(from: url) {
-            workspace.selectedBugID = id
+            workspace.navigate(to: .bug(id))
         } else {
             openURL(url)
         }
@@ -261,6 +242,7 @@ struct ChangesetHeader: View {
                 .font(.callout.monospaced())
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
+                .truncationMode(.head)
             Spacer(minLength: 8)
             if changeset.addLines > 0 {
                 pill(text: "+\(changeset.addLines)", color: .green)
@@ -321,36 +303,3 @@ struct ChangesetHeader: View {
     }
 }
 
-struct OutdatedInlineRow: View {
-    @Environment(Workspace.self) private var workspace
-    @Environment(\.openURL) private var openURL
-    let inline: InlineComment
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "clock.arrow.circlepath")
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 4) {
-                if let phid = inline.authorPHID,
-                   let user = workspace.revisionUserDirectory[phid] {
-                    Text(user.realName ?? user.userName)
-                        .font(.callout.weight(.medium))
-                }
-                RemarkupText(source: inline.content)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Button("View in Browser") {
-                    if let revision = workspace.loadedRevision,
-                       let url = URL(string: "https://phabricator.services.mozilla.com/D\(revision.id)#inline-\(inline.phid)") {
-                        openURL(url)
-                    }
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
-            }
-        }
-        .padding(8)
-        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-    }
-}

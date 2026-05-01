@@ -52,8 +52,11 @@ struct BugDetailView: View {
     @State private var dupePrompt: DupePromptIdentifier?
     @State private var updateError: String?
 
-    private var bug: Bug? { workspace.loadedBug }
-    private var comments: [Comment] { workspace.loadedComments }
+    @State private var bugSnapshot: Bug?
+    @State private var commentsSnapshot: [Comment] = []
+
+    private var bug: Bug? { bugSnapshot }
+    private var comments: [Comment] { commentsSnapshot }
     private var loadError: String? { workspace.bugLoadError }
     private var isLoading: Bool { workspace.isLoadingBug }
 
@@ -91,16 +94,6 @@ struct BugDetailView: View {
             }
         }
         .toolbar {
-            if let revID = workspace.pendingBackToRevision {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        workspace.returnToPendingRevision()
-                    } label: {
-                        Label("Back to D\(String(revID))", systemImage: "chevron.backward")
-                    }
-                    .help("Return to D\(String(revID))")
-                }
-            }
             if let bug {
                 if !BugStatuses.isClosed(bug.status) {
                     ToolbarItem(placement: .primaryAction) {
@@ -156,6 +149,21 @@ struct BugDetailView: View {
         }
         .interceptingMozillaLinks(workspace: workspace)
         .task(id: bugID) { await reload() }
+        .onAppear { restoreSnapshotIfNeeded() }
+        .onChange(of: workspace.loadedBug) { _, newValue in
+            guard let newValue, newValue.id == bugID else { return }
+            bugSnapshot = newValue
+            commentsSnapshot = workspace.loadedComments
+        }
+        .onChange(of: workspace.loadedComments) { _, newValue in
+            guard workspace.loadedBug?.id == bugID else { return }
+            commentsSnapshot = newValue
+        }
+    }
+
+    private func restoreSnapshotIfNeeded() {
+        guard let bugSnapshot, workspace.loadedBug?.id != bugSnapshot.id else { return }
+        workspace.publishLoadedBug(bugSnapshot, comments: commentsSnapshot)
     }
 
     @ViewBuilder
@@ -222,10 +230,16 @@ struct BugDetailView: View {
         composerError = nil
         guard let id = bugID else {
             workspace.clearLoadedBug()
+            bugSnapshot = nil
+            commentsSnapshot = []
             return
         }
         viewedBugs.markViewed(id)
         await workspace.loadBug(id: id, using: auth.client)
+        if workspace.loadedBug?.id == id {
+            bugSnapshot = workspace.loadedBug
+            commentsSnapshot = workspace.loadedComments
+        }
     }
 
     private func postComment() async {
@@ -2041,7 +2055,7 @@ private struct PatchRow: View {
         Group {
             if let id = phabRevisionInt {
                 Button {
-                    workspace.activeRevisionID = id
+                    workspace.navigate(to: .revision(id))
                 } label: {
                     rowContent
                 }
@@ -2078,11 +2092,6 @@ private struct PatchRow: View {
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
-                    if let revision = phabRevision {
-                        Text(revision)
-                            .font(.callout.weight(.semibold).monospaced())
-                            .foregroundStyle(accentColor)
-                    }
                     Text(title)
                         .font(.callout)
                         .foregroundStyle(.primary)
@@ -2098,11 +2107,12 @@ private struct PatchRow: View {
                         .help(attachment.creator)
                     Text(verbatim: "·")
                     Text(attachment.creationTime, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
-                    if isPhabricator {
-                        Text(verbatim: "·")
-                        Text("Phabricator")
+                    Text(verbatim: "·")
+                    if let revision = phabRevision {
+                        Text(revision)
+                            .font(.caption.weight(.semibold).monospaced())
+                            .foregroundStyle(accentColor)
                     } else {
-                        Text(verbatim: "·")
                         Text("Patch")
                     }
                 }
@@ -2110,9 +2120,11 @@ private struct PatchRow: View {
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+            if !isPhabricator {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .contentShape(Rectangle())
     }

@@ -57,11 +57,7 @@ struct RevisionInspector: View {
         let meta = workspace.dependencyMetadata(for: id)
         let icon = bugTypeIcon(meta?.type)
         let link = Button {
-            if let revID = workspace.loadedRevision?.id {
-                workspace.pendingBackToRevision = revID
-            }
-            workspace.activeRevisionID = nil
-            workspace.selectedBugID = id
+            workspace.navigate(to: .bug(id))
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {

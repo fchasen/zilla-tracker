@@ -145,6 +145,11 @@ enum SidebarSelection: Hashable {
     case metaBug(Int)
 }
 
+enum DetailRoute: Hashable {
+    case bug(Bug.ID)
+    case revision(Int)
+}
+
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
     case rank, newest, recent, oldest, priority
 
@@ -269,7 +274,7 @@ final class Workspace {
         didSet {
             if oldValue != sidebarSelection {
                 activeRevisionID = nil
-                pendingBackToRevision = nil
+                detailPath = []
             }
         }
     }
@@ -277,24 +282,46 @@ final class Workspace {
         didSet {
             if oldValue != selectedBugID {
                 activeRevisionID = nil
-                // Don't clear pendingBackToRevision here — the navigation away
-                // from a revision *to* a bug is exactly the case that sets it.
+                detailPath = []
             }
         }
     }
-    /// When the user navigates from a revision to its linked bug, this stores
-    /// the revision ID so `BugDetailView` can render a back button that
-    /// returns to the revision.
-    var pendingBackToRevision: Int?
+    var selectedDraftID: UUID?
+    var activeRevisionID: Int? {
+        didSet {
+            if oldValue != activeRevisionID {
+                detailPath = []
+            }
+        }
+    }
+    var detailPath: [DetailRoute] = []
+
+    private var rootRoute: DetailRoute? {
+        if let id = activeRevisionID {
+            return .revision(id)
+        }
+        if sidebarSelection == .allDrafts {
+            return nil
+        }
+        if let id = selectedBugID {
+            return .bug(id)
+        }
+        return nil
+    }
 
     @MainActor
-    func returnToPendingRevision() {
-        guard let id = pendingBackToRevision else { return }
-        pendingBackToRevision = nil
-        activeRevisionID = id
+    func navigate(to route: DetailRoute) {
+        if route == rootRoute {
+            detailPath = []
+            return
+        }
+        if let idx = detailPath.firstIndex(of: route) {
+            detailPath = Array(detailPath.prefix(idx + 1))
+            return
+        }
+        detailPath.append(route)
     }
-    var selectedDraftID: UUID?
-    var activeRevisionID: Int?
+
     var bugzillaSettingsPresented: Bool = false
     var phabricatorSettingsPresented: Bool = false
     var quickSearchPresented: Bool = false
@@ -501,6 +528,13 @@ final class Workspace {
         bugLoadError = nil
     }
 
+    @MainActor
+    func publishLoadedBug(_ bug: Bug, comments: [Comment]) {
+        loadedBug = bug
+        loadedComments = comments
+        bugLoadError = nil
+    }
+
     @discardableResult
     @MainActor
     func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
@@ -602,6 +636,19 @@ final class Workspace {
     }
 
     @MainActor
+    func publishLoadedRevision(
+        _ revision: Revision,
+        diff: DiffDetail?,
+        transactions: [RevisionTransaction],
+        inlines: [InlineComment]
+    ) {
+        loadedRevision = revision
+        loadedRevisionDiff = diff
+        loadedRevisionTransactions = transactions
+        loadedRevisionInlines = inlines
+        revisionLoadError = nil
+    }
+
     func clearLoadedRevision() {
         loadedRevision = nil
         loadedRevisionDiff = nil
@@ -911,6 +958,22 @@ final class Workspace {
     }
 
     @MainActor
+    func setInlineDone(commentPHID: String, isDone: Bool, using client: PhabricatorClient) async -> Error? {
+        guard let revision = loadedRevision else { return nil }
+        do {
+            _ = try await client.editRevision(
+                objectIdentifier: revision.phid,
+                transactions: [.inlineDone([commentPHID: isDone])]
+            )
+            cache?.invalidate(.revisionTransactions(revision.id))
+            await refreshRevisionActivity(using: client)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @MainActor
     func editInlineDraft(
         phid: String,
         path: String,
@@ -1063,10 +1126,53 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if let id = workspace.activeRevisionID {
-            RevisionDetailView(revisionID: id) {
-                workspace.activeRevisionID = nil
+        #if os(macOS)
+        NavigationStack(path: detailPathBinding) {
+            rootDetailView
+                .navigationDestination(for: DetailRoute.self) { route in
+                    routeView(route)
+                }
+        }
+        #else
+        rootDetailView
+            .sheet(isPresented: pushedRouteSheetBinding) {
+                if let last = workspace.detailPath.last {
+                    routeView(last)
+                }
             }
+        #endif
+    }
+
+    private var detailPathBinding: Binding<[DetailRoute]> {
+        Binding(
+            get: { workspace.detailPath },
+            set: { workspace.detailPath = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private func routeView(_ route: DetailRoute) -> some View {
+        switch route {
+        case .bug(let id):
+            BugDetailView(bugID: id)
+        case .revision(let id):
+            RevisionDetailView(revisionID: id)
+        }
+    }
+
+    private var pushedRouteSheetBinding: Binding<Bool> {
+        Binding(
+            get: { workspace.detailPath.isEmpty == false },
+            set: { newValue in
+                if !newValue { workspace.detailPath = [] }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var rootDetailView: some View {
+        if let id = workspace.activeRevisionID {
+            RevisionDetailView(revisionID: id)
         } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftEditorView(draftID: id)
         } else {
@@ -1076,7 +1182,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private var inspectorColumn: some View {
-        if workspace.activeRevisionID != nil {
+        if let last = workspace.detailPath.last {
+            switch last {
+            case .bug:
+                BugInspector()
+            case .revision:
+                RevisionInspector()
+            }
+        } else if workspace.activeRevisionID != nil {
             RevisionInspector()
         } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftInspector(draftID: id)
@@ -1132,7 +1245,7 @@ private struct BugInspector: View {
                         Task { await workspace.applyBugUpdate(update, using: auth.client) }
                     },
                     onOpenBug: { id in
-                        workspace.selectedBugID = id
+                        workspace.navigate(to: .bug(id))
                     }
                 )
                 .padding(20)

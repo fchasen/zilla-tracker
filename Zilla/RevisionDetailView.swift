@@ -9,9 +9,13 @@ struct RevisionDetailView: View {
     @Environment(\.openURL) private var openURL
 
     let revisionID: Int
-    let onClose: () -> Void
 
     @State private var actionSheet: RevisionActionSheetState?
+
+    @State private var revisionSnapshot: Revision?
+    @State private var diffSnapshot: DiffDetail?
+    @State private var transactionsSnapshot: [RevisionTransaction] = []
+    @State private var inlinesSnapshot: [InlineComment] = []
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -38,12 +42,6 @@ struct RevisionDetailView: View {
         }
         .navigationTitle(Text(verbatim: "D\(workspace.loadedRevision?.id ?? revisionID)"))
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(action: onClose) {
-                    Label("Back", systemImage: "chevron.backward")
-                }
-                .help("Return to bug")
-            }
             if let revision = workspace.loadedRevision, phab.isSignedIn {
                 ToolbarItem(placement: .primaryAction) {
                     RevisionActionsMenu(revision: revision) { state in
@@ -75,10 +73,21 @@ struct RevisionDetailView: View {
             viewedRevisions.markViewed(revisionID)
             if phab.isSignedIn {
                 await workspace.loadRevision(id: revisionID, using: phab.client)
+                if workspace.loadedRevision?.id == revisionID {
+                    revisionSnapshot = workspace.loadedRevision
+                    diffSnapshot = workspace.loadedRevisionDiff
+                    transactionsSnapshot = workspace.loadedRevisionTransactions
+                    inlinesSnapshot = workspace.loadedRevisionInlines
+                }
             }
         }
-        .onDisappear {
-            workspace.clearLoadedRevision()
+        .onAppear { restoreSnapshotIfNeeded() }
+        .onChange(of: workspace.loadedRevision?.id) { _, newID in
+            guard newID == revisionID else { return }
+            revisionSnapshot = workspace.loadedRevision
+            diffSnapshot = workspace.loadedRevisionDiff
+            transactionsSnapshot = workspace.loadedRevisionTransactions
+            inlinesSnapshot = workspace.loadedRevisionInlines
         }
         .sheet(item: $actionSheet) { state in
             RevisionActionSheet(state: state) { transactions in
@@ -88,6 +97,16 @@ struct RevisionDetailView: View {
             }
         }
         .interceptingMozillaLinks(workspace: workspace)
+    }
+
+    private func restoreSnapshotIfNeeded() {
+        guard let revisionSnapshot, workspace.loadedRevision?.id != revisionSnapshot.id else { return }
+        workspace.publishLoadedRevision(
+            revisionSnapshot,
+            diff: diffSnapshot,
+            transactions: transactionsSnapshot,
+            inlines: inlinesSnapshot
+        )
     }
 
     @ViewBuilder

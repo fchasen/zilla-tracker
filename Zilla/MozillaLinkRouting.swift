@@ -23,7 +23,7 @@ extension View {
     func interceptingMozillaLinks(workspace: Workspace) -> some View {
         environment(\.openURL, OpenURLAction { url in
             if let id = bugzillaBugID(from: url) {
-                workspace.selectedBugID = id
+                workspace.navigate(to: .bug(id))
                 return .handled
             }
             return .systemAction
