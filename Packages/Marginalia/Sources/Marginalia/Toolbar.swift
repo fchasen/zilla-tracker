@@ -11,13 +11,22 @@ struct MarginaliaToolbar: View {
 
     var body: some View {
         let groups = makeGroups(from: items)
-        HStack(spacing: 8) {
+        let row = HStack(spacing: 8) {
             ForEach(groups.indices, id: \.self) { i in
                 groupView(groups[i])
             }
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
+        #if os(iOS)
+        ScrollView(.horizontal, showsIndicators: false) {
+            row
+                .padding(.vertical, 2)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        #else
+        row
+        #endif
     }
 
     @ViewBuilder
@@ -166,7 +175,7 @@ private struct ToolbarActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: 28, height: 24)
+                .frame(width: ToolbarButtonMetrics.width, height: ToolbarButtonMetrics.height)
         }
         .help(help)
         .modifier(OptionalShortcut(shortcut: shortcut))
@@ -185,11 +194,21 @@ private struct ToolbarLabelButton: View {
         Button(action: action) {
             Text(label)
                 .font(.system(size: labelSize, weight: .semibold))
-                .frame(width: 28, height: 24)
+                .frame(width: ToolbarButtonMetrics.width, height: ToolbarButtonMetrics.height)
         }
         .help(help)
         .modifier(OptionalShortcut(shortcut: shortcut))
     }
+}
+
+private enum ToolbarButtonMetrics {
+    #if os(iOS)
+    static let width: CGFloat = 36
+    static let height: CGFloat = 32
+    #else
+    static let width: CGFloat = 28
+    static let height: CGFloat = 24
+    #endif
 }
 
 private struct OptionalShortcut: ViewModifier {

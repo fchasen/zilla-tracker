@@ -215,7 +215,10 @@ struct ChangesetView: View {
                 ),
                 showsHeader: false,
                 theme: theme,
-                cornerRadius: 0
+                cornerRadius: 0,
+                isExpandable: false,
+                contextLinesBelow: 0,
+                roundsBottomCorners: false
             )
         }
     }

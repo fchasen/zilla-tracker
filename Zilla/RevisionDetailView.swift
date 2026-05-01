@@ -17,6 +17,10 @@ struct RevisionDetailView: View {
     @State private var transactionsSnapshot: [RevisionTransaction] = []
     @State private var inlinesSnapshot: [InlineComment] = []
 
+    #if os(iOS)
+    @State private var isPresentingCommentSheet: Bool = false
+    #endif
+
     var body: some View {
         @Bindable var workspace = workspace
         Group {
@@ -68,6 +72,17 @@ struct RevisionDetailView: View {
                 }
                 .help("Toggle inspector")
             }
+            #if os(iOS)
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                Button {
+                    isPresentingCommentSheet = true
+                } label: {
+                    Label("New Comment", systemImage: "square.and.pencil")
+                }
+                .disabled(workspace.loadedRevision == nil || !phab.isSignedIn)
+            }
+            #endif
         }
         .task(id: revisionID) {
             viewedRevisions.markViewed(revisionID)
@@ -96,6 +111,11 @@ struct RevisionDetailView: View {
                 }
             }
         }
+        #if os(iOS)
+        .sheet(isPresented: $isPresentingCommentSheet) {
+            RevisionCommentSheet()
+        }
+        #endif
         .interceptingMozillaLinks(workspace: workspace)
     }
 
@@ -124,8 +144,10 @@ struct RevisionDetailView: View {
                     Divider()
                     RevisionActivityView()
                     Divider()
+                    #if os(macOS)
                     RevisionCommentComposer()
                     Divider()
+                    #endif
                     RevisionDiffView()
                 }
                 .padding(24)

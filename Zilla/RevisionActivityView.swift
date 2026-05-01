@@ -220,7 +220,10 @@ struct ActivityRow: View {
                         isOutdated: isOutdatedAgainstLatestDiff,
                         theme: colorScheme == .dark ? .dark : .light,
                         cornerRadius: sliverCornerRadius(narrow: narrow),
-                        onPathTap: { workspace.revealChangeset(path: inlineDescriptor.path) }
+                        onPathTap: { workspace.revealChangeset(path: inlineDescriptor.path) },
+                        isExpandable: false,
+                        contextLinesBelow: 0,
+                        roundsBottomCorners: false
                     )
                 } else {
                     inlineFileLink(inlineDescriptor)

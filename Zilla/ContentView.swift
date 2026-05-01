@@ -1627,9 +1627,11 @@ struct Sidebar: View {
                     Text("Components")
                 }
             }
-        .navigationTitle("Zilla")
+        .navigationTitle("Zilla Tracker")
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
+        #else
+        .toolbarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -2410,7 +2412,7 @@ struct BugListView: View {
     }
 
     private var title: String {
-        guard let selection else { return "Zilla" }
+        guard let selection else { return "Zilla Tracker" }
         switch selection {
         case .smart(let s): return s.title
         case .component(let ref): return "\(ref.product) :: \(ref.component)"

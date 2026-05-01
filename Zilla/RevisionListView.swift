@@ -54,9 +54,12 @@ struct RevisionListView: View {
                 }
             }
         }
-        .navigationTitle(list.title)
         #if os(macOS)
+        .navigationTitle(list.title)
         .navigationSplitViewColumnWidth(min: 360, ideal: 460)
+        #else
+        .navigationTitle("")
+        .toolbarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

@@ -22,6 +22,8 @@ public struct FolioView: View {
     public let selection: Binding<FolioLineSelection?>?
     public let threadSlot: ((FolioCommentMark) -> AnyView)?
     public let composerSlot: FolioComposerSlot?
+    public let isExpandable: Bool
+    public let roundsBottomCorners: Bool
 
     @State private var isExpanded: Bool = true
     @State private var contextAbove: Int
@@ -32,9 +34,7 @@ public struct FolioView: View {
     @State private var artifact: FolioRenderArtifact
     @State private var capExpanded: Bool = false
     #if os(iOS)
-    @State private var iosPressStart: Date?
     @State private var iosSelecting: Bool = false
-    @State private var iosSelectionAborted: Bool = false
     #endif
 
     private let expandStep: Int = 10
@@ -62,7 +62,10 @@ public struct FolioView: View {
         onExpandContext: ((ExpandDirection) -> Void)? = nil,
         onLineSelectionChange: ((FolioLineSelection?) -> Void)? = nil,
         threadSlot: ((FolioCommentMark) -> AnyView)? = nil,
-        composerSlot: FolioComposerSlot? = nil
+        composerSlot: FolioComposerSlot? = nil,
+        isExpandable: Bool = true,
+        contextLinesBelow: Int? = nil,
+        roundsBottomCorners: Bool = true
     ) {
         self.path = path
         self.content = content
@@ -80,8 +83,10 @@ public struct FolioView: View {
         self.onLineSelectionChange = onLineSelectionChange
         self.threadSlot = threadSlot
         self.composerSlot = composerSlot
+        self.isExpandable = isExpandable
+        self.roundsBottomCorners = roundsBottomCorners
         self._contextAbove = State(initialValue: contextLines)
-        self._contextBelow = State(initialValue: contextLines)
+        self._contextBelow = State(initialValue: contextLinesBelow ?? contextLines)
         self._isExpanded = State(initialValue: !showsHeader || true)
         self._artifact = State(initialValue: FolioRenderArtifactBuilder.skeleton(
             content: content,
@@ -113,20 +118,23 @@ public struct FolioView: View {
         }
         .background(Color(theme.contextRow.withAlpha(1)))
         .overlay {
-            if cornerRadius > 0 {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color(theme.border), lineWidth: 1)
-            } else {
-                Rectangle()
-                    .strokeBorder(Color(theme.border), lineWidth: 1)
-            }
+            folioShape.strokeBorder(Color(theme.border), lineWidth: 1)
         }
-        .clipShape(cornerRadius > 0
-            ? AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            : AnyShape(Rectangle()))
+        .clipShape(folioShape)
         .task(id: artifactKey) {
             await refreshArtifact()
         }
+    }
+
+    private var folioShape: UnevenRoundedRectangle {
+        let bottomRadius = roundsBottomCorners ? cornerRadius : 0
+        return UnevenRoundedRectangle(
+            topLeadingRadius: cornerRadius,
+            bottomLeadingRadius: bottomRadius,
+            bottomTrailingRadius: bottomRadius,
+            topTrailingRadius: cornerRadius,
+            style: .continuous
+        )
     }
 
     private var artifactKey: Int {
@@ -283,7 +291,7 @@ public struct FolioView: View {
         let trailingGutter: CGFloat? = mode == .split ? leadingGutter : nil
 
         VStack(alignment: .leading, spacing: 0) {
-            if bounds.linesAbove > 0 || onExpandContext != nil {
+            if isExpandable, bounds.linesAbove > 0 || onExpandContext != nil {
                 ExpandContextRow(
                     label: ExpandContextRow.unmodifiedLabel(count: bounds.linesAbove),
                     theme: theme,
@@ -303,7 +311,7 @@ public struct FolioView: View {
                     mode: mode
                 )
             }
-            if bounds.linesBelow > 0 || onExpandContext != nil {
+            if isExpandable, bounds.linesBelow > 0 || onExpandContext != nil {
                 ExpandContextRow(
                     label: ExpandContextRow.unmodifiedLabel(count: bounds.linesBelow),
                     theme: theme,
@@ -788,44 +796,31 @@ public struct FolioView: View {
 
     #if os(iOS)
     private var iosLongPressDragGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(FolioSelectionMath.coordinateSpaceName))
+        LongPressGesture(minimumDuration: 0.4, maximumDistance: 10)
+            .sequenced(before: DragGesture(
+                minimumDistance: 0,
+                coordinateSpace: .named(FolioSelectionMath.coordinateSpaceName)
+            ))
             .onChanged { value in
-                if iosSelectionAborted { return }
-                if iosPressStart == nil {
-                    iosPressStart = .now
-                }
-                let moved = hypot(value.translation.width, value.translation.height)
-                let elapsed = -(iosPressStart?.timeIntervalSinceNow ?? 0)
-
+                guard case .second(true, let drag) = value else { return }
                 if !iosSelecting {
-                    if moved > 10 {
-                        iosSelectionAborted = true
-                        return
-                    }
-                    if elapsed >= 0.4 {
-                        iosSelecting = true
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    } else {
-                        return
-                    }
+                    iosSelecting = true
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 }
+                guard let drag else { return }
                 let updated = FolioSelectionMath.selection(
-                    from: value.startLocation,
-                    to: value.location,
+                    from: drag.startLocation,
+                    to: drag.location,
                     cells: selectionCells
                 )
                 draftSelection = updated
             }
             .onEnded { value in
-                defer {
-                    iosPressStart = nil
-                    iosSelecting = false
-                    iosSelectionAborted = false
-                }
-                guard iosSelecting else { return }
+                defer { iosSelecting = false }
+                guard case .second(true, let drag?) = value else { return }
                 let final = FolioSelectionMath.selection(
-                    from: value.startLocation,
-                    to: value.location,
+                    from: drag.startLocation,
+                    to: drag.location,
                     cells: selectionCells
                 )
                 selection?.wrappedValue = final

@@ -54,6 +54,10 @@ struct BugDetailView: View {
     @State private var bugSnapshot: Bug?
     @State private var commentsSnapshot: [Comment] = []
 
+    #if os(iOS)
+    @State private var isPresentingCommentSheet: Bool = false
+    #endif
+
     private var composerTextBinding: Binding<String> {
         Binding(
             get: { bugID.flatMap { workspace.bugCommentDrafts[$0] } ?? "" },
@@ -134,7 +138,31 @@ struct BugDetailView: View {
                 .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
                 .disabled(workspace.loadedBug == nil)
             }
+            #if os(iOS)
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                Button {
+                    isPresentingCommentSheet = true
+                } label: {
+                    Label("New Comment", systemImage: "square.and.pencil")
+                }
+                .disabled(workspace.loadedBug == nil || !auth.isSignedIn)
+            }
+            #endif
         }
+        #if os(iOS)
+        .navigationTitle(bugID.map { Text(verbatim: "Bug \($0)") } ?? Text(""))
+        .toolbarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isPresentingCommentSheet) {
+            BugCommentSheet(
+                bugID: bugID,
+                text: composerTextBinding,
+                onPost: { Task { await postComment() } },
+                isPosting: isPostingComment,
+                error: composerError
+            )
+        }
+        #endif
         .alert(
             "Couldn't update bug",
             isPresented: Binding(
@@ -314,6 +342,7 @@ private struct BugContent: View {
                     attachmentsByID: attachmentsByID,
                     onQuote: quoteIntoComposer
                 )
+                #if os(macOS)
                 Divider()
                 CommentComposer(
                     text: $composerText,
@@ -321,6 +350,7 @@ private struct BugContent: View {
                     error: composerError,
                     onPost: onPost
                 )
+                #endif
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)

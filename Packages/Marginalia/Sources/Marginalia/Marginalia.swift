@@ -50,7 +50,6 @@ public struct Marginalia: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            #if os(macOS)
             if toolbarVisible, !configuration.toolbar.isEmpty || !configuration.statusItems.isEmpty {
                 HStack(spacing: 12) {
                     if !configuration.toolbar.isEmpty {
@@ -80,19 +79,6 @@ public struct Marginalia: View {
                 }
                 .padding(6)
             }
-            #else
-            if !configuration.statusItems.isEmpty {
-                HStack(spacing: 12) {
-                    Spacer()
-                    MarginaliaStatusBar(
-                        items: configuration.statusItems,
-                        text: text,
-                        selection: selection
-                    )
-                }
-                .padding(6)
-            }
-            #endif
             if showPreview, let renderer = previewRenderer {
                 MarginaliaPreview(source: text, dialect: dialect, renderer: renderer)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
