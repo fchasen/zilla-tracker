@@ -9,6 +9,7 @@ public struct SliverView: View {
     public let contextLines: Int
     public let isOutdated: Bool
     public let theme: HighlightTheme
+    public let cornerRadius: CGFloat
     public let onPathTap: (() -> Void)?
 
     @State private var isExpanded: Bool = true
@@ -20,6 +21,7 @@ public struct SliverView: View {
         contextLines: Int = 3,
         isOutdated: Bool = false,
         theme: HighlightTheme = .light,
+        cornerRadius: CGFloat = 6,
         onPathTap: (() -> Void)? = nil
     ) {
         self.path = path
@@ -28,6 +30,7 @@ public struct SliverView: View {
         self.contextLines = contextLines
         self.isOutdated = isOutdated
         self.theme = theme
+        self.cornerRadius = cornerRadius
         self.onPathTap = onPathTap
     }
 
@@ -41,10 +44,10 @@ public struct SliverView: View {
         }
         .background(Color(theme.contextRow.withAlpha(1)))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(Color(theme.border), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     private var header: some View {
@@ -80,6 +83,8 @@ public struct SliverView: View {
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.tint)
                     .underline(false)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
             .buttonStyle(.plain)
             #if os(macOS)
@@ -88,6 +93,8 @@ public struct SliverView: View {
         } else {
             Text(path)
                 .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.head)
         }
     }
 

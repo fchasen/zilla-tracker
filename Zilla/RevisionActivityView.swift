@@ -67,23 +67,41 @@ struct RevisionActivityView: View {
 
 struct ActivityRow: View {
     @Environment(Workspace.self) private var workspace
+    @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(\.colorScheme) private var colorScheme
     let transaction: RevisionTransaction
+    @State private var doneInFlight = false
+    @State private var rowWidth: CGFloat = 800
+
+    private static let narrowThreshold: CGFloat = 560
 
     var body: some View {
         Group {
             if isCompact {
                 compactRow
+                    .padding(12)
+            } else if isNarrow {
+                narrowRow
+                    .padding(.vertical, 12)
             } else {
                 expandedRow
+                    .padding(12)
             }
         }
-        .padding(12)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newValue in
+            rowWidth = newValue
+        }
+    }
+
+    private var isNarrow: Bool {
+        rowWidth < Self.narrowThreshold
     }
 
     private var expandedRow: some View {
@@ -91,9 +109,12 @@ struct ActivityRow: View {
             avatar(size: 28)
             VStack(alignment: .leading, spacing: 4) {
                 headerLine
-                bodyView
+                bodyView(narrow: false)
             }
             Spacer(minLength: 0)
+            if showDoneToggle {
+                doneToggle
+            }
         }
     }
 
@@ -107,6 +128,24 @@ struct ActivityRow: View {
                 inlineCaptionView
             }
             Spacer(minLength: 0)
+            if showDoneToggle {
+                doneToggle
+            }
+        }
+    }
+
+    private var narrowRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                avatar(size: 22)
+                headerLine
+                Spacer(minLength: 0)
+                if showDoneToggle {
+                    doneToggle
+                }
+            }
+            .padding(.horizontal, 12)
+            bodyView(narrow: true)
         }
     }
 
@@ -162,7 +201,7 @@ struct ActivityRow: View {
     }
 
     @ViewBuilder
-    private var bodyView: some View {
+    private func bodyView(narrow: Bool) -> some View {
         if isInline, let inlineDescriptor {
             VStack(alignment: .leading, spacing: 6) {
                 if isThreadHead, let hunk = anchoredHunk(for: inlineDescriptor) {
@@ -176,26 +215,38 @@ struct ActivityRow: View {
                         ),
                         isOutdated: isOutdatedAgainstLatestDiff,
                         theme: colorScheme == .dark ? .dark : .light,
+                        cornerRadius: sliverCornerRadius(narrow: narrow),
                         onPathTap: { workspace.revealChangeset(path: inlineDescriptor.path) }
                     )
                 } else {
                     inlineFileLink(inlineDescriptor)
+                        .padding(.horizontal, narrow ? 12 : 0)
                 }
                 if let body = primaryCommentBody, !body.isEmpty {
                     RemarkupText(source: body)
                         .font(.callout)
                         .textSelection(.enabled)
+                        .padding(.horizontal, narrow ? 12 : 0)
                 }
             }
         } else if let body = primaryCommentBody {
             RemarkupText(source: body)
                 .font(.callout)
                 .textSelection(.enabled)
+                .padding(.horizontal, narrow ? 12 : 0)
         }
     }
 
     private var isThreadHead: Bool {
         transaction.fields.replyToCommentPHID == nil
+    }
+
+    private func sliverCornerRadius(narrow: Bool) -> CGFloat {
+        #if os(iOS)
+        return 0
+        #else
+        return narrow ? 0 : 6
+        #endif
     }
 
     private var isOutdatedAgainstLatestDiff: Bool {
@@ -217,6 +268,47 @@ struct ActivityRow: View {
 
     private var isInline: Bool {
         transaction.fields.path != nil && transaction.fields.line != nil
+    }
+
+    private var showDoneToggle: Bool {
+        // Phabricator tracks `isDone` per inline-comment thread head, so only
+        // expose the toggle on the parent row of an inline thread.
+        isInline && transaction.fields.replyToCommentPHID == nil && doneCommentPHID != nil
+    }
+
+    private var doneCommentPHID: String? {
+        transaction.comments.last(where: { ($0.removed ?? false) == false })?.phid
+    }
+
+    @ViewBuilder
+    private var doneToggle: some View {
+        let isDone = transaction.fields.isDone ?? false
+        Button {
+            markDone(!isDone)
+        } label: {
+            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(isDone ? Color.green : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(doneInFlight)
+        .help(isDone ? "Mark as not done" : "Mark as done")
+        .accessibilityLabel(isDone ? "Mark as not done" : "Mark as done")
+    }
+
+    private func markDone(_ newValue: Bool) {
+        guard let phid = doneCommentPHID else { return }
+        doneInFlight = true
+        Task { @MainActor in
+            defer { doneInFlight = false }
+            if let error = await workspace.setInlineDone(
+                commentPHID: phid,
+                isDone: newValue,
+                using: phab.client
+            ) {
+                workspace.lastUpdateError = error.localizedDescription
+            }
+        }
     }
 
     private struct InlineDescriptor {
@@ -243,6 +335,8 @@ struct ActivityRow: View {
                     .font(.callout.monospaced())
                     .foregroundStyle(.tint)
                     .underline(true, color: .clear)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
             .buttonStyle(.plain)
             .help("Jump to \(descriptor.path):\(descriptor.line)")
