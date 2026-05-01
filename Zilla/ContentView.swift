@@ -461,7 +461,13 @@ final class Workspace {
 
     var lastLinkError: String?
 
-    var showInspector: Bool = false
+    var showInspector: Bool = {
+        #if os(macOS)
+        return true
+        #else
+        return false
+        #endif
+    }()
 
     var cache: ResourceCache?
 
@@ -534,7 +540,11 @@ final class Workspace {
         activeRevisionID = nil
         searchText = ""
         clearLoadedBug()
+        #if os(macOS)
+        showInspector = true
+        #else
         showInspector = false
+        #endif
         cache?.clear()
     }
 
