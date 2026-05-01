@@ -1,16 +1,20 @@
 import SwiftUI
 import PhabricatorKit
-import PierreDiffsSwift
+import Folio
+import FolioModel
+import FolioHighlight
 
 struct ChangesetView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(PhabricatorAuthStore.self) private var phab
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
 
     let changeset: Changeset
     let latestDiffID: Int
 
     @State private var containerWidth: CGFloat = 800
+    @State private var showAllHunks: Bool = false
 
     init(changeset: Changeset, latestDiffID: Int) {
         self.changeset = changeset
@@ -37,13 +41,10 @@ struct ChangesetView: View {
             disclosureRow
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-            body(for: workspace.changesetContent[changeset.id])
-                .padding(.top, isExpanded ? 6 : 0)
-                .frame(maxHeight: isExpanded ? .infinity : 0, alignment: .top)
-                .clipped()
-                .opacity(isExpanded ? 1 : 0)
-                .allowsHitTesting(isExpanded)
-                .accessibilityHidden(!isExpanded)
+            if isExpanded {
+                body(for: workspace.changesetContent[changeset.id])
+                    .padding(.top, 6)
+            }
         }
         .background(diffCardBackground)
         .overlay(
@@ -106,128 +107,121 @@ struct ChangesetView: View {
                 description: Text("Binary or image content isn't displayed in-app.")
             )
             .frame(maxWidth: .infinity, alignment: .leading)
-        case .hunks(let old, let new):
-            pierreView(old: old, new: new)
+        case .hunks:
+            folioView()
         }
     }
 
     @ViewBuilder
-    private func pierreView(old: String, new: String) -> some View {
-        let useSplit = containerWidth >= Self.splitWidthThreshold
-        let resolvedStyle: DiffStyle = useSplit ? .split : .unified
-        let annotations = annotationsForFile()
+    private func folioView() -> some View {
+        let totalHunks = changeset.hunks.count
+        let visibleCount = showAllHunks ? totalHunks : min(1, totalHunks)
+        let visibleHunks = changeset.hunks.prefix(visibleCount).map { hunk in
+            UnifiedDiffParser.parse(
+                corpus: hunk.corpus,
+                oldStart: hunk.oldOffset,
+                newStart: hunk.newOffset
+            )
+        }
+        let mode: DiffViewMode = (containerWidth >= Self.splitWidthThreshold) ? .split : .unified
+        let theme: HighlightTheme = (colorScheme == .dark) ? .dark : .light
+        let marks = commentMarks()
+        let hiddenLineEstimate = changeset.hunks
+            .dropFirst(visibleCount)
+            .reduce(0) { $0 + max($1.oldLen, $1.newLen) }
 
-        // The WebView reports its painted height as `intrinsicContentSize`
-        // (see ScrollPassThroughWebView in PierreDiffsSwift); `.fixedSize`
-        // tells SwiftUI to use that instead of stretching to fill the
-        // ScrollView. No `@State` binding to a height value is needed.
-        PierreDiffView(
-            oldContent: old,
-            newContent: new,
-            fileName: changeset.currentPath,
-            diffStyle: .constant(resolvedStyle),
-            overflowMode: .constant(.wrap),
-            annotations: annotations,
-            onLineClickWithPosition: handleLineClick,
-            onAnnotationClick: handleAnnotationClick,
-            onAnnotationDelete: handleAnnotationDelete,
-            onAnnotationDraftSubmit: handleDraftSubmit,
-            onAnnotationDraftCancel: handleDraftCancel,
-            onLinkClick: handleLinkClick
-        )
-        .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(visibleHunks.enumerated()), id: \.offset) { _, parsed in
+                FolioView(
+                    path: changeset.currentPath,
+                    content: .diff(parsed, anchor: nil, mode: mode),
+                    showsHeader: false,
+                    theme: theme,
+                    cornerRadius: 0,
+                    commentMarks: marks,
+                    onCommentMarkTap: handleCommentMarkTap,
+                    onCreateComment: handleCreateComment
+                )
+                .frame(maxWidth: .infinity)
+            }
+            if totalHunks > visibleCount {
+                ExpandContextRow(
+                    label: expandLabel(remainingHunks: totalHunks - visibleCount, lines: hiddenLineEstimate),
+                    theme: theme,
+                    onExpandFromTop: {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            showAllHunks = true
+                        }
+                    }
+                )
+            }
+        }
         .frame(maxWidth: .infinity)
     }
 
-    private func annotationsForFile() -> [DiffAnnotation] {
-        workspace.loadedRevisionInlines.diffAnnotations(
-            forPath: changeset.currentPath,
-            userDirectory: workspace.revisionUserDirectory,
-            currentUserPHID: phab.currentUser?.phid,
-            currentUser: phab.currentUser,
-            latestDiffID: latestDiffID,
-            activeComposer: workspace.activeInlineComposer
-        )
+    private func expandLabel(remainingHunks: Int, lines: Int) -> String {
+        let hunkLabel = remainingHunks == 1 ? "1 more hunk" : "\(remainingHunks) more hunks"
+        let lineLabel = lines == 1 ? "1 line" : "\(lines) lines"
+        return "Show \(hunkLabel) · \(lineLabel)"
     }
 
-    private func handleLinkClick(_ rawURL: String) {
-        guard let url = URL(string: rawURL) else { return }
-        if let id = bugzillaBugID(from: url) {
-            workspace.navigate(to: .bug(id))
-        } else {
-            openURL(url)
+    private func commentMarks() -> [FolioCommentMark] {
+        let onLatest = workspace.loadedRevisionInlines.filter {
+            $0.diffID == latestDiffID && $0.path == changeset.currentPath && !$0.isDeleted
+        }
+        let myPHID = phab.currentUser?.phid
+        let visible = onLatest.filter { inline in
+            inline.transactionPHID != nil || inline.authorPHID == myPHID
+        }
+        guard !visible.isEmpty else { return [] }
+
+        let visiblePHIDs = Set(visible.map(\.phid))
+        let roots = visible.filter { inline in
+            guard let parent = inline.replyToCommentPHID else { return true }
+            return !visiblePHIDs.contains(parent)
+        }
+
+        return roots.map { root in
+            let count = threadSize(rootPHID: root.phid, in: visible)
+            return FolioCommentMark(
+                id: root.phid,
+                side: root.isNewFile ? .newFile : .oldFile,
+                line: root.line,
+                count: count
+            )
         }
     }
 
-    private func handleLineClick(position: LineClickPosition, localPoint: CGPoint) {
-        // Pierre reports the click side as "additions", "deletions", or
-        // "unified". A click on the deletions side anchors the comment to the
-        // old file; everything else anchors to the new file.
-        let isNew = position.side != "deletions"
+    private func threadSize(rootPHID: String, in inlines: [InlineComment]) -> Int {
+        var count = 1
+        var stack: [String] = [rootPHID]
+        while let parent = stack.popLast() {
+            for child in inlines where child.replyToCommentPHID == parent {
+                count += 1
+                stack.append(child.phid)
+            }
+        }
+        return count
+    }
+
+    private func handleCreateComment(line: Int, side: AnchorRange.Side) {
         workspace.beginInlineComposer(
             path: changeset.currentPath,
-            line: position.lineNumber,
+            line: line,
             length: 1,
-            isNewFile: isNew,
+            isNewFile: side == .newFile,
             replyTo: nil
         )
     }
 
-    private func handleDraftSubmit(annotationID: String, commentID: String, body: String, side: String, lineNumber: Int) {
-        guard let composer = workspace.activeInlineComposer,
-              composer.syntheticID == annotationID || composer.syntheticID == commentID else {
-            return
-        }
-        Task { @MainActor in
-            let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
-            workspace.activeInlineComposer = nil
-            if let error = await workspace.createInlineDraft(
-                path: composer.path,
-                line: composer.line,
-                length: composer.length,
-                isNewFile: composer.isNewFile,
-                content: trimmed,
-                using: phab.client
-            ) {
-                workspace.lastUpdateError = error.localizedDescription
-                workspace.beginInlineComposer(
-                    path: composer.path,
-                    line: composer.line,
-                    length: composer.length,
-                    isNewFile: composer.isNewFile,
-                    replyTo: composer.replyTo
-                )
-            }
-        }
-    }
-
-    private func handleDraftCancel(annotationID: String, commentID: String, side: String, lineNumber: Int) {
-        if let composer = workspace.activeInlineComposer,
-           composer.syntheticID == annotationID || composer.syntheticID == commentID {
-            workspace.activeInlineComposer = nil
-        }
-    }
-
-    private func handleAnnotationClick(id: String, side: String, lineNumber: Int, localPoint: CGPoint) {
-        // Tapping an existing thread starts an in-diff reply on that thread.
-        let isNew = side != "deletions"
+    private func handleCommentMarkTap(_ mark: FolioCommentMark) {
         workspace.beginInlineComposer(
             path: changeset.currentPath,
-            line: lineNumber,
+            line: mark.line,
             length: 1,
-            isNewFile: isNew,
-            replyTo: id
+            isNewFile: mark.side == .newFile,
+            replyTo: mark.id
         )
-    }
-
-    private func handleAnnotationDelete(id: String, side: String, lineNumber: Int) {
-        guard let inline = workspace.loadedRevisionInlines.first(where: { $0.phid == id }) else { return }
-        let myPHID = phab.currentUser?.phid
-        guard inline.transactionPHID == nil, inline.authorPHID == myPHID else { return }
-        Task {
-            _ = await workspace.deleteInlineDraft(phid: id, using: phab.client)
-        }
     }
 }
 

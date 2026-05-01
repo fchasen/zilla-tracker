@@ -7,6 +7,7 @@ public struct FolioView: View {
     public let content: FolioContent
     public let initialContextLines: Int
     public let isOutdated: Bool
+    public let showsHeader: Bool
     public let theme: HighlightTheme
     public let cornerRadius: CGFloat
     public let commentMarks: [FolioCommentMark]
@@ -22,14 +23,22 @@ public struct FolioView: View {
     @State private var contextBelow: Int
     @State private var selectionCells: [FolioSelectableCell] = []
     @State private var draftSelection: FolioLineSelection?
+    @State private var gapStates: [Int: GapRevealState] = [:]
 
     private let expandStep: Int = 10
+    private let gapExpandStep: Int = 20
+
+    struct GapRevealState: Equatable {
+        var revealedFromTop: Int = 0
+        var revealedFromBottom: Int = 0
+    }
 
     public init(
         path: String,
         content: FolioContent,
         contextLines: Int = 3,
         isOutdated: Bool = false,
+        showsHeader: Bool = true,
         theme: HighlightTheme = .light,
         cornerRadius: CGFloat = 6,
         commentMarks: [FolioCommentMark] = [],
@@ -44,6 +53,7 @@ public struct FolioView: View {
         self.content = content
         self.initialContextLines = contextLines
         self.isOutdated = isOutdated
+        self.showsHeader = showsHeader
         self.theme = theme
         self.cornerRadius = cornerRadius
         self.commentMarks = commentMarks
@@ -55,13 +65,18 @@ public struct FolioView: View {
         self.onLineSelectionChange = onLineSelectionChange
         self._contextAbove = State(initialValue: contextLines)
         self._contextBelow = State(initialValue: contextLines)
+        self._isExpanded = State(initialValue: !showsHeader || true)
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            if isExpanded {
-                Divider().background(Color(theme.border))
+            if showsHeader {
+                header
+                if isExpanded {
+                    Divider().background(Color(theme.border))
+                }
+            }
+            if isExpanded || !showsHeader {
                 rows
                     .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
                     .gesture(selectionDragGesture)
@@ -162,91 +177,294 @@ public struct FolioView: View {
 
     @ViewBuilder
     private func diffBody(hunk: DiffHunk, anchor: AnchorRange?, mode: DiffViewMode) -> some View {
-        let bounds = computedBounds(hunk: hunk, anchor: anchor)
-        let visible = visibleSlice(hunk: hunk, bounds: bounds)
-        let snippetText = Array(visible).map(\.text).joined(separator: "\n")
-        let highlighter = FolioHighlighter(theme: theme)
-        let language = CodeLanguageRegistry.detect(path: path)
-        let runs = highlighter.runs(for: snippetText, language: language)
-        let lineRanges = computeLineRanges(visible: visible)
-        let gutter = gutterWidth(for: visible)
-
-        VStack(alignment: .leading, spacing: 0) {
-            if anchor != nil, bounds.linesAbove > 0 || onExpandContext != nil {
-                ExpandContextRow(
-                    direction: .up,
-                    hiddenCount: bounds.linesAbove,
-                    theme: theme,
-                    action: { expand(direction: .up, bounds: bounds) }
-                )
-                Divider().background(Color(theme.border))
-            }
-            switch mode {
-            case .unified:
-                ForEach(Array(visible.enumerated()), id: \.offset) { index, line in
-                    let lookup = unifiedLookup(for: line)
-                    FolioRow(
-                        line: line,
-                        lineRange: lineRanges[index],
-                        runs: runs,
-                        theme: theme,
-                        gutterWidth: gutter,
-                        commentMark: lookup.mark,
-                        onCommentMarkTap: lookup.mark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
-                        onCreateComment: createCommentClosure(line: lookup.lineNum, side: lookup.side),
-                        isInSelection: isLineSelected(lookup.lineNum, side: lookup.side),
-                        coordinateSpace: FolioSelectionMath.coordinateSpaceName
-                    )
-                }
-            case .split:
-                let splitRows = SplitRowBuilder.build(Array(visible))
-                let pairs = splitRowRanges(rows: splitRows, lineRanges: lineRanges, visible: Array(visible))
-                ForEach(Array(splitRows.enumerated()), id: \.offset) { index, row in
-                    let leftLine = row.left?.oldNumber
-                    let rightLine = row.right?.newNumber
-                    let leftMark = leftLine.flatMap { findMark(side: .oldFile, line: $0) }
-                    let rightMark = rightLine.flatMap { findMark(side: .newFile, line: $0) }
-                    SplitFolioRow(
-                        row: row,
-                        leftLineRange: pairs[index].leftRange,
-                        rightLineRange: pairs[index].rightRange,
-                        runs: runs,
-                        theme: theme,
-                        gutterWidth: gutter,
-                        leftMark: leftMark,
-                        rightMark: rightMark,
-                        onLeftMarkTap: leftMark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
-                        onRightMarkTap: rightMark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
-                        onCreateLeftComment: createCommentClosure(line: leftLine, side: .oldFile),
-                        onCreateRightComment: createCommentClosure(line: rightLine, side: .newFile),
-                        isLeftInSelection: isLineSelected(leftLine, side: .oldFile),
-                        isRightInSelection: isLineSelected(rightLine, side: .newFile),
-                        coordinateSpace: FolioSelectionMath.coordinateSpaceName
-                    )
-                }
-            }
-            if anchor != nil, bounds.linesBelow > 0 || onExpandContext != nil {
-                Divider().background(Color(theme.border))
-                ExpandContextRow(
-                    direction: .down,
-                    hiddenCount: bounds.linesBelow,
-                    theme: theme,
-                    action: { expand(direction: .down, bounds: bounds) }
-                )
-            }
+        if let anchor {
+            anchoredDiffBody(hunk: hunk, anchor: anchor, mode: mode)
+        } else {
+            foldedDiffBody(hunk: hunk, mode: mode)
         }
     }
 
-    private func computedBounds(hunk: DiffHunk, anchor: AnchorRange?) -> SnippetBounds {
-        guard let anchor else {
-            return SnippetBounds(startIndex: 0, endIndex: max(0, hunk.lines.count - 1), totalCount: hunk.lines.count)
-        }
-        return SnippetWindow.bounds(
+    @ViewBuilder
+    private func anchoredDiffBody(hunk: DiffHunk, anchor: AnchorRange, mode: DiffViewMode) -> some View {
+        let bounds = SnippetWindow.bounds(
             hunk: hunk,
             anchor: anchor,
             contextAbove: contextAbove,
             contextBelow: contextBelow
         )
+        let resources = highlightResources(for: hunk)
+        let gutter = gutterWidth(for: hunk.lines[...])
+        let leadingGutter = gutter + 8
+
+        VStack(alignment: .leading, spacing: 0) {
+            if bounds.linesAbove > 0 || onExpandContext != nil {
+                ExpandContextRow(
+                    label: ExpandContextRow.unmodifiedLabel(count: bounds.linesAbove),
+                    theme: theme,
+                    leadingGutterWidth: leadingGutter,
+                    onExpandFromBottom: {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            expand(direction: .up, bounds: bounds)
+                        }
+                    }
+                )
+            }
+            renderRowRange(
+                hunk: hunk,
+                range: bounds.startIndex...max(bounds.startIndex, bounds.endIndex),
+                lineRanges: resources.lineRanges,
+                runs: resources.runs,
+                gutter: gutter,
+                mode: mode
+            )
+            if bounds.linesBelow > 0 || onExpandContext != nil {
+                ExpandContextRow(
+                    label: ExpandContextRow.unmodifiedLabel(count: bounds.linesBelow),
+                    theme: theme,
+                    leadingGutterWidth: leadingGutter,
+                    onExpandFromTop: {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            expand(direction: .down, bounds: bounds)
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private enum GapPosition { case leading, trailing, middle, standalone }
+
+    private func position(of idx: Int, in sections: [FoldedDiff.Section]) -> GapPosition {
+        let beforeHasLines = sections.prefix(idx).contains { if case .lines = $0 { true } else { false } }
+        let afterHasLines = sections.dropFirst(idx + 1).contains { if case .lines = $0 { true } else { false } }
+        switch (beforeHasLines, afterHasLines) {
+        case (false, true): return .leading
+        case (true, false): return .trailing
+        case (true, true): return .middle
+        case (false, false): return .standalone
+        }
+    }
+
+    @ViewBuilder
+    private func foldedDiffBody(hunk: DiffHunk, mode: DiffViewMode) -> some View {
+        let folded = DiffFolder.fold(hunk, contextLines: initialContextLines)
+        let resources = highlightResources(for: hunk)
+        let gutter = gutterWidth(for: hunk.lines[...])
+        let leadingGutter = gutter + 8
+
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(folded.sections.enumerated()), id: \.offset) { idx, section in
+                switch section {
+                case let .lines(start, end):
+                    renderRowRange(
+                        hunk: hunk,
+                        range: start...end,
+                        lineRanges: resources.lineRanges,
+                        runs: resources.runs,
+                        gutter: gutter,
+                        mode: mode
+                    )
+                case let .gap(start, end):
+                    foldedGap(
+                        idx: idx,
+                        start: start,
+                        end: end,
+                        sections: folded.sections,
+                        hunk: hunk,
+                        resources: resources,
+                        gutter: gutter,
+                        leadingGutter: leadingGutter,
+                        mode: mode
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func foldedGap(
+        idx: Int,
+        start: Int,
+        end: Int,
+        sections: [FoldedDiff.Section],
+        hunk: DiffHunk,
+        resources: HighlightResources,
+        gutter: CGFloat,
+        leadingGutter: CGFloat,
+        mode: DiffViewMode
+    ) -> some View {
+        let state = gapStates[start] ?? GapRevealState()
+        let totalSize = end - start + 1
+        let revealed = state.revealedFromTop + state.revealedFromBottom
+        let hiddenStart = start + state.revealedFromTop
+        let hiddenEnd = end - state.revealedFromBottom
+        let hiddenCount = max(0, hiddenEnd - hiddenStart + 1)
+        let pos = position(of: idx, in: sections)
+
+        return Group {
+            if revealed >= totalSize {
+                renderRowRange(
+                    hunk: hunk,
+                    range: start...end,
+                    lineRanges: resources.lineRanges,
+                    runs: resources.runs,
+                    gutter: gutter,
+                    mode: mode
+                )
+            } else {
+                if state.revealedFromTop > 0 {
+                    renderRowRange(
+                        hunk: hunk,
+                        range: start...(start + state.revealedFromTop - 1),
+                        lineRanges: resources.lineRanges,
+                        runs: resources.runs,
+                        gutter: gutter,
+                        mode: mode
+                    )
+                }
+                ExpandContextRow(
+                    label: ExpandContextRow.unmodifiedLabel(count: hiddenCount),
+                    theme: theme,
+                    leadingGutterWidth: leadingGutter,
+                    onExpandFromTop: (pos == .leading) ? nil : {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            expandGap(start: start, totalSize: totalSize, fromTop: true)
+                        }
+                    },
+                    onExpandFromBottom: (pos == .trailing) ? nil : {
+                        withAnimation(.snappy(duration: 0.18)) {
+                            expandGap(start: start, totalSize: totalSize, fromTop: false)
+                        }
+                    }
+                )
+                if state.revealedFromBottom > 0 {
+                    renderRowRange(
+                        hunk: hunk,
+                        range: (end - state.revealedFromBottom + 1)...end,
+                        lineRanges: resources.lineRanges,
+                        runs: resources.runs,
+                        gutter: gutter,
+                        mode: mode
+                    )
+                }
+            }
+        }
+    }
+
+    private func expandGap(start: Int, totalSize: Int, fromTop: Bool) {
+        var state = gapStates[start] ?? GapRevealState()
+        let remaining = totalSize - state.revealedFromTop - state.revealedFromBottom
+        let bump = min(gapExpandStep, remaining)
+        if fromTop {
+            state.revealedFromTop += bump
+        } else {
+            state.revealedFromBottom += bump
+        }
+        gapStates[start] = state
+    }
+
+    private struct HighlightResources {
+        let runs: [FolioHighlighter.Run]
+        let lineRanges: [NSRange]
+    }
+
+    private func highlightResources(for hunk: DiffHunk) -> HighlightResources {
+        let allText = hunk.lines.map(\.text).joined(separator: "\n")
+        let highlighter = FolioHighlighter(theme: theme)
+        let language = CodeLanguageRegistry.detect(path: path)
+        let runs = highlighter.runs(for: allText, language: language)
+        var lineRanges: [NSRange] = []
+        var cursor = 0
+        for line in hunk.lines {
+            let length = (line.text as NSString).length
+            lineRanges.append(NSRange(location: cursor, length: length))
+            cursor += length + 1
+        }
+        return HighlightResources(runs: runs, lineRanges: lineRanges)
+    }
+
+    @ViewBuilder
+    private func renderRowRange(
+        hunk: DiffHunk,
+        range: ClosedRange<Int>,
+        lineRanges: [NSRange],
+        runs: [FolioHighlighter.Run],
+        gutter: CGFloat,
+        mode: DiffViewMode
+    ) -> some View {
+        let visible = Array(hunk.lines[range])
+        switch mode {
+        case .unified:
+            ForEach(Array(visible.enumerated()), id: \.offset) { i, line in
+                let absIdx = range.lowerBound + i
+                let lookup = unifiedLookup(for: line)
+                FolioRow(
+                    line: line,
+                    lineRange: lineRanges[absIdx],
+                    runs: runs,
+                    theme: theme,
+                    gutterWidth: gutter,
+                    commentMark: lookup.mark,
+                    onCommentMarkTap: lookup.mark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
+                    onCreateComment: createCommentClosure(line: lookup.lineNum, side: lookup.side),
+                    isInSelection: isLineSelected(lookup.lineNum, side: lookup.side),
+                    coordinateSpace: FolioSelectionMath.coordinateSpaceName
+                )
+            }
+        case .split:
+            let splitRows = SplitRowBuilder.build(visible)
+            let pairs = splitRowRangesAbsolute(
+                rows: splitRows,
+                lineRanges: lineRanges,
+                visible: visible,
+                baseIndex: range.lowerBound
+            )
+            ForEach(Array(splitRows.enumerated()), id: \.offset) { idx, row in
+                let leftLine = row.left?.oldNumber
+                let rightLine = row.right?.newNumber
+                let leftMark = leftLine.flatMap { findMark(side: .oldFile, line: $0) }
+                let rightMark = rightLine.flatMap { findMark(side: .newFile, line: $0) }
+                SplitFolioRow(
+                    row: row,
+                    leftLineRange: pairs[idx].leftRange,
+                    rightLineRange: pairs[idx].rightRange,
+                    runs: runs,
+                    theme: theme,
+                    gutterWidth: gutter,
+                    leftMark: leftMark,
+                    rightMark: rightMark,
+                    onLeftMarkTap: leftMark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
+                    onRightMarkTap: rightMark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
+                    onCreateLeftComment: createCommentClosure(line: leftLine, side: .oldFile),
+                    onCreateRightComment: createCommentClosure(line: rightLine, side: .newFile),
+                    isLeftInSelection: isLineSelected(leftLine, side: .oldFile),
+                    isRightInSelection: isLineSelected(rightLine, side: .newFile),
+                    coordinateSpace: FolioSelectionMath.coordinateSpaceName
+                )
+            }
+        }
+    }
+
+    private func splitRowRangesAbsolute(
+        rows: [SplitRow],
+        lineRanges: [NSRange],
+        visible: [DiffLine],
+        baseIndex: Int
+    ) -> [SplitLineRanges] {
+        var indexByLine: [DiffLine: Int] = [:]
+        for (i, line) in visible.enumerated() {
+            indexByLine[line] = baseIndex + i
+        }
+        return rows.map { row in
+            var pair = SplitLineRanges()
+            if let line = row.left, let i = indexByLine[line], i < lineRanges.count {
+                pair.leftRange = lineRanges[i]
+            }
+            if let line = row.right, let i = indexByLine[line], i < lineRanges.count {
+                pair.rightRange = lineRanges[i]
+            }
+            return pair
+        }
     }
 
     private func expand(direction: ExpandDirection, bounds: SnippetBounds) {
@@ -371,46 +589,9 @@ public struct FolioView: View {
         return sel.contains(line)
     }
 
-    private func visibleSlice(hunk: DiffHunk, bounds: SnippetBounds) -> ArraySlice<DiffLine> {
-        if bounds.isEmpty { return ArraySlice(hunk.lines) }
-        return hunk.lines[bounds.startIndex...bounds.endIndex]
-    }
-
     private struct SplitLineRanges {
         var leftRange: NSRange?
         var rightRange: NSRange?
-    }
-
-    private func splitRowRanges(
-        rows: [SplitRow],
-        lineRanges: [NSRange],
-        visible: [DiffLine]
-    ) -> [SplitLineRanges] {
-        var indexByLine: [DiffLine: Int] = [:]
-        for (i, line) in visible.enumerated() {
-            indexByLine[line] = i
-        }
-        return rows.map { row in
-            var pair = SplitLineRanges()
-            if let line = row.left, let i = indexByLine[line] {
-                pair.leftRange = lineRanges[i]
-            }
-            if let line = row.right, let i = indexByLine[line] {
-                pair.rightRange = lineRanges[i]
-            }
-            return pair
-        }
-    }
-
-    private func computeLineRanges(visible: ArraySlice<DiffLine>) -> [NSRange] {
-        var ranges: [NSRange] = []
-        var cursor = 0
-        for line in visible {
-            let length = (line.text as NSString).length
-            ranges.append(NSRange(location: cursor, length: length))
-            cursor += length + 1
-        }
-        return ranges
     }
 
     private func codeLineRanges(lines: [String]) -> [NSRange] {
