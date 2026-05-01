@@ -60,6 +60,7 @@ struct RevisionInspector: View {
             if let revID = workspace.loadedRevision?.id {
                 workspace.pendingBackToRevision = revID
             }
+            workspace.activeRevisionID = nil
             workspace.selectedBugID = id
         } label: {
             HStack(alignment: .top, spacing: 10) {
