@@ -65,11 +65,11 @@ struct RevisionInspector: View {
                         Image(systemName: icon.symbol)
                             .foregroundStyle(icon.color)
                         Text(verbatim: "#\(id)")
-                            .font(.callout.weight(.semibold))
+                            .scaledFont(.callout, weight: .semibold)
                             .foregroundStyle(.tint)
                         if let meta, !meta.status.isEmpty {
                             Text(meta.status)
-                                .font(.caption2.weight(.semibold))
+                                .scaledFont(.caption2, weight: .semibold)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(.secondary.opacity(0.15), in: Capsule())
@@ -78,24 +78,24 @@ struct RevisionInspector: View {
                     }
                     if let summary = meta?.summary, !summary.isEmpty {
                         Text(summary)
-                            .font(.callout)
+                            .scaledFont(.callout)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                             .lineLimit(3)
                     } else {
                         Text("Open in app")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     if let assignee = meta?.assigneeDisplayName, !assignee.isEmpty {
                         Text("Assigned to \(assignee)")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .scaledFont(.caption, weight: .semibold)
                     .foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -177,7 +177,7 @@ struct RevisionInspector: View {
             )
             if phids.isEmpty {
                 Text("No tags")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 FlowLayout(spacing: 6) {
@@ -186,7 +186,7 @@ struct RevisionInspector: View {
                     }
                     if unresolved > 0 {
                         Text("+\(unresolved) loading…")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -199,16 +199,16 @@ struct RevisionInspector: View {
     private func tagChip(_ project: PhabricatorProject) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
-                .font(.caption2)
+                .scaledFont(.caption2)
             Text(project.name)
-                .font(.caption.weight(.medium))
+                .scaledFont(.caption, weight: .medium)
                 .lineLimit(1)
             if phab.isSignedIn {
                 Button {
                     Task { await removeTag(project) }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.caption2)
+                        .scaledFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
@@ -267,7 +267,7 @@ struct RevisionInspector: View {
                     }
                 }
             }
-            .font(.callout)
+            .scaledFont(.callout)
         }
     }
 
@@ -277,12 +277,12 @@ struct RevisionInspector: View {
             InspectorSectionHeader(title: "Latest diff")
             HStack(spacing: 8) {
                 Text(verbatim: "Diff \(latest.id)")
-                    .font(.callout.monospaced())
+                    .scaledFont(.callout, design: .monospaced)
                 Text(verbatim: "·")
                     .foregroundStyle(.tertiary)
                 if let date = latest.dateCreated {
                     Text(date, format: .relative(presentation: .named))
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -296,17 +296,17 @@ struct RevisionInspector: View {
             avatar(phid: phid)
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayName(for: phid))
-                    .font(.callout.weight(.medium))
+                    .scaledFont(.callout, weight: .medium)
                 if phid.hasPrefix("PHID-USER-"),
                    let user = workspace.revisionUserDirectory[phid],
                    let real = user.realName, !real.isEmpty,
                    real != user.userName {
                     Text("@\(user.userName)")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 } else if phid.hasPrefix("PHID-PROJ-") {
                     Text("Review group")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

@@ -11,18 +11,18 @@ struct RevisionHeader: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: revision.fields.isViewRestricted ? "lock.fill" : "globe")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(revision.fields.isViewRestricted ? Color.orange : .secondary)
                     .help(revision.fields.isViewRestricted ? "Restricted view policy" : "Public view policy")
                 Text(revision.revisionLabel)
-                    .font(.headline.monospaced())
+                    .scaledFont(.headline, design: .monospaced)
                     .foregroundStyle(.secondary)
                 if let url = revision.fields.uri {
                     Button {
                         openURL(url)
                     } label: {
                         Image(systemName: "arrow.up.right.square")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
@@ -34,7 +34,7 @@ struct RevisionHeader: View {
                 }
                 if let myStatus = myReviewerStatus {
                     Text(myStatus)
-                        .font(.caption.weight(.semibold))
+                        .scaledFont(.caption, weight: .semibold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(myStateColor.opacity(0.18), in: Capsule())
@@ -43,7 +43,7 @@ struct RevisionHeader: View {
                 Spacer()
             }
             Text(revisionTitleAttributed(revision.fields.title))
-                .font(.title2)
+                .scaledFont(.title2)
                 .textSelection(.enabled)
             HStack(spacing: 6) {
                 if let authorName {
@@ -55,7 +55,7 @@ struct RevisionHeader: View {
                 }
                 Text(revision.fields.dateCreated, format: .dateTime.year().month().day())
             }
-            .font(.callout)
+            .scaledFont(.callout)
             .foregroundStyle(.secondary)
         }
     }

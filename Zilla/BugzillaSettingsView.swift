@@ -18,7 +18,7 @@ struct BugzillaSettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Bugzilla")
-                    .font(.title2.weight(.semibold))
+                    .scaledFont(.title2, weight: .semibold)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
@@ -51,7 +51,7 @@ struct BugzillaSettingsView: View {
                 Spacer()
                 Link(destination: Self.apiKeysURL) {
                     Label("Get a key", systemImage: "arrow.up.right.square")
-                        .font(.caption)
+                        .scaledFont(.caption)
                 }
                 .buttonStyle(.borderless)
                 .linkPointerStyle()
@@ -63,7 +63,7 @@ struct BugzillaSettingsView: View {
 
             if let error = auth.errorMessage {
                 Text(error)
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
@@ -91,14 +91,14 @@ struct BugzillaSettingsView: View {
                     .foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(user.realName ?? user.name)
-                        .font(.headline)
+                        .scaledFont(.headline)
                     if let nick = user.nick {
                         Text("@\(nick)")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         Text(user.name)
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }

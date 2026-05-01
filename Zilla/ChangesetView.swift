@@ -75,7 +75,7 @@ struct ChangesetView: View {
                 toggleExpanded()
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .scaledFont(.caption, weight: .semibold)
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .frame(width: 14, height: 14)
@@ -233,7 +233,7 @@ struct ChangesetHeader: View {
             Image(systemName: iconName)
                 .foregroundStyle(.secondary)
             pathText
-                .font(.callout.monospaced())
+                .scaledFont(.callout, design: .monospaced)
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
                 .truncationMode(.head)
@@ -289,7 +289,7 @@ struct ChangesetHeader: View {
 
     private func pill(text: String, color: Color) -> some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .scaledFont(.caption, weight: .semibold)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.18), in: Capsule())

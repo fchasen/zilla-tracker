@@ -30,7 +30,7 @@ struct SplitFolioRow: View {
                 .frame(width: 1)
             cell(side: .right)
         }
-        .font(.system(.caption, design: .monospaced))
+        .scaledFont(.caption, design: .monospaced)
         .lineLimit(nil)
         .fixedSize(horizontal: false, vertical: true)
     }

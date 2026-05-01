@@ -30,7 +30,7 @@ struct RevisionActionSheet: View {
                 } footer: {
                     if state.action == .reject {
                         Text("A reason is required when requesting changes.")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }

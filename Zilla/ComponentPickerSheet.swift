@@ -82,10 +82,10 @@ struct ComponentPickerSheet: View {
                             .foregroundStyle(.primary)
                         Spacer()
                         Text("\(activeComponentCount(in: product))")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
+                            .scaledFont(.caption, weight: .semibold)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -149,7 +149,7 @@ private struct ComponentList: View {
                             .foregroundStyle(.primary)
                         if !component.description.isEmpty {
                             Text(component.description)
-                                .font(.caption)
+                                .scaledFont(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }

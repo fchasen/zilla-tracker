@@ -179,10 +179,12 @@ private struct ToolbarLabelButton: View {
     let shortcut: KeyboardShortcut?
     let action: () -> Void
 
+    @ScaledMetric(relativeTo: .body) private var labelSize: CGFloat = 13
+
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: labelSize, weight: .semibold))
                 .frame(width: 28, height: 24)
         }
         .help(help)

@@ -55,7 +55,7 @@ struct FolioRow: View {
                     .frame(width: 3)
             }
         }
-        .font(.system(.caption, design: .monospaced))
+        .scaledFont(.caption, design: .monospaced)
         .lineLimit(nil)
         .fixedSize(horizontal: false, vertical: true)
         #if os(macOS)

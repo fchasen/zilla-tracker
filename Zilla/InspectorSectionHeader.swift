@@ -8,7 +8,7 @@ struct InspectorSectionHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .scaledFont(.caption2, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .tracking(0.4)
@@ -21,7 +21,7 @@ struct InspectorSectionHeader: View {
             if let onAdd {
                 Button(action: onAdd) {
                     Image(systemName: "plus.circle")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)

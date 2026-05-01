@@ -293,7 +293,7 @@ private struct BugContent: View {
                 BugHeader(bug: bug, onUpdate: onUpdate)
                 if let loadError {
                     Label(loadError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.orange)
                 }
                 if let description = descriptionComment {
@@ -422,7 +422,7 @@ private struct BugHeader: View {
 
                 Button(action: copyID) {
                     Text(verbatim: "\(bug.id)")
-                        .font(.headline.monospaced())
+                        .scaledFont(.headline, design: .monospaced)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -456,7 +456,7 @@ private struct BugHeader: View {
 
                 if didCopy {
                     Text("Copied")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.green)
                         .transition(.opacity)
                 }
@@ -468,7 +468,7 @@ private struct BugHeader: View {
             if isReporter {
                 TextField("Summary", text: $editedSummary)
                     .textFieldStyle(.plain)
-                    .font(.title2)
+                    .scaledFont(.title2)
                     .focused($summaryFocused)
                     .lineLimit(1...3)
                     .accessibilityLabel("Bug summary")
@@ -502,7 +502,7 @@ private struct BugHeader: View {
                     )
             } else {
                 Text(bug.summary)
-                    .font(.title2)
+                    .scaledFont(.title2)
                     .textSelection(.enabled)
             }
         }
@@ -572,7 +572,7 @@ private struct StatusPill: View {
 
     var body: some View {
         Text(label)
-            .font(.caption.weight(.semibold))
+            .scaledFont(.caption, weight: .semibold)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.18), in: Capsule())
@@ -601,7 +601,7 @@ private struct MetaPill: View {
 
     var body: some View {
         Text(label)
-            .font(.caption.weight(.semibold))
+            .scaledFont(.caption, weight: .semibold)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.18), in: Capsule())
@@ -669,7 +669,7 @@ struct BugMetadata: View {
             if let when = bug.creationTime { dateRow("Created", when, relative: false) }
             if let when = bug.lastChangeTime { dateRow("Last change", when, relative: true) }
         }
-        .font(.callout)
+        .scaledFont(.callout)
     }
 
     @ViewBuilder
@@ -684,7 +684,7 @@ struct BugMetadata: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Image(systemName: "chevron.down")
-                        .font(.caption2)
+                        .scaledFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
@@ -967,7 +967,7 @@ private struct NeedinfoSection: View {
             )
             if requests.isEmpty {
                 Text("No outstanding requests")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -988,7 +988,7 @@ private struct NeedinfoSection: View {
                 showingPicker = true
             } label: {
                 Label("Request needinfo…", systemImage: "plus.circle")
-                    .font(.caption)
+                    .scaledFont(.caption)
             }
             .buttonStyle(.borderless)
             .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
@@ -1023,10 +1023,10 @@ private struct NeedinfoRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: isMe ? "person.crop.circle.badge.questionmark" : "person.crop.circle")
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(isMe ? Color.orange : Color.secondary)
             Text(displayName)
-                .font(.callout)
+                .scaledFont(.callout)
                 .foregroundStyle(isMe ? Color.primary : Color.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -1077,7 +1077,7 @@ private struct UserSearchPopover: View {
                 ProgressView().controlSize(.small)
             } else if matches.isEmpty {
                 Text(query.count < 2 ? "Type at least 2 characters" : "No matches")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView {
@@ -1088,9 +1088,9 @@ private struct UserSearchPopover: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(user.realName ?? user.name)
-                                        .font(.callout)
+                                        .scaledFont(.callout)
                                     Text(user.name)
-                                        .font(.caption)
+                                        .scaledFont(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1144,7 +1144,7 @@ private struct FlagPill: View {
 
     var body: some View {
         Text(label)
-            .font(.caption.weight(.semibold))
+            .scaledFont(.caption, weight: .semibold)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.18), in: Capsule())
@@ -1198,7 +1198,7 @@ private struct WhiteboardSection: View {
         VStack(alignment: .leading, spacing: 6) {
             InspectorSectionHeader(title: "Whiteboard")
             Text(text)
-                .font(.callout.monospaced())
+                .scaledFont(.callout, design: .monospaced)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1263,7 +1263,7 @@ private struct SeeAlsoList: View {
             )
             if urls.isEmpty {
                 Text("No related bugs")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -1295,12 +1295,12 @@ private struct SeeAlsoRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if let id = bmoBugID {
                     Text(verbatim: "#\(id)")
-                        .font(.caption.monospaced())
+                        .scaledFont(.caption, design: .monospaced)
                         .foregroundStyle(.secondary)
                         .fixedSize()
                     if let summary = workspace.dependencyMetadata(for: id)?.summary {
                         Text(summary)
-                            .font(.callout)
+                            .scaledFont(.callout)
                             .foregroundStyle(isClosed(id) ? Color.secondary : Color.primary)
                             .strikethrough(isClosed(id))
                             .lineLimit(2)
@@ -1308,7 +1308,7 @@ private struct SeeAlsoRow: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         Text(url)
-                            .font(.callout)
+                            .scaledFont(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -1316,10 +1316,10 @@ private struct SeeAlsoRow: View {
                     }
                 } else {
                     Image(systemName: "arrow.up.right.square")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                     Text(displayURL)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1389,7 +1389,7 @@ private struct DependencyList: View {
             VStack(alignment: .leading, spacing: 4) {
                 if ids.isEmpty {
                     Text("Drop bugs here to add")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, 4)
                 } else {
@@ -1418,12 +1418,12 @@ private struct DependencyRow: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(verbatim: "#\(id)")
-                    .font(.caption.monospaced())
+                    .scaledFont(.caption, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .fixedSize()
                 if let summary = metadata?.summary {
                     Text(summary)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .foregroundStyle(isClosed ? Color.secondary : Color.primary)
                         .strikethrough(isClosed)
                         .lineLimit(2)
@@ -1481,7 +1481,7 @@ private struct CCSection: View {
                     expanded.toggle()
                 }
                 .buttonStyle(.borderless)
-                .font(.caption)
+                .scaledFont(.caption)
             }
         }
     }
@@ -1501,13 +1501,13 @@ private struct CCRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(User.displayName(for: email))
-                .font(.callout)
+                .scaledFont(.callout)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
             if didCopy {
                 Text("Copied")
-                    .font(.caption2)
+                    .scaledFont(.caption2)
                     .foregroundStyle(.green)
                     .transition(.opacity)
             }
@@ -1589,7 +1589,7 @@ private struct BugCommentsSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 Divider()
                 Text("Comments")
-                    .font(.headline)
+                    .scaledFont(.headline)
                 ForEach(visible) { comment in
                     CommentBlock(
                         bugID: bugID,
@@ -1624,7 +1624,7 @@ private struct DescriptionBlock: View {
                 Divider()
                 HStack {
                     Text("Description")
-                        .font(.headline)
+                        .scaledFont(.headline)
                     Spacer()
                     if isReporter, !isEditing {
                         Button {
@@ -1652,7 +1652,7 @@ private struct DescriptionBlock: View {
                         HStack(spacing: 8) {
                             if let saveError {
                                 Label(saveError, systemImage: "exclamationmark.triangle")
-                                    .font(.caption)
+                                    .scaledFont(.caption)
                                     .foregroundStyle(.orange)
                             }
                             Spacer()
@@ -1671,7 +1671,7 @@ private struct DescriptionBlock: View {
                         }
                     } else if !stripped.isEmpty {
                         StructuredText(markdown: flattenBlockquotes(stripped))
-                            .font(.body)
+                            .scaledFont(.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -1797,12 +1797,12 @@ private struct CommentBlock: View {
     private var headerLine: some View {
         HStack(spacing: 6) {
             Text(User.displayName(for: comment.creator))
-                .font(.callout.weight(.semibold))
+                .scaledFont(.callout, weight: .semibold)
                 .help(comment.creator)
             Text(verbatim: "·")
                 .foregroundStyle(.tertiary)
             Text(comment.creationTime, format: .relative(presentation: .named))
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -1825,7 +1825,7 @@ private struct CommentBlock: View {
                 HStack(spacing: 8) {
                     if let saveError {
                         Label(saveError, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.orange)
                     }
                     Spacer()
@@ -1845,7 +1845,7 @@ private struct CommentBlock: View {
             .padding(.horizontal, narrow ? 12 : 0)
         } else if !stripped.isEmpty {
             StructuredText(markdown: flattenBlockquotes(stripped))
-                .font(.body)
+                .scaledFont(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, narrow ? 12 : 0)
@@ -1963,7 +1963,7 @@ private struct AttachmentImagePreview: View {
 
     private var failure: some View {
         Label("Couldn't load image", systemImage: "photo.badge.exclamationmark")
-            .font(.caption)
+            .scaledFont(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 80)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: cornerRadius))
@@ -1980,7 +1980,7 @@ private struct AttachmentInlineLink: View {
                     Image(systemName: iconName)
                         .foregroundStyle(.secondary)
                     Text(label)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)
@@ -2022,7 +2022,7 @@ private struct PhabricatorSection: View {
             Divider()
             HStack {
                 Text("Phabricator")
-                    .font(.headline)
+                    .scaledFont(.headline)
                 if patches.count > 1 {
                     Text("\(patches.count)")
                         .font(.caption.monospacedDigit())
@@ -2046,7 +2046,7 @@ private struct PatchesSection: View {
             Divider()
             HStack {
                 Text(patches.count == 1 ? "Patch" : "Patches")
-                    .font(.headline)
+                    .scaledFont(.headline)
                 if patches.count > 1 {
                     Text("\(patches.count)")
                         .font(.caption.monospacedDigit())
@@ -2109,7 +2109,7 @@ private struct PatchRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(title)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -2126,19 +2126,19 @@ private struct PatchRow: View {
                     Text(verbatim: "·")
                     if let revision = phabRevision {
                         Text(revision)
-                            .font(.caption.weight(.semibold).monospaced())
+                            .scaledFont(.caption, weight: .semibold, design: .monospaced)
                             .foregroundStyle(accentColor)
                     } else {
                         Text("Patch")
                     }
                 }
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             if !isPhabricator {
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .scaledFont(.caption, weight: .semibold)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -2216,7 +2216,7 @@ private struct AttachmentsSection: View {
                 Divider()
                 HStack {
                     Text("Attachments")
-                        .font(.headline)
+                        .scaledFont(.headline)
                     Text("\(total)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -2246,7 +2246,7 @@ private struct AttachmentsSection: View {
                         .padding(.top, 4)
                     } label: {
                         Text("Obsolete (\(obsolete.count))")
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -2299,7 +2299,7 @@ private struct AttachmentRow: View {
                         Text(formattedSize(size))
                     }
                 }
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -2405,7 +2405,7 @@ private struct CommentComposer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Add a comment")
-                .font(.headline)
+                .scaledFont(.headline)
             MarkdownEditor(
                 text: $text,
                 isDisabled: isPosting
@@ -2413,7 +2413,7 @@ private struct CommentComposer: View {
 
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.red)
             }
 

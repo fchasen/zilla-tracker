@@ -48,19 +48,22 @@ struct ZillaCommands: Commands {
             Divider()
 
             Button("Increase Font Size") {
-                adjustTypeSize(by: 1)
+                adjustFontScale(by: 1)
             }
             .keyboardShortcut("+", modifiers: .command)
+            .disabled(workspace.fontScaleStep >= FontScale.maxStep)
 
             Button("Decrease Font Size") {
-                adjustTypeSize(by: -1)
+                adjustFontScale(by: -1)
             }
             .keyboardShortcut("-", modifiers: .command)
+            .disabled(workspace.fontScaleStep <= FontScale.minStep)
 
             Button("Reset Font Size") {
-                workspace.typeSizeIndex = TypeSizeSettings.defaultIndex
+                workspace.fontScaleStep = FontScale.defaultStep
             }
             .keyboardShortcut("0", modifiers: .command)
+            .disabled(workspace.fontScaleStep == FontScale.defaultStep)
 
             Divider()
 
@@ -201,8 +204,8 @@ struct ZillaCommands: Commands {
         )
     }
 
-    private func adjustTypeSize(by delta: Int) {
-        workspace.typeSizeIndex = TypeSizeSettings.clamp(workspace.typeSizeIndex + delta)
+    private func adjustFontScale(by delta: Int) {
+        workspace.fontScaleStep = FontScale.clamp(workspace.fontScaleStep + delta)
     }
 
     private func applyUpdate(_ update: BugUpdate) {

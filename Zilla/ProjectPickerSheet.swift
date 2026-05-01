@@ -106,10 +106,10 @@ struct ProjectPickerSheet: View {
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
                 Text(project.name)
-                    .font(.callout.weight(.medium))
+                    .scaledFont(.callout, weight: .medium)
                 if let slug = project.slug, !slug.isEmpty {
                     Text("#\(slug)")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

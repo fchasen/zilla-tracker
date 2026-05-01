@@ -91,7 +91,7 @@ struct QuickSearchSheet: View {
 
             TextField(placeholderText, text: $query)
                 .textFieldStyle(.plain)
-                .font(.title3)
+                .scaledFont(.title3)
                 .submitLabel(.search)
                 .focused($focused, equals: .search)
                 .onSubmit { commitQuery() }
@@ -204,11 +204,11 @@ struct QuickSearchSheet: View {
     private func hintRow(symbol: String, title: String, description: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             Image(systemName: symbol)
-                .font(.title3)
+                .scaledFont(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 28, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline.monospaced())
+                Text(title).scaledFont(.headline, design: .monospaced)
                 Text(description).foregroundStyle(.secondary)
             }
         }
@@ -472,7 +472,7 @@ private struct QuickSearchBugRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
             }
         }
@@ -517,7 +517,7 @@ private struct QuickSearchUserRow: View {
                     Text(user.name)
                         .truncationMode(.middle)
                 }
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }

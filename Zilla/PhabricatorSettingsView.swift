@@ -18,7 +18,7 @@ struct PhabricatorSettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Phabricator")
-                    .font(.title2.weight(.semibold))
+                    .scaledFont(.title2, weight: .semibold)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
@@ -51,7 +51,7 @@ struct PhabricatorSettingsView: View {
                 Spacer()
                 Link(destination: Self.tokensURL) {
                     Label("Get a token", systemImage: "arrow.up.right.square")
-                        .font(.caption)
+                        .scaledFont(.caption)
                 }
                 .buttonStyle(.borderless)
                 .linkPointerStyle()
@@ -62,7 +62,7 @@ struct PhabricatorSettingsView: View {
 
             if let error = phab.errorMessage {
                 Text(error)
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
@@ -92,9 +92,9 @@ struct PhabricatorSettingsView: View {
                     .foregroundStyle(.green)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(user.realName ?? user.userName)
-                        .font(.headline)
+                        .scaledFont(.headline)
                     Text("@\(user.userName)")
-                        .font(.caption)
+                        .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()

@@ -109,6 +109,9 @@ public struct Marginalia: View {
         .onChange(of: dialect) { _, newDialect in
             hosting.controller?.dialect = newDialect
         }
+        .onChange(of: theme) { _, newTheme in
+            hosting.controller?.theme = newTheme
+        }
     }
 
     @ViewBuilder

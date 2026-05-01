@@ -116,7 +116,7 @@ struct SearchfoxPickerSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(hit.path)
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .lineLimit(1)
                     .truncationMode(.head)
                 Spacer()
@@ -128,7 +128,7 @@ struct SearchfoxPickerSheet: View {
             }
             if !hit.line.isEmpty {
                 Text(hit.line)
-                    .font(.footnote.monospaced())
+                    .scaledFont(.footnote, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }

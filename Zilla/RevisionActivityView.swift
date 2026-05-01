@@ -29,17 +29,17 @@ struct RevisionActivityView: View {
                     toggle.toggleStyle(.checkbox)
                     #else
                     toggle.toggleStyle(.button)
-                        .font(.caption)
+                        .scaledFont(.caption)
                     #endif
                 }
             }
             if workspace.loadedRevisionTransactions.isEmpty {
                 Text("No activity yet.")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
             } else if visibleTransactions.isEmpty {
                 Text("No comments yet.")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
@@ -153,11 +153,11 @@ struct ActivityRow: View {
     private var headerLine: some View {
         HStack(spacing: 6) {
             Text(authorName)
-                .font(.callout.weight(.semibold))
+                .scaledFont(.callout, weight: .semibold)
             Text(verbatim: "·")
                 .foregroundStyle(.tertiary)
             Text(transaction.dateCreated, format: .relative(presentation: .named))
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -174,11 +174,11 @@ struct ActivityRow: View {
     private var inlineCaptionView: some View {
         if let caption = activityCaption {
             Text(caption)
-                .font(.callout)
+                .scaledFont(.callout)
                 .foregroundStyle(.secondary)
         } else if let type = transaction.type {
             Text(type)
-                .font(.caption)
+                .scaledFont(.caption)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -228,14 +228,14 @@ struct ActivityRow: View {
                 }
                 if let body = primaryCommentBody, !body.isEmpty {
                     RemarkupText(source: body)
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .textSelection(.enabled)
                         .padding(.horizontal, narrow ? 12 : 0)
                 }
             }
         } else if let body = primaryCommentBody {
             RemarkupText(source: body)
-                .font(.callout)
+                .scaledFont(.callout)
                 .textSelection(.enabled)
                 .padding(.horizontal, narrow ? 12 : 0)
         }
@@ -298,7 +298,7 @@ struct ActivityRow: View {
                 markDone(!isDone)
             } label: {
                 Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .scaledFont(.title3)
                     .foregroundStyle(isDone ? Color.green : Color.secondary)
             }
             .buttonStyle(.plain)
@@ -307,7 +307,7 @@ struct ActivityRow: View {
             .accessibilityLabel(isDone ? "Mark as not done" : "Mark as done")
         } else if isDone {
             Image(systemName: "checkmark.seal.fill")
-                .font(.title3)
+                .scaledFont(.title3)
                 .foregroundStyle(Color.green)
                 .help("Marked as done")
                 .accessibilityLabel("Marked as done")
@@ -344,13 +344,13 @@ struct ActivityRow: View {
     private func inlineFileLink(_ descriptor: InlineDescriptor) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "text.bubble")
-                .font(.caption2)
+                .scaledFont(.caption2)
                 .foregroundStyle(.secondary)
             let jumpButton = Button {
                 workspace.revealChangeset(path: descriptor.path)
             } label: {
                 Text("\(descriptor.path):\(descriptor.line)")
-                    .font(.callout.monospaced())
+                    .scaledFont(.callout, design: .monospaced)
                     .foregroundStyle(.tint)
                     .underline(true, color: .clear)
                     .lineLimit(1)

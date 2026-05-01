@@ -10,6 +10,8 @@ struct MarkdownEditor: View {
     var isDisabled: Bool = false
     var dialect: Highlighter.Dialect = .commonMark
 
+    @Environment(\.zillaFontScale) private var fontScale
+
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
@@ -17,6 +19,7 @@ struct MarkdownEditor: View {
     var body: some View {
         Marginalia(text: $text)
             .dialect(dialect)
+            .theme(.default(fontScale: fontScale))
             .defaultPreview(normalize: { source, dialect in
                 switch dialect {
                 case .remarkup:   return Remarkup.toCommonMark(source)

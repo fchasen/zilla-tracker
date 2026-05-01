@@ -9,6 +9,8 @@ public struct ExpandContextRow: View {
     public let onExpandFromTop: (() -> Void)?
     public let onExpandFromBottom: (() -> Void)?
 
+    @ScaledMetric(relativeTo: .caption2) private var chevronSize: CGFloat = 11
+
     public init(
         label: String,
         theme: HighlightTheme,
@@ -87,7 +89,7 @@ public struct ExpandContextRow: View {
     private func chevronButton(systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: chevronSize, weight: .semibold))
                 .foregroundColor(Color(theme.lineNumber))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 4)
@@ -115,7 +117,7 @@ public struct ExpandContextRow: View {
     private var labelContent: some View {
         HStack(spacing: 0) {
             Text(label)
-                .font(.system(.caption2, design: .monospaced))
+                .scaledFont(.caption2, design: .monospaced)
                 .foregroundColor(Color(theme.lineNumber))
                 .padding(.leading, 10)
             Spacer(minLength: 0)

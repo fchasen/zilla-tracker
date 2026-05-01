@@ -11,7 +11,7 @@ import UIKit
 /// Defaults match the rest of the Zilla UI: system body font for prose,
 /// monospaced system for fenced/code spans, secondary label for dimmed
 /// markup, link color for URLs.
-public struct MarginaliaTheme {
+public struct MarginaliaTheme: Equatable {
     public var bodyFont: PlatformFont
     public var monospaceFont: PlatformFont
     public var foregroundColor: PlatformColor
@@ -48,8 +48,13 @@ public struct MarginaliaTheme {
     }
 
     public static var `default`: MarginaliaTheme {
-        let body = PlatformFont.systemFont(ofSize: PlatformFont.systemFontSize)
-        let mono = PlatformFont.monospacedSystemFont(ofSize: PlatformFont.systemFontSize, weight: .regular)
+        Self.default(fontScale: 1.0)
+    }
+
+    public static func `default`(fontScale: CGFloat) -> MarginaliaTheme {
+        let baseSize = PlatformFont.systemFontSize * max(fontScale, 0.1)
+        let body = PlatformFont.systemFont(ofSize: baseSize)
+        let mono = PlatformFont.monospacedSystemFont(ofSize: baseSize, weight: .regular)
         #if canImport(AppKit) && os(macOS)
         return MarginaliaTheme(
             bodyFont: body,

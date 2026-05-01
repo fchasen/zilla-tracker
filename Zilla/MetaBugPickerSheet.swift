@@ -49,7 +49,7 @@ struct MetaBugPickerSheet: View {
                                     Text(bug.summary)
                                         .foregroundStyle(.primary)
                                     Text("#\(bug.id) · \(bug.status)")
-                                        .font(.caption)
+                                        .scaledFont(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()

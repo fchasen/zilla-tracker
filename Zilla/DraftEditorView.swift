@@ -44,10 +44,10 @@ struct DraftEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Summary").font(.headline)
+                    Text("Summary").scaledFont(.headline)
                     TextField("What's the bug?", text: $draft.summary, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(.title3)
+                        .scaledFont(.title3)
                         .padding(10)
                         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                         .overlay(
@@ -58,7 +58,7 @@ struct DraftEditorView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Description").font(.headline)
+                    Text("Description").scaledFont(.headline)
                     MarkdownEditor(
                         text: $draft.bugDescription,
                         minHeight: 240,
@@ -68,7 +68,7 @@ struct DraftEditorView: View {
 
                 if let submitError {
                     Label(submitError, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
+                        .scaledFont(.callout)
                         .foregroundStyle(.red)
                 }
             }

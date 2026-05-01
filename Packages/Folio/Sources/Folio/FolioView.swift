@@ -174,7 +174,7 @@ public struct FolioView: View {
                 isExpanded.toggle()
             } label: {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.caption2)
+                    .scaledFont(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(width: 14, height: 14)
             }
@@ -204,7 +204,7 @@ public struct FolioView: View {
         if let onPathTap {
             Button(action: onPathTap) {
                 Text(path)
-                    .font(.system(.caption, design: .monospaced).weight(.semibold))
+                    .scaledFont(.caption, weight: .semibold, design: .monospaced)
                     .foregroundStyle(.tint)
                     .underline(false)
                     .lineLimit(1)
@@ -216,7 +216,7 @@ public struct FolioView: View {
             #endif
         } else {
             Text(path)
-                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .scaledFont(.caption, weight: .semibold, design: .monospaced)
                 .lineLimit(1)
                 .truncationMode(.head)
         }
@@ -224,7 +224,7 @@ public struct FolioView: View {
 
     private var outdatedBadge: some View {
         Text("Outdated")
-            .font(.caption2.weight(.semibold))
+            .scaledFont(.caption2, weight: .semibold)
             .foregroundColor(.orange)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)

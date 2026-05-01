@@ -11,6 +11,10 @@ struct CommentSlot: View {
 
     private let width: CGFloat = 18
 
+    @ScaledMetric(relativeTo: .caption2) private var plusIconSize: CGFloat = 9
+    @ScaledMetric(relativeTo: .caption) private var bubbleIconSize: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption2) private var countTextSize: CGFloat = 8
+
     var body: some View {
         Color.clear
             .frame(width: width)
@@ -30,7 +34,7 @@ struct CommentSlot: View {
         } else if isHovered, let onCreate {
             Button(action: onCreate) {
                 Image(systemName: "plus")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: plusIconSize, weight: .bold))
                     .foregroundColor(Color(theme.commentMark))
                     .frame(width: width - 2, height: 14)
                     .background(
@@ -48,10 +52,10 @@ struct CommentSlot: View {
         if count > 1 {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "bubble.left.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: bubbleIconSize))
                     .foregroundColor(Color(theme.commentMark))
                 Text("\(count)")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: countTextSize, weight: .bold))
                     .foregroundColor(.white)
                     .frame(minWidth: 12)
                     .padding(.horizontal, 2)
@@ -63,7 +67,7 @@ struct CommentSlot: View {
             .frame(width: width, height: 14)
         } else {
             Image(systemName: "bubble.left.fill")
-                .font(.system(size: 10))
+                .font(.system(size: bubbleIconSize))
                 .foregroundColor(Color(theme.commentMark))
                 .frame(width: width, height: 14)
         }

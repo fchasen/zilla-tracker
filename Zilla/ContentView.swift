@@ -10,6 +10,7 @@ import SwiftData
 import UniformTypeIdentifiers
 import BugzillaKit
 import PhabricatorKit
+import Folio
 import os
 #if os(macOS)
 import AppKit
@@ -278,21 +279,6 @@ enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-// MARK: - Type size
-
-enum TypeSizeSettings {
-    static let storageKey = "dynamicTypeSizeIndex"
-    static let options: [DynamicTypeSize] = [
-        .xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge,
-        .accessibility1, .accessibility2, .accessibility3, .accessibility4, .accessibility5
-    ]
-    static let defaultIndex = 3
-
-    static func clamp(_ index: Int) -> Int {
-        min(max(index, 0), options.count - 1)
-    }
-}
-
 // MARK: - Workspace
 
 struct DependencyMetadata: Sendable, Hashable {
@@ -394,14 +380,15 @@ final class Workspace {
         }
     }
 
-    var typeSizeIndex: Int = (UserDefaults.standard.object(forKey: TypeSizeSettings.storageKey) as? Int) ?? TypeSizeSettings.defaultIndex {
+    var fontScaleStep: Int = FontScale.clamp(
+        (UserDefaults.standard.object(forKey: FontScale.storageKey) as? Int) ?? FontScale.defaultStep
+    ) {
         didSet {
-            if oldValue != typeSizeIndex {
-                UserDefaults.standard.set(typeSizeIndex, forKey: TypeSizeSettings.storageKey)
+            if oldValue != fontScaleStep {
+                UserDefaults.standard.set(fontScaleStep, forKey: FontScale.storageKey)
             }
         }
     }
-
 
     var bugListSort: BugListSort {
         get {
@@ -1107,10 +1094,6 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var followedMetaBugs: [FollowedMetaBug]
 
-    private var currentTypeSize: DynamicTypeSize {
-        TypeSizeSettings.options[TypeSizeSettings.clamp(workspace.typeSizeIndex)]
-    }
-
     var body: some View {
         @Bindable var workspace = workspace
 
@@ -1121,7 +1104,9 @@ struct ContentView: View {
         } detail: {
             detailColumn
         }
-        .dynamicTypeSize(currentTypeSize)
+        .dynamicTypeSize(FontScale.dynamicTypeSize(for: workspace.fontScaleStep))
+        .environment(\.zillaFontScale, FontScale.multiplier(for: workspace.fontScaleStep))
+        .environment(\.folioFontScale, FontScale.multiplier(for: workspace.fontScaleStep))
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
@@ -1388,7 +1373,7 @@ private struct DraftMetadata: View {
                 datesRow
             }
         }
-        .font(.callout)
+        .scaledFont(.callout)
         .sheet(isPresented: $showComponentPicker) {
             ComponentPickerSheet(onPick: { product, component in
                 draft.product = product.name
@@ -1402,13 +1387,13 @@ private struct DraftMetadata: View {
     private var componentSection: some View {
         let isMetaSeeded = !draft.blocks.isEmpty
         VStack(alignment: .leading, spacing: 6) {
-            Text("Component").foregroundStyle(.secondary).font(.caption)
+            Text("Component").foregroundStyle(.secondary).scaledFont(.caption)
             if let ref = draft.componentRef {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(ref.component)
                         Text(ref.product)
-                            .font(.caption)
+                            .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -1428,7 +1413,7 @@ private struct DraftMetadata: View {
             }
             if isMetaSeeded {
                 Text("Inherited from blocked meta bug")
-                    .font(.caption)
+                    .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             }
         }
