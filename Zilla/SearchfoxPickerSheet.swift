@@ -118,7 +118,7 @@ struct SearchfoxPickerSheet: View {
                 Text(hit.path)
                     .font(.callout)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.head)
                 Spacer()
                 if hit.lineNumber > 0 {
                     Text("L\(hit.lineNumber)")
