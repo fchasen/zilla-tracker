@@ -12,13 +12,22 @@ struct SliverRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             gutter(text: line.oldNumber.map(String.init) ?? "")
-                .background(Color(theme.gutterColor(for: line.kind)))
             gutter(text: line.newNumber.map(String.init) ?? "")
-                .background(Color(theme.gutterColor(for: line.kind)))
             marker
             code
         }
-        .background(Color(theme.rowColor(for: line.kind)))
+        .background {
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(Color(theme.gutterColor(for: line.kind)))
+                    .frame(width: gutterWidth + 8)
+                Rectangle()
+                    .fill(Color(theme.gutterColor(for: line.kind)))
+                    .frame(width: gutterWidth + 8)
+                Rectangle()
+                    .fill(Color(theme.rowColor(for: line.kind)))
+            }
+        }
         .font(.system(.caption, design: .monospaced))
         .lineLimit(nil)
         .fixedSize(horizontal: false, vertical: true)
@@ -37,7 +46,6 @@ struct SliverRow: View {
             .foregroundColor(Color(theme.marker))
             .frame(width: 14, alignment: .center)
             .padding(.vertical, 1)
-            .background(Color(theme.rowColor(for: line.kind)))
     }
 
     private var code: some View {
