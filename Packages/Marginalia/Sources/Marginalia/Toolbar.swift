@@ -166,7 +166,7 @@ private struct ToolbarActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(width: 22, height: 20)
+                .frame(width: 28, height: 24)
         }
         .help(help)
         .modifier(OptionalShortcut(shortcut: shortcut))
@@ -182,8 +182,8 @@ private struct ToolbarLabelButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 22, height: 20)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28, height: 24)
         }
         .help(help)
         .modifier(OptionalShortcut(shortcut: shortcut))
