@@ -3,23 +3,6 @@ import SwiftUI
 import PhabricatorKit
 import PierreDiffsSwift
 
-/// In-flight inline composer state. When set, a synthetic editable annotation
-/// is injected into the diff at `(path, line)`; submitting it routes to
-/// `Workspace.createInlineDraft`.
-struct ActiveInlineComposer: Equatable {
-    let path: String
-    let line: Int
-    let length: Int
-    let isNewFile: Bool
-    let replyTo: String?
-    /// Stable id of the synthetic annotation. Used by Pierre to address this
-    /// row in submit/cancel callbacks.
-    var syntheticID: String {
-        "compose-\(path)-\(line)-\(replyTo ?? "")"
-    }
-}
-
-
 extension Array where Element == InlineComment {
     /// Groups inline comments into threads on the latest diff, returning one
     /// `DiffAnnotation` per thread (root + replies). Replies appear stacked
@@ -92,6 +75,7 @@ extension Array where Element == InlineComment {
             let rootAuthor = root.authorPHID.flatMap { userDirectory[$0] }
             let side: AnnotationSide = root.isNewFile ? .additions : .deletions
 
+            let isOwnDraft = root.transactionPHID == nil && root.authorPHID == currentUserPHID
             return DiffAnnotation(
                 side: side,
                 lineNumber: root.line,
@@ -101,7 +85,8 @@ extension Array where Element == InlineComment {
                     body: Remarkup.toCommonMark(root.content),
                     avatarURL: rootAuthor?.image?.absoluteString,
                     subtitle: rootSubtitleParts.isEmpty ? nil : rootSubtitleParts.joined(separator: " · "),
-                    comments: comments
+                    comments: comments,
+                    deletable: isOwnDraft
                 )
             )
         }
