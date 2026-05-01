@@ -21,6 +21,7 @@ public struct RevisionEditTransaction: Sendable, Hashable, Encodable {
         case bool(Bool)
         case string(String)
         case stringArray([String])
+        case boolDict([String: Bool])
 
         public func encode(to encoder: Encoder) throws {
             var c = encoder.singleValueContainer()
@@ -28,6 +29,7 @@ public struct RevisionEditTransaction: Sendable, Hashable, Encodable {
             case .bool(let v): try c.encode(v)
             case .string(let v): try c.encode(v)
             case .stringArray(let v): try c.encode(v)
+            case .boolDict(let v): try c.encode(v)
             }
         }
     }
@@ -55,6 +57,12 @@ public struct RevisionEditTransaction: Sendable, Hashable, Encodable {
 
     public static func projectsSet(_ phids: [String]) -> RevisionEditTransaction {
         RevisionEditTransaction(type: "projects.set", value: .stringArray(phids))
+    }
+
+    /// Marks one or more inline comments as done/undone. Keys are inline-comment
+    /// PHIDs (`PHID-XCMT-…`); values are the desired done state.
+    public static func inlineDone(_ phidsToState: [String: Bool]) -> RevisionEditTransaction {
+        RevisionEditTransaction(type: "inline.done", value: .boolDict(phidsToState))
     }
 }
 

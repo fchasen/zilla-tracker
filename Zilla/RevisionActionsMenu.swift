@@ -35,8 +35,6 @@ struct RevisionActionsMenu: View {
                 Divider()
                 Button("Publish drafts") { publishDrafts() }
             }
-            Divider()
-            Button("Comment…") { open(.comment) }
         } label: {
             Label("Review", systemImage: "checkmark.circle")
         }
