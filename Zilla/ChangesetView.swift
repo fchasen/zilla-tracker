@@ -18,22 +18,6 @@ struct ChangesetView: View {
     @State private var containerWidth: CGFloat = 800
     @State private var showAllHunks: Bool = false
     @State private var lineSelection: FolioLineSelection?
-    #if os(iOS)
-    @State private var threadSheetRequest: ThreadSheetRequest?
-    @State private var composerSheetRequest: ComposerSheetRequest?
-
-    struct ThreadSheetRequest: Identifiable {
-        let rootPHID: String
-        var id: String { rootPHID }
-    }
-
-    struct ComposerSheetRequest: Identifiable {
-        let line: Int
-        let length: Int
-        let isNewFile: Bool
-        var id: String { "\(line)-\(length)-\(isNewFile)" }
-    }
-    #endif
 
     init(changeset: Changeset, latestDiffID: Int) {
         self.changeset = changeset
@@ -163,8 +147,8 @@ struct ChangesetView: View {
                     selection: $lineSelection,
                     onCommentMarkTap: handleCommentMarkTap,
                     onCreateComment: handleCreateComment,
-                    threadSlot: macThreadSlot(threadsByRoot: threadsByRoot),
-                    composerSlot: macComposerSlot()
+                    threadSlot: threadSlot(threadsByRoot: threadsByRoot),
+                    composerSlot: inlineComposerSlot()
                 )
                 .frame(maxWidth: .infinity)
             }
@@ -182,37 +166,87 @@ struct ChangesetView: View {
         }
         .frame(maxWidth: .infinity)
         #if os(iOS)
-        .sheet(item: $threadSheetRequest) { req in
-            let visible = visibleInlineComments()
-            let threads = threads(in: visible)
-            let thread = threads[req.rootPHID] ?? []
-            InlineThreadSheet(
-                rootPHID: req.rootPHID,
-                thread: thread,
-                userDirectory: workspace.revisionUserDirectory,
-                currentUserPHID: phab.currentUser?.phid,
-                onEditDraft: handleEditDraft,
-                onDeleteDraft: handleDeleteDraft
-            )
-        }
-        .sheet(item: $composerSheetRequest) { req in
-            InlineComposerSheet(
-                path: changeset.currentPath,
-                line: req.line,
-                length: req.length,
-                isNewFile: req.isNewFile,
-                replyTo: nil,
-                titleText: "New comment"
-            )
+        .sheet(isPresented: composerSheetActive) {
+            if let active = workspace.activeInlineComposer,
+               active.path == changeset.currentPath {
+                InlineComposerSheet(
+                    path: active.path,
+                    line: active.line,
+                    length: active.length,
+                    isNewFile: active.isNewFile,
+                    replyTo: active.replyTo,
+                    editingPHID: active.editingPHID,
+                    titleText: composerSheetTitle(for: active),
+                    previewContent: { AnyView(diffSnippet(for: active)) }
+                )
+            }
         }
         #endif
     }
 
-    private func macThreadSlot(threadsByRoot: [String: [InlineComment]]) -> ((FolioCommentMark) -> AnyView)? {
-        #if os(macOS)
+    #if os(iOS)
+    private var composerSheetActive: Binding<Bool> {
+        Binding(
+            get: { workspace.activeInlineComposer?.path == changeset.currentPath },
+            set: { isActive in
+                if !isActive { workspace.cancelInlineComposer() }
+            }
+        )
+    }
+
+    private func composerSheetTitle(for active: ActiveInlineComposer) -> String {
+        if active.editingPHID != nil { return "Edit draft" }
+        if active.replyTo != nil { return "Reply" }
+        return "New comment"
+    }
+    #endif
+
+    @ViewBuilder
+    private func diffSnippet(for active: ActiveInlineComposer) -> some View {
+        if let hunk = snippetHunk(line: active.line, isNewFile: active.isNewFile) {
+            let theme: HighlightTheme = (colorScheme == .dark) ? .dark : .light
+            let side: AnchorRange.Side = active.isNewFile ? .newFile : .oldFile
+            FolioView(
+                path: active.path,
+                content: .diff(
+                    hunk,
+                    anchor: AnchorRange(line: active.line, length: active.length, side: side),
+                    mode: .unified
+                ),
+                showsHeader: false,
+                theme: theme,
+                cornerRadius: 0
+            )
+        }
+    }
+
+    private func snippetHunk(line: Int, isNewFile: Bool) -> DiffHunk? {
+        let side: AnchorRange.Side = isNewFile ? .newFile : .oldFile
+        let target = AnchorRange(line: line, length: 1, side: side)
+        for hunkData in changeset.hunks {
+            let parsed = UnifiedDiffParser.parse(
+                corpus: hunkData.corpus,
+                oldStart: hunkData.oldOffset,
+                newStart: hunkData.newOffset
+            )
+            if parsed.contains(target) {
+                return parsed
+            }
+        }
+        return nil
+    }
+
+    private func threadSlot(threadsByRoot: [String: [InlineComment]]) -> ((FolioCommentMark) -> AnyView)? {
         return { mark in
             let thread = threadsByRoot[mark.id] ?? []
+            #if os(macOS)
             let composerForThread = composerActiveForThread(thread: thread, mark: mark)
+            let composerContent: (() -> AnyView)? = composerForThread.map { active in
+                { AnyView(composerHost(for: active, chromed: false)) }
+            }
+            #else
+            let composerContent: (() -> AnyView)? = nil
+            #endif
             return AnyView(
                 InlineThreadView(
                     thread: thread,
@@ -221,17 +255,12 @@ struct ChangesetView: View {
                     onReply: { handleReply(mark: mark) },
                     onEditDraft: handleEditDraft,
                     onDeleteDraft: handleDeleteDraft,
-                    composerContent: composerForThread.map { active in
-                        { AnyView(composerHost(for: active, chromed: false)) }
-                    }
+                    composerContent: composerContent
                 )
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             )
         }
-        #else
-        return nil
-        #endif
     }
 
     private func composerActiveForThread(thread: [InlineComment], mark: FolioCommentMark) -> ActiveInlineComposer? {
@@ -259,7 +288,7 @@ struct ChangesetView: View {
         )
     }
 
-    private func macComposerSlot() -> FolioComposerSlot? {
+    private func inlineComposerSlot() -> FolioComposerSlot? {
         #if os(macOS)
         guard let active = workspace.activeInlineComposer,
               active.path == changeset.currentPath else {
@@ -357,20 +386,10 @@ struct ChangesetView: View {
             isNewFile: side == .newFile,
             replyTo: nil
         )
-        #if os(iOS)
-        composerSheetRequest = ComposerSheetRequest(
-            line: startLine,
-            length: length,
-            isNewFile: side == .newFile
-        )
-        #endif
         lineSelection = nil
     }
 
     private func handleCommentMarkTap(_ mark: FolioCommentMark) {
-        #if os(iOS)
-        threadSheetRequest = ThreadSheetRequest(rootPHID: mark.id)
-        #endif
     }
 
     private func handleReply(mark: FolioCommentMark) {

@@ -9,6 +9,7 @@ struct MarkdownEditor: View {
     var minHeight: CGFloat = 96
     var isDisabled: Bool = false
     var dialect: Highlighter.Dialect = .commonMark
+    var bordered: Bool = true
 
     @Environment(\.zillaFontScale) private var fontScale
 
@@ -28,10 +29,12 @@ struct MarkdownEditor: View {
             })
             .configuration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
             .frame(minHeight: minHeight)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-            )
+            .overlay {
+                if bordered {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                }
+            }
             .disabled(isDisabled)
             .sheet(isPresented: $showingLinkPicker) {
                 QuickSearchSheet(

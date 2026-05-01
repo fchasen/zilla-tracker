@@ -1,6 +1,9 @@
 import SwiftUI
 import FolioModel
 import FolioHighlight
+#if canImport(UIKit)
+import UIKit
+#endif
 
 public struct FolioView: View {
     public let path: String
@@ -28,6 +31,11 @@ public struct FolioView: View {
     @State private var gapStates: [Int: GapRevealState] = [:]
     @State private var artifact: FolioRenderArtifact
     @State private var capExpanded: Bool = false
+    #if os(iOS)
+    @State private var iosPressStart: Date?
+    @State private var iosSelecting: Bool = false
+    @State private var iosSelectionAborted: Bool = false
+    #endif
 
     private let expandStep: Int = 10
     private let gapExpandStep: Int = 20
@@ -93,7 +101,11 @@ public struct FolioView: View {
             if isExpanded || !showsHeader {
                 rows
                     .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
+                    #if os(macOS)
                     .gesture(selectionDragGesture)
+                    #else
+                    .simultaneousGesture(iosLongPressDragGesture)
+                    #endif
                     .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
                         selectionCells = cells
                     }
@@ -773,6 +785,58 @@ public struct FolioView: View {
                 onLineSelectionChange?(final)
             }
     }
+
+    #if os(iOS)
+    private var iosLongPressDragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(FolioSelectionMath.coordinateSpaceName))
+            .onChanged { value in
+                if iosSelectionAborted { return }
+                if iosPressStart == nil {
+                    iosPressStart = .now
+                }
+                let moved = hypot(value.translation.width, value.translation.height)
+                let elapsed = -(iosPressStart?.timeIntervalSinceNow ?? 0)
+
+                if !iosSelecting {
+                    if moved > 10 {
+                        iosSelectionAborted = true
+                        return
+                    }
+                    if elapsed >= 0.4 {
+                        iosSelecting = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    } else {
+                        return
+                    }
+                }
+                let updated = FolioSelectionMath.selection(
+                    from: value.startLocation,
+                    to: value.location,
+                    cells: selectionCells
+                )
+                draftSelection = updated
+            }
+            .onEnded { value in
+                defer {
+                    iosPressStart = nil
+                    iosSelecting = false
+                    iosSelectionAborted = false
+                }
+                guard iosSelecting else { return }
+                let final = FolioSelectionMath.selection(
+                    from: value.startLocation,
+                    to: value.location,
+                    cells: selectionCells
+                )
+                selection?.wrappedValue = final
+                if let final {
+                    onLineSelectionChange?(final)
+                    onCreateComment?(final.startLine, final.side)
+                }
+                draftSelection = nil
+            }
+    }
+    #endif
 
     private func isLineSelected(_ line: Int?, side: AnchorRange.Side) -> Bool {
         guard let line, let sel = effectiveSelection, sel.side == side else { return false }

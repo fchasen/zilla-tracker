@@ -10,7 +10,29 @@ struct InlineComposerSheet: View {
     let length: Int
     let isNewFile: Bool
     let replyTo: String?
+    let editingPHID: String?
     let titleText: String
+    let previewContent: (() -> AnyView)?
+
+    init(
+        path: String,
+        line: Int,
+        length: Int,
+        isNewFile: Bool,
+        replyTo: String?,
+        editingPHID: String? = nil,
+        titleText: String,
+        previewContent: (() -> AnyView)? = nil
+    ) {
+        self.path = path
+        self.line = line
+        self.length = length
+        self.isNewFile = isNewFile
+        self.replyTo = replyTo
+        self.editingPHID = editingPHID
+        self.titleText = titleText
+        self.previewContent = previewContent
+    }
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -42,14 +64,18 @@ struct InlineComposerSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let previewContent {
+                    previewContent()
+                    Divider()
+                }
                 MarkdownEditor(
                     text: $text,
                     minHeight: 240,
                     isDisabled: isPosting,
-                    dialect: .remarkup
+                    dialect: .remarkup,
+                    bordered: false
                 )
-                .padding(12)
                 Spacer(minLength: 0)
             }
             .navigationTitle(titleText)
@@ -101,15 +127,29 @@ struct InlineComposerSheet: View {
         guard !trimmed.isEmpty else { return }
         isPosting = true
         defer { isPosting = false }
-        let error = await workspace.createInlineDraft(
-            path: path,
-            line: line,
-            length: length,
-            isNewFile: isNewFile,
-            content: trimmed,
-            replyTo: replyTo,
-            using: phab.client
-        )
+        let error: Error?
+        if let editingPHID {
+            error = await workspace.editInlineDraft(
+                phid: editingPHID,
+                path: path,
+                line: line,
+                length: length,
+                isNewFile: isNewFile,
+                newContent: trimmed,
+                replyTo: replyTo,
+                using: phab.client
+            )
+        } else {
+            error = await workspace.createInlineDraft(
+                path: path,
+                line: line,
+                length: length,
+                isNewFile: isNewFile,
+                content: trimmed,
+                replyTo: replyTo,
+                using: phab.client
+            )
+        }
         if let error {
             workspace.lastUpdateError = error.localizedDescription
             return

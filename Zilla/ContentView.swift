@@ -1610,7 +1610,7 @@ struct Sidebar: View {
 
                 Section(isExpanded: $componentsExpanded) {
                     if followedComponents.isEmpty {
-                        Text("No components yet. Tap + above to follow one.")
+                        Text("No components yet. Tap + in the toolbar to follow one.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.vertical, 4)
@@ -1624,17 +1624,7 @@ struct Sidebar: View {
                         .onMove(perform: moveComponents)
                     }
                 } header: {
-                    HStack(spacing: 4) {
-                        Text("Components")
-                        Spacer()
-                        Button {
-                            showAddComponent = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Add Component")
-                    }
+                    Text("Components")
                 }
             }
         .navigationTitle("Zilla")
@@ -1644,6 +1634,14 @@ struct Sidebar: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 accountMenu
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showAddComponent = true
+                } label: {
+                    Label("Add Component", systemImage: "plus")
+                }
+                .help("Add Component")
             }
         }
         .sheet(item: $addMetaBugTarget) { component in

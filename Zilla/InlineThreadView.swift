@@ -108,35 +108,65 @@ private struct CommentRow: View {
     }()
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            UserAvatar(
-                email: user?.primaryEmail,
-                size: 22,
-                imageURL: user?.image
-            )
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(authorName)
-                        .scaledFont(.callout)
-                        .fontWeight(.semibold)
-                    if !subtitle.isEmpty {
-                        Text(subtitle)
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    actionButtons
-                }
-                RemarkupText(source: comment.content)
-                    .scaledFont(.callout)
-                    .textSelection(.enabled)
-            }
+        ViewThatFits(in: .horizontal) {
+            wideLayout
+                .frame(minWidth: 360, alignment: .leading)
+            compactLayout
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         #if os(macOS)
         .onHover { isHovering = $0 }
         #endif
+    }
+
+    private var wideLayout: some View {
+        HStack(alignment: .top, spacing: 8) {
+            avatar
+            VStack(alignment: .leading, spacing: 4) {
+                headerRow
+                bodyText
+            }
+        }
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                avatar
+                headerRow
+            }
+            bodyText
+        }
+    }
+
+    private var avatar: some View {
+        UserAvatar(
+            email: user?.primaryEmail,
+            size: 20,
+            imageURL: user?.image
+        )
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 6) {
+            Text(authorName)
+                .scaledFont(.callout)
+                .fontWeight(.semibold)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            actionButtons
+        }
+    }
+
+    private var bodyText: some View {
+        RemarkupText(source: comment.content)
+            .scaledFont(.callout)
+            .textSelection(.enabled)
     }
 
     @ViewBuilder

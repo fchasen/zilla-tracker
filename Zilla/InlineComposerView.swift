@@ -9,6 +9,7 @@ struct InlineComposerView: View {
     let placeholder: String
     let postLabel: String
     let chromed: Bool
+    let bordered: Bool
     let onCancel: () -> Void
     let onPost: () -> Void
 
@@ -18,6 +19,7 @@ struct InlineComposerView: View {
         placeholder: String = "Write a comment…",
         postLabel: String = "Post",
         chromed: Bool = true,
+        bordered: Bool = false,
         onCancel: @escaping () -> Void,
         onPost: @escaping () -> Void
     ) {
@@ -26,6 +28,7 @@ struct InlineComposerView: View {
         self.placeholder = placeholder
         self.postLabel = postLabel
         self.chromed = chromed
+        self.bordered = bordered
         self.onCancel = onCancel
         self.onPost = onPost
     }
@@ -44,7 +47,8 @@ struct InlineComposerView: View {
                 text: $text,
                 minHeight: 80,
                 isDisabled: isPosting,
-                dialect: .remarkup
+                dialect: .remarkup,
+                bordered: bordered
             )
 
             HStack {
@@ -74,10 +78,6 @@ struct InlineComposerView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(.background)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
                 )
         } else {
             inner

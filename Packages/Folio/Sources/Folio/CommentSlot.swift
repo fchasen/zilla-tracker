@@ -31,7 +31,7 @@ struct CommentSlot: View {
             }
             .buttonStyle(.plain)
             .help(mark.count > 1 ? "\(mark.count) comments" : "1 comment")
-        } else if isHovered, let onCreate {
+        } else if shouldShowCreate, let onCreate {
             Button(action: onCreate) {
                 Image(systemName: "plus")
                     .font(.system(size: plusIconSize, weight: .bold))
@@ -45,6 +45,10 @@ struct CommentSlot: View {
             .buttonStyle(.plain)
             .help("Add comment")
         }
+    }
+
+    private var shouldShowCreate: Bool {
+        isHovered
     }
 
     @ViewBuilder
