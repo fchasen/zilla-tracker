@@ -121,4 +121,50 @@ final class SplitRowBuilderTests: XCTestCase {
         XCTAssertEqual(rows[1].left?.kind, .noNewline)
         XCTAssertEqual(rows[1].right?.kind, .noNewline)
     }
+
+    func testIndicesPointToInputPositions() {
+        let lines = [
+            DiffLine(kind: .deletion, oldNumber: 5, newNumber: nil, text: "old1"),
+            DiffLine(kind: .deletion, oldNumber: 6, newNumber: nil, text: "old2"),
+            DiffLine(kind: .addition, oldNumber: nil, newNumber: 5, text: "new1"),
+            DiffLine(kind: .context, oldNumber: 7, newNumber: 6, text: "c")
+        ]
+        let rows = SplitRowBuilder.build(lines)
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(rows[0].leftIndex, 0)
+        XCTAssertEqual(rows[0].rightIndex, 2)
+        XCTAssertEqual(rows[1].leftIndex, 1)
+        XCTAssertNil(rows[1].rightIndex)
+        XCTAssertEqual(rows[2].leftIndex, 3)
+        XCTAssertEqual(rows[2].rightIndex, 3)
+    }
+
+    func testProviderClosureReceivesPairedTexts() {
+        let lines = [
+            DiffLine(kind: .deletion, oldNumber: 1, newNumber: nil, text: "alpha"),
+            DiffLine(kind: .addition, oldNumber: nil, newNumber: 1, text: "beta")
+        ]
+        var calls: [(String, String)] = []
+        let stub = IntralineDiff.Result(oldRanges: [], newRanges: [])
+        let rows = SplitRowBuilder.build(lines) { old, new in
+            calls.append((old, new))
+            return stub
+        }
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.0, "alpha")
+        XCTAssertEqual(calls.first?.1, "beta")
+        XCTAssertEqual(rows.first?.intralineDiff, stub)
+    }
+
+    func testProviderReturningNilSkipsIntraline() {
+        let lines = [
+            DiffLine(kind: .deletion, oldNumber: 1, newNumber: nil, text: "x"),
+            DiffLine(kind: .addition, oldNumber: nil, newNumber: 1, text: "y")
+        ]
+        let rows = SplitRowBuilder.build(lines) { _, _ in nil }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertNil(rows[0].intralineDiff)
+        XCTAssertEqual(rows[0].leftIndex, 0)
+        XCTAssertEqual(rows[0].rightIndex, 1)
+    }
 }

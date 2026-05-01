@@ -118,6 +118,18 @@ public struct HighlightTheme: Sendable {
 }
 
 public extension HighlightTheme {
+    var paletteSignature: Int {
+        var hasher = Hasher()
+        hasher.combine(foreground)
+        hasher.combine(headerBackground)
+        hasher.combine(addedRow)
+        hasher.combine(removedRow)
+        hasher.combine(keyword)
+        return hasher.finalize()
+    }
+}
+
+public extension HighlightTheme {
     static let light = HighlightTheme(
         keyword:    .srgb(0xCF222E),
         type:       .srgb(0x953800),
