@@ -20,6 +20,12 @@ public struct Revision: Decodable, Sendable, Hashable, Identifiable {
         public let bugzillaBugID: String?
         public let repositoryPHID: String?
         public let diffPHID: String?
+        public let policy: Policy?
+
+        public struct Policy: Decodable, Sendable, Hashable {
+            public let view: String
+            public let edit: String
+        }
 
         enum CodingKeys: String, CodingKey {
             case title, uri, authorPHID, status, summary, isDraft
@@ -27,6 +33,7 @@ public struct Revision: Decodable, Sendable, Hashable, Identifiable {
             case bugzillaBugID = "bugzilla.bug-id"
             case repositoryPHID
             case diffPHID
+            case policy
         }
 
         public init(from decoder: Decoder) throws {
@@ -42,6 +49,12 @@ public struct Revision: Decodable, Sendable, Hashable, Identifiable {
             self.bugzillaBugID = try c.decodeIfPresent(String.self, forKey: .bugzillaBugID)
             self.repositoryPHID = try c.decodeIfPresent(String.self, forKey: .repositoryPHID)
             self.diffPHID = try c.decodeIfPresent(String.self, forKey: .diffPHID)
+            self.policy = try c.decodeIfPresent(Policy.self, forKey: .policy)
+        }
+
+        public var isViewRestricted: Bool {
+            guard let view = policy?.view else { return false }
+            return view != "public" && view != "users"
         }
     }
 

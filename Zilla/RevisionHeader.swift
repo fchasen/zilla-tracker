@@ -4,27 +4,19 @@ import PhabricatorKit
 struct RevisionHeader: View {
     @Environment(\.openURL) private var openURL
     @Environment(PhabricatorAuthStore.self) private var phab
+    @Environment(Workspace.self) private var workspace
     let revision: Revision
-
-    @State private var didCopy: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
+                Image(systemName: revision.fields.isViewRestricted ? "lock.fill" : "globe")
+                    .font(.caption)
+                    .foregroundStyle(revision.fields.isViewRestricted ? Color.orange : .secondary)
+                    .help(revision.fields.isViewRestricted ? "Restricted view policy" : "Public view policy")
                 Text(revision.revisionLabel)
                     .font(.headline.monospaced())
                     .foregroundStyle(.secondary)
-                Button {
-                    copyToPasteboard(revision.revisionLabel)
-                    didCopy = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { didCopy = false }
-                } label: {
-                    Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-                .help("Copy revision ID")
                 if let url = revision.fields.uri {
                     Button {
                         openURL(url)
@@ -53,7 +45,27 @@ struct RevisionHeader: View {
             Text(revision.fields.title)
                 .font(.title2)
                 .textSelection(.enabled)
+            HStack(spacing: 6) {
+                if let authorName {
+                    Text(authorName)
+                }
+                if authorName != nil {
+                    Text(verbatim: "·")
+                        .foregroundStyle(.tertiary)
+                }
+                Text(revision.fields.dateCreated, format: .dateTime.year().month().day())
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
         }
+    }
+
+    private var authorName: String? {
+        let phid = revision.fields.authorPHID
+        if let user = workspace.revisionUserDirectory[phid] {
+            return user.realName ?? user.userName
+        }
+        return nil
     }
 
     private var myReviewerStatus: String? {
