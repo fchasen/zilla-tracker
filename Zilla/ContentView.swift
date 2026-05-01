@@ -434,6 +434,9 @@ final class Workspace {
     private(set) var isUpdatingRevision = false
 
     var activeInlineComposer: ActiveInlineComposer?
+
+    var bugCommentDrafts: [Bug.ID: String] = [:]
+    var revisionCommentDrafts: [Int: String] = [:]
     /// Paths that should be expanded in the diff. ChangesetView reads from
     /// this set rather than local state so external triggers (e.g. clicking
     /// a file link in the activity log) can pop a collapsed diff open.

@@ -46,7 +46,6 @@ struct BugDetailView: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
     let bugID: Bug.ID?
 
-    @State private var composerText: String = ""
     @State private var isPostingComment = false
     @State private var composerError: String?
     @State private var dupePrompt: DupePromptIdentifier?
@@ -54,6 +53,24 @@ struct BugDetailView: View {
 
     @State private var bugSnapshot: Bug?
     @State private var commentsSnapshot: [Comment] = []
+
+    private var composerTextBinding: Binding<String> {
+        Binding(
+            get: { bugID.flatMap { workspace.bugCommentDrafts[$0] } ?? "" },
+            set: { newValue in
+                guard let id = bugID else { return }
+                if newValue.isEmpty {
+                    workspace.bugCommentDrafts.removeValue(forKey: id)
+                } else {
+                    workspace.bugCommentDrafts[id] = newValue
+                }
+            }
+        )
+    }
+
+    private var composerText: String {
+        composerTextBinding.wrappedValue
+    }
 
     private var bug: Bug? { bugSnapshot }
     private var comments: [Comment] { commentsSnapshot }
@@ -79,7 +96,7 @@ struct BugDetailView: View {
                     bug: bug,
                     comments: comments,
                     loadError: loadError,
-                    composerText: $composerText,
+                    composerText: composerTextBinding,
                     isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
@@ -226,7 +243,6 @@ struct BugDetailView: View {
     }
 
     private func reload() async {
-        composerText = ""
         composerError = nil
         guard let id = bugID else {
             workspace.clearLoadedBug()
@@ -253,7 +269,7 @@ struct BugDetailView: View {
         let client = auth.client
         do {
             _ = try await client.addComment(bugID: id, text: trimmed, isMarkdown: true)
-            composerText = ""
+            workspace.bugCommentDrafts.removeValue(forKey: id)
             await workspace.refreshLoadedComments(using: client)
         } catch {
             composerError = error.localizedDescription
