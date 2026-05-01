@@ -1,22 +1,16 @@
 {
-  "fill" : {
-    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
-  },
+  "fill" : "automatic",
   "groups" : [
     {
       "blend-mode-specializations" : [
         {
-          "appearance" : "dark",
-          "value" : "plus-darker"
-        }
-      ],
-      "blur-material-specializations" : [
+          "value" : "hard-light"
+        },
         {
           "appearance" : "dark",
-          "value" : null
+          "value" : "screen"
         }
       ],
-      "hidden" : false,
       "layers" : [
         {
           "blend-mode-specializations" : [
@@ -25,155 +19,44 @@
               "value" : "normal"
             }
           ],
-          "hidden" : false,
-          "image-name" : "5EA0BF06-3107-4D5C-8234-4C0533DAE417.PNG",
-          "name" : "5EA0BF06-3107-4D5C-8234-4C0533DAE417",
-          "opacity-specializations" : [
+          "glass-specializations" : [
             {
-              "value" : 0
+              "value" : false
             },
             {
               "appearance" : "dark",
-              "value" : 0.2
-            }
-          ]
-        }
-      ],
-      "opacity-specializations" : [
-        {
-          "value" : 0
-        },
-        {
-          "appearance" : "dark",
-          "value" : 1
-        }
-      ],
-      "shadow-specializations" : [
-        {
-          "appearance" : "dark",
-          "value" : {
-            "kind" : "none",
-            "opacity" : 0.5
-          }
-        }
-      ],
-      "specular-specializations" : [
-        {
-          "value" : false
-        },
-        {
-          "appearance" : "dark",
-          "value" : false
-        }
-      ],
-      "translucency-specializations" : [
-        {
-          "value" : {
-            "enabled" : false,
-            "value" : 0.5
-          }
-        },
-        {
-          "appearance" : "dark",
-          "value" : {
-            "enabled" : true,
-            "value" : 0.5
-          }
-        }
-      ]
-    },
-    {
-      "blend-mode-specializations" : [
-        {
-          "appearance" : "dark",
-          "value" : "plus-lighter"
-        }
-      ],
-      "blur-material-specializations" : [
-        {
-          "value" : null
-        },
-        {
-          "appearance" : "dark",
-          "value" : 1
-        }
-      ],
-      "layers" : [
-        {
-          "image-name" : "footprint-inverted.png",
-          "name" : "footprint-inverted",
-          "opacity-specializations" : [
-            {
-              "value" : 0
-            },
-            {
-              "appearance" : "dark",
-              "value" : 1
+              "value" : false
             }
           ],
+          "image-name" : "claw.png",
+          "name" : "claw",
+          "opacity" : 1,
           "position" : {
-            "scale" : 1.2,
+            "scale" : 0.4,
             "translation-in-points" : [
               0,
-              14
+              0
             ]
           }
         }
       ],
-      "lighting-specializations" : [
-        {
-          "appearance" : "dark",
-          "value" : "individual"
-        }
-      ],
-      "opacity-specializations" : [
-        {
-          "appearance" : "dark",
-          "value" : 1
-        }
-      ],
-      "shadow-specializations" : [
-        {
-          "value" : {
-            "kind" : "neutral",
-            "opacity" : 0.5
-          }
-        },
-        {
-          "appearance" : "dark",
-          "value" : {
-            "kind" : "neutral",
-            "opacity" : 0.5
-          }
-        }
-      ],
-      "specular-specializations" : [
-        {
-          "value" : false
-        },
-        {
-          "appearance" : "dark",
-          "value" : false
-        }
-      ],
-      "translucency-specializations" : [
-        {
-          "appearance" : "dark",
-          "value" : {
-            "enabled" : true,
-            "value" : 0.5
-          }
-        }
-      ]
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
     },
     {
       "blend-mode-specializations" : [
         {
-          "value" : "plus-darker"
+          "value" : "normal"
         },
         {
           "appearance" : "dark",
-          "value" : "plus-darker"
+          "value" : "normal"
         }
       ],
       "blur-material-specializations" : [
@@ -182,6 +65,10 @@
         },
         {
           "appearance" : "dark",
+          "value" : 1
+        },
+        {
+          "appearance" : "tinted",
           "value" : 1
         }
       ],
@@ -197,100 +84,7 @@
           "glass-specializations" : [
             {
               "appearance" : "dark",
-              "value" : true
-            }
-          ],
-          "image-name" : "footprint.png",
-          "name" : "footprint",
-          "opacity-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : 0
-            }
-          ],
-          "position" : {
-            "scale" : 1.2,
-            "translation-in-points" : [
-              0,
-              14
-            ]
-          }
-        }
-      ],
-      "lighting-specializations" : [
-        {
-          "value" : "individual"
-        },
-        {
-          "appearance" : "dark",
-          "value" : "individual"
-        }
-      ],
-      "shadow-specializations" : [
-        {
-          "value" : {
-            "kind" : "neutral",
-            "opacity" : 0.5
-          }
-        },
-        {
-          "appearance" : "dark",
-          "value" : {
-            "kind" : "neutral",
-            "opacity" : 0.5
-          }
-        }
-      ],
-      "specular-specializations" : [
-        {
-          "value" : false
-        },
-        {
-          "appearance" : "dark",
-          "value" : false
-        }
-      ],
-      "translucency-specializations" : [
-        {
-          "value" : {
-            "enabled" : true,
-            "value" : 0.5
-          }
-        },
-        {
-          "appearance" : "dark",
-          "value" : {
-            "enabled" : false,
-            "value" : 0.5
-          }
-        }
-      ]
-    },
-    {
-      "blend-mode-specializations" : [
-        {
-          "value" : "normal"
-        },
-        {
-          "appearance" : "dark",
-          "value" : "normal"
-        }
-      ],
-      "blur-material-specializations" : [
-        {
-          "value" : 1
-        },
-        {
-          "appearance" : "dark",
-          "value" : 0.5
-        }
-      ],
-      "layers" : [
-        {
-          "blend-mode-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : "normal"
+              "value" : false
             }
           ],
           "hidden" : false,
@@ -302,12 +96,15 @@
             },
             {
               "appearance" : "dark",
-              "value" : 0.7
+              "value" : 1
             }
           ]
         },
         {
           "blend-mode-specializations" : [
+            {
+              "value" : "normal"
+            },
             {
               "appearance" : "dark",
               "value" : "normal"
@@ -320,7 +117,7 @@
             },
             {
               "appearance" : "dark",
-              "value" : true
+              "value" : false
             }
           ],
           "hidden" : false,
@@ -328,8 +125,11 @@
           "name" : "DFA775D8-AA77-454D-8B5E-28B962C84124",
           "opacity-specializations" : [
             {
-              "appearance" : "dark",
               "value" : 1
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0
             }
           ],
           "position" : {
@@ -341,8 +141,17 @@
           }
         }
       ],
-      "lighting" : "individual",
+      "lighting-specializations" : [
+        {
+          "value" : "combined"
+        },
+        {
+          "appearance" : "dark",
+          "value" : "combined"
+        }
+      ],
       "name" : "Group",
+      "opacity" : 1,
       "shadow-specializations" : [
         {
           "value" : {
@@ -353,23 +162,31 @@
         {
           "appearance" : "dark",
           "value" : {
-            "kind" : "none",
+            "kind" : "neutral",
             "opacity" : 0.5
           }
         }
       ],
-      "specular" : true,
+      "specular-specializations" : [
+        {
+          "value" : true
+        },
+        {
+          "appearance" : "dark",
+          "value" : true
+        }
+      ],
       "translucency-specializations" : [
         {
           "value" : {
-            "enabled" : false,
-            "value" : 0.5
+            "enabled" : true,
+            "value" : 0.2
           }
         },
         {
           "appearance" : "dark",
           "value" : {
-            "enabled" : false,
+            "enabled" : true,
             "value" : 0.5
           }
         }
