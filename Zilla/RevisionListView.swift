@@ -73,6 +73,10 @@ struct RevisionListView: View {
             lastSeenRefreshToken = current
             await load(force: force)
         }
+        .onChange(of: list) { _, _ in
+            revisions = []
+            loadError = nil
+        }
     }
 
     private var revisionSelectionBinding: Binding<Int?> {
@@ -108,7 +112,6 @@ struct RevisionListView: View {
             revisions = []
             return
         }
-        revisions = []
         isLoading = true
         loadError = nil
         defer { isLoading = false }
@@ -125,15 +128,15 @@ struct RevisionListView: View {
         }()
         do {
             let result = try await cache.revisionSearch(query, force: force, using: phab.client)
-            if list == .review {
-                revisions = result.data.filter { $0.fields.authorPHID != phid }
-            } else {
-                revisions = result.data
+            let next = list == .review
+                ? result.data.filter { $0.fields.authorPHID != phid }
+                : result.data
+            if revisions != next {
+                revisions = next
             }
         } catch is CancellationError {
             return
         } catch {
-            revisions = []
             loadError = error.localizedDescription
         }
     }

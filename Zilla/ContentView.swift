@@ -2473,8 +2473,10 @@ struct BugListView: View {
 
         do {
             let result = try await cache.bugList(query, force: force, using: auth.client)
-            bugs = result.bugs
-            dependents = [:]
+            if bugs != result.bugs {
+                bugs = result.bugs
+                dependents = [:]
+            }
             totalMatches = result.totalMatches
             canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
             await fetchDependents(for: result.bugs.filter { Self.isMetaSummary($0.summary) }.map(\.id))
