@@ -1,9 +1,9 @@
 import SwiftUI
 import PhabricatorKit
 import Textual
-import Sliver
-import SliverModel
-import SliverHighlight
+import Folio
+import FolioModel
+import FolioHighlight
 
 struct RevisionActivityView: View {
     @Environment(Workspace.self) private var workspace
@@ -28,7 +28,8 @@ struct RevisionActivityView: View {
                     #if os(macOS)
                     toggle.toggleStyle(.checkbox)
                     #else
-                    toggle
+                    toggle.toggleStyle(.button)
+                        .font(.caption)
                     #endif
                 }
             }
@@ -205,13 +206,16 @@ struct ActivityRow: View {
         if isInline, let inlineDescriptor {
             VStack(alignment: .leading, spacing: 6) {
                 if isThreadHead, let hunk = anchoredHunk(for: inlineDescriptor) {
-                    SliverView(
+                    FolioView(
                         path: inlineDescriptor.path,
-                        hunk: hunk,
-                        anchor: AnchorRange(
-                            line: inlineDescriptor.line,
-                            length: max(1, transaction.fields.length ?? 1),
-                            side: (transaction.fields.isNewFile ?? true) ? .newFile : .oldFile
+                        content: .diff(
+                            hunk,
+                            anchor: AnchorRange(
+                                line: inlineDescriptor.line,
+                                length: max(1, transaction.fields.length ?? 1),
+                                side: (transaction.fields.isNewFile ?? true) ? .newFile : .oldFile
+                            ),
+                            mode: .unified
                         ),
                         isOutdated: isOutdatedAgainstLatestDiff,
                         theme: colorScheme == .dark ? .dark : .light,
@@ -258,7 +262,7 @@ struct ActivityRow: View {
     }
 
     private func anchoredHunk(for descriptor: InlineDescriptor) -> DiffHunk? {
-        SliverActivityIntegration.anchoredHunk(
+        FolioActivityIntegration.anchoredHunk(
             in: workspace.loadedRevisionDiff,
             path: descriptor.path,
             line: descriptor.line,

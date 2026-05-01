@@ -83,7 +83,7 @@ enum DiffHTMLTemplate {
   /// painted bottom — what the user perceives as the diff's height.
   private static let contentHeightObserverScript = """
   (function() {
-    const PADDING_BOTTOM = 6;
+    const PADDING_BOTTOM = 0;
     const measure = () => {
       // Walk only direct children of <body>; Pierre's custom element + our
       // any sibling annotations all live there. The lowest bounding rect
@@ -178,6 +178,7 @@ enum DiffHTMLTemplate {
     height: auto;
     min-height: 0;
     overflow: visible;
+    margin-top: -32px;
   }
 
   /* Scrollbar styling for macOS feel */

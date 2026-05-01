@@ -59,6 +59,7 @@ public struct CompactDiffStatusView: View {
           .font(.caption2)
           .foregroundColor(.secondary)
           .lineLimit(1)
+          .truncationMode(.head)
       }
 
       Spacer()

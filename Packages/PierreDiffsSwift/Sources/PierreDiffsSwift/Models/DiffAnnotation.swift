@@ -45,6 +45,9 @@ public struct AnnotationMetadata: Codable, Sendable, Equatable {
   /// When `nil`, falls back to rendering the single (author, body) on this
   /// metadata.
   public let comments: [Comment]?
+  /// When `true`, the X delete affordance is rendered on the root row.
+  /// Defaults to `false`/`nil` so consumers must opt in per annotation.
+  public let deletable: Bool?
 
   public struct Comment: Codable, Sendable, Equatable {
     public let id: String
@@ -79,7 +82,8 @@ public struct AnnotationMetadata: Codable, Sendable, Equatable {
     avatarURL: String? = nil,
     subtitle: String? = nil,
     mode: String? = nil,
-    comments: [Comment]? = nil
+    comments: [Comment]? = nil,
+    deletable: Bool? = nil
   ) {
     self.id = id
     self.author = author
@@ -88,5 +92,6 @@ public struct AnnotationMetadata: Codable, Sendable, Equatable {
     self.subtitle = subtitle
     self.mode = mode
     self.comments = comments
+    self.deletable = deletable
   }
 }
