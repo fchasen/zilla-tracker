@@ -1,7 +1,7 @@
 import Foundation
 import SwiftTreeSitter
 
-public final class SliverHighlighter {
+public final class FolioHighlighter {
     public struct Run: Sendable, Hashable {
         public let range: NSRange
         public let color: PlatformColor

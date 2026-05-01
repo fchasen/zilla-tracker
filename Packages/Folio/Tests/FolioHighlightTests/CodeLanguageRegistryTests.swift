@@ -1,5 +1,5 @@
 import XCTest
-@testable import SliverHighlight
+@testable import FolioHighlight
 
 final class CodeLanguageRegistryTests: XCTestCase {
     func testUnknownExtensionFallsBackToPlain() {
@@ -15,7 +15,7 @@ final class CodeLanguageRegistryTests: XCTestCase {
     }
 
     func testEmptyHighlighterReturnsNoRunsForPlain() {
-        let highlighter = SliverHighlighter(theme: .light)
+        let highlighter = FolioHighlighter(theme: .light)
         XCTAssertEqual(highlighter.runs(for: "let x = 1", language: .plain), [])
     }
 }

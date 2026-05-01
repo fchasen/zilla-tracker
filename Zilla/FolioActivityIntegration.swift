@@ -1,8 +1,8 @@
 import Foundation
 import PhabricatorKit
-import SliverModel
+import FolioModel
 
-enum SliverActivityIntegration {
+enum FolioActivityIntegration {
     static func anchoredHunk(
         in diff: DiffDetail?,
         path: String,

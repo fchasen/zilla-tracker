@@ -1,36 +1,77 @@
 import SwiftUI
-import SliverModel
-import SliverHighlight
+import FolioModel
+import FolioHighlight
 
-struct SliverRow: View {
+struct FolioRow: View {
     let line: DiffLine
     let lineRange: NSRange
-    let runs: [SliverHighlighter.Run]
+    let runs: [FolioHighlighter.Run]
     let theme: HighlightTheme
     let gutterWidth: CGFloat
+    let commentMark: FolioCommentMark?
+    let onCommentMarkTap: (() -> Void)?
+    let onCreateComment: (() -> Void)?
+    let isInSelection: Bool
+    let coordinateSpace: String
+
+    @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             gutter(text: line.oldNumber.map(String.init) ?? "")
             gutter(text: line.newNumber.map(String.init) ?? "")
             marker
+            CommentSlot(
+                mark: commentMark,
+                theme: theme,
+                isHovered: isHovered,
+                onMarkTap: onCommentMarkTap,
+                onCreate: onCreateComment
+            )
             code
         }
         .background {
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(Color(theme.gutterColor(for: line.kind)))
-                    .frame(width: gutterWidth + 8)
-                Rectangle()
-                    .fill(Color(theme.gutterColor(for: line.kind)))
-                    .frame(width: gutterWidth + 8)
-                Rectangle()
-                    .fill(Color(theme.rowColor(for: line.kind)))
+            ZStack {
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color(theme.gutterColor(for: line.kind)))
+                        .frame(width: gutterWidth + 8)
+                    Rectangle()
+                        .fill(Color(theme.gutterColor(for: line.kind)))
+                        .frame(width: gutterWidth + 8)
+                    Rectangle()
+                        .fill(Color(theme.rowColor(for: line.kind)))
+                }
+                if isInSelection {
+                    Rectangle().fill(Color(theme.selectionFill))
+                }
             }
         }
         .font(.system(.caption, design: .monospaced))
         .lineLimit(nil)
         .fixedSize(horizontal: false, vertical: true)
+        #if os(macOS)
+        .onHover { isHovered = $0 }
+        #endif
+        .reportingFolioCell(
+            id: "u-\(line.kind)-\(line.oldNumber ?? -1)-\(line.newNumber ?? -1)",
+            line: selectionLine,
+            side: selectionSide,
+            in: coordinateSpace
+        )
+    }
+
+    private var selectionLine: Int? {
+        switch line.kind {
+        case .addition: return line.newNumber
+        case .deletion: return line.oldNumber
+        case .context: return line.newNumber ?? line.oldNumber
+        case .noNewline: return nil
+        }
+    }
+
+    private var selectionSide: AnchorRange.Side {
+        line.kind == .deletion ? .oldFile : .newFile
     }
 
     private func gutter(text: String) -> some View {
@@ -59,26 +100,12 @@ struct SliverRow: View {
     }
 
     private var highlightedText: AttributedString {
-        var attributed = AttributedString(line.text)
-        guard !runs.isEmpty else { return attributed }
-        let nsLine = line.text as NSString
-        for run in runs {
-            let intersection = NSIntersectionRange(run.range, lineRange)
-            guard intersection.length > 0 else { continue }
-            let local = NSRange(location: intersection.location - lineRange.location, length: intersection.length)
-            guard local.location >= 0, local.location + local.length <= nsLine.length else { continue }
-            if let lower = AttributedString.Index(
-                String.Index(utf16Offset: local.location, in: line.text),
-                within: attributed
-            ),
-            let upper = AttributedString.Index(
-                String.Index(utf16Offset: local.location + local.length, in: line.text),
-                within: attributed
-            ) {
-                attributed[lower..<upper].foregroundColor = run.color
-            }
-        }
-        return attributed
+        FolioHighlighter.attributed(
+            text: line.text,
+            lineRange: lineRange,
+            runs: runs,
+            defaultColor: theme.foreground
+        )
     }
 }
 

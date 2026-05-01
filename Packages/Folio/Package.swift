@@ -2,22 +2,22 @@
 import PackageDescription
 
 let package = Package(
-    name: "Sliver",
+    name: "Folio",
     platforms: [
         .macOS(.v14),
         .iOS(.v17)
     ],
     products: [
-        .library(name: "Sliver", targets: ["Sliver"]),
-        .library(name: "SliverModel", targets: ["SliverModel"]),
-        .library(name: "SliverHighlight", targets: ["SliverHighlight"])
+        .library(name: "Folio", targets: ["Folio"]),
+        .library(name: "FolioModel", targets: ["FolioModel"]),
+        .library(name: "FolioHighlight", targets: ["FolioHighlight"])
     ],
     dependencies: [
         .package(url: "https://github.com/tree-sitter/swift-tree-sitter", from: "0.10.0"),
         .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-markdown", from: "0.5.3")
     ],
     targets: [
-        .target(name: "SliverModel"),
+        .target(name: "FolioModel"),
 
         .target(
             name: "TreeSitterJavaScript",
@@ -150,7 +150,7 @@ let package = Package(
             cSettings: [.headerSearchPath("src")]
         ),
         .target(
-            name: "SliverHighlight",
+            name: "FolioHighlight",
             dependencies: [
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),
                 .product(name: "TreeSitterMarkdown", package: "tree-sitter-markdown"),
@@ -168,16 +168,16 @@ let package = Package(
             resources: [.copy("Queries")]
         ),
         .target(
-            name: "Sliver",
-            dependencies: ["SliverModel", "SliverHighlight"]
+            name: "Folio",
+            dependencies: ["FolioModel", "FolioHighlight"]
         ),
         .testTarget(
-            name: "SliverModelTests",
-            dependencies: ["SliverModel"]
+            name: "FolioModelTests",
+            dependencies: ["FolioModel"]
         ),
         .testTarget(
-            name: "SliverHighlightTests",
-            dependencies: ["SliverHighlight"]
+            name: "FolioHighlightTests",
+            dependencies: ["FolioHighlight"]
         )
     ]
 )

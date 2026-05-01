@@ -1,5 +1,5 @@
 import XCTest
-@testable import SliverModel
+@testable import FolioModel
 
 final class UnifiedDiffParserTests: XCTestCase {
     func testEmptyCorpusProducesNoLines() {

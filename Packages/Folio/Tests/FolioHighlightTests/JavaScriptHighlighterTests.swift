@@ -1,5 +1,5 @@
 import XCTest
-@testable import SliverHighlight
+@testable import FolioHighlight
 
 final class JavaScriptHighlighterTests: XCTestCase {
     func testJavaScriptResourceBundleFindsHighlights() {
@@ -11,7 +11,7 @@ final class JavaScriptHighlighterTests: XCTestCase {
     }
 
     func testJavaScriptKeywordIsHighlighted() {
-        let highlighter = SliverHighlighter(theme: .light)
+        let highlighter = FolioHighlighter(theme: .light)
         let runs = highlighter.runs(for: "var propertyPattern = 1;", language: .javascript)
         XCTAssertFalse(runs.isEmpty, "expected non-empty highlight runs for JS")
     }
@@ -23,7 +23,7 @@ final class JavaScriptHighlighterTests: XCTestCase {
     }
 
     func testEmptyTextReturnsNoRuns() {
-        let highlighter = SliverHighlighter(theme: .light)
+        let highlighter = FolioHighlighter(theme: .light)
         XCTAssertEqual(highlighter.runs(for: "", language: .javascript), [])
     }
 
@@ -33,13 +33,13 @@ final class JavaScriptHighlighterTests: XCTestCase {
     }
 
     func testTypeScriptTypeAnnotationIsHighlighted() {
-        let highlighter = SliverHighlighter(theme: .light)
+        let highlighter = FolioHighlighter(theme: .light)
         let runs = highlighter.runs(for: "let x: number = 1;", language: .typescript)
         XCTAssertFalse(runs.isEmpty, "expected non-empty highlight runs for TS")
     }
 
     func testStringLiteralReceivesStringColor() {
-        let highlighter = SliverHighlighter(theme: .light)
+        let highlighter = FolioHighlighter(theme: .light)
         let runs = highlighter.runs(for: "let x = \"hi\";", language: .javascript)
         let stringColors = Set(runs.map(\.color))
         XCTAssertTrue(stringColors.contains(HighlightTheme.light.string),
@@ -51,7 +51,7 @@ final class JavaScriptHighlighterTests: XCTestCase {
     }
 
     func testMarkdownHeadingIsHighlighted() {
-        let highlighter = SliverHighlighter(theme: .light)
+        let highlighter = FolioHighlighter(theme: .light)
         let runs = highlighter.runs(for: "# Title\n\nbody", language: .markdown)
         XCTAssertFalse(runs.isEmpty, "expected non-empty highlight runs for markdown")
     }

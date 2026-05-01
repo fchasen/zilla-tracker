@@ -33,6 +33,11 @@ public struct HighlightTheme: Sendable {
     public var headerBackground: PlatformColor
     public var border: PlatformColor
 
+    public var emptyMirror: PlatformColor
+    public var commentMark: PlatformColor
+    public var commentMarkBackground: PlatformColor
+    public var selectionFill: PlatformColor
+
     public init(
         keyword: PlatformColor,
         type: PlatformColor,
@@ -55,7 +60,11 @@ public struct HighlightTheme: Sendable {
         lineNumber: PlatformColor,
         marker: PlatformColor,
         headerBackground: PlatformColor,
-        border: PlatformColor
+        border: PlatformColor,
+        emptyMirror: PlatformColor,
+        commentMark: PlatformColor,
+        commentMarkBackground: PlatformColor,
+        selectionFill: PlatformColor
     ) {
         self.keyword = keyword
         self.type = type
@@ -79,6 +88,10 @@ public struct HighlightTheme: Sendable {
         self.marker = marker
         self.headerBackground = headerBackground
         self.border = border
+        self.emptyMirror = emptyMirror
+        self.commentMark = commentMark
+        self.commentMarkBackground = commentMarkBackground
+        self.selectionFill = selectionFill
     }
 }
 
@@ -105,7 +118,11 @@ public extension HighlightTheme {
         lineNumber: .srgb(0x57606A),
         marker:     .srgb(0x57606A),
         headerBackground: .srgb(0xF6F8FA),
-        border:     .srgb(0xD0D7DE)
+        border:     .srgb(0xD0D7DE),
+        emptyMirror:           .srgb(0xF6F8FA, alpha: 0.6),
+        commentMark:           .srgb(0x0969DA),
+        commentMarkBackground: .srgb(0xDDEEFF),
+        selectionFill:         .srgb(0x0969DA, alpha: 0.12)
     )
 
     static let dark = HighlightTheme(
@@ -130,7 +147,11 @@ public extension HighlightTheme {
         lineNumber: .srgb(0x8B949E),
         marker:     .srgb(0x8B949E),
         headerBackground: .srgb(0x161B22),
-        border:     .srgb(0x30363D)
+        border:     .srgb(0x30363D),
+        emptyMirror:           .srgb(0x161B22, alpha: 0.6),
+        commentMark:           .srgb(0x58A6FF),
+        commentMarkBackground: .srgb(0x1F2A3D),
+        selectionFill:         .srgb(0x58A6FF, alpha: 0.18)
     )
 }
 
