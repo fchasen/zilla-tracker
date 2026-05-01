@@ -1693,67 +1693,35 @@ private struct CommentBlock: View {
     @State private var isEditing = false
     @State private var editedText = ""
     @State private var saveError: String?
+    @State private var rowWidth: CGFloat = 800
+
+    private static let narrowThreshold: CGFloat = 560
+
+    private var isNarrow: Bool {
+        rowWidth < Self.narrowThreshold
+    }
 
     var body: some View {
         let stripped = stripAttachmentHeader(comment.text, hasAttachment: attachment != nil)
-        HStack(alignment: .top, spacing: 12) {
-            UserAvatar(email: comment.creator, size: 28)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(User.displayName(for: comment.creator))
-                        .font(.callout.weight(.semibold))
-                        .help(comment.creator)
-                    Text(verbatim: "·")
-                        .foregroundStyle(.tertiary)
-                    Text(comment.creationTime, format: .relative(presentation: .named))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let attachment, isImageAttachment(attachment) {
-                    AttachmentImagePreview(attachment: attachment)
-                } else if let attachment {
-                    AttachmentInlineLink(attachment: attachment)
-                }
-                if isEditing {
-                    MarkdownEditor(
-                        text: $editedText,
-                        minHeight: 120,
-                        isDisabled: workspace.isUpdatingBug
-                    )
-                    HStack(spacing: 8) {
-                        if let saveError {
-                            Label(saveError, systemImage: "exclamationmark.triangle")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                        Spacer()
-                        Button("Cancel") {
-                            isEditing = false
-                            saveError = nil
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(workspace.isUpdatingBug)
-                        Button("Save") {
-                            Task { await save() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(workspace.isUpdatingBug || !canSave)
-                    }
-                } else if !stripped.isEmpty {
-                    StructuredText(markdown: flattenBlockquotes(stripped))
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        Group {
+            if isNarrow {
+                narrowBody(stripped: stripped)
+                    .padding(.vertical, 12)
+            } else {
+                expandedBody(stripped: stripped)
+                    .padding(12)
             }
-            Spacer(minLength: 0)
         }
-        .padding(12)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newValue in
+            rowWidth = newValue
+        }
         .contextMenu {
             if !stripped.isEmpty {
                 Button("Copy Comment Text") { copyToPasteboard(stripped) }
@@ -1770,6 +1738,87 @@ private struct CommentBlock: View {
                     isEditing = true
                 }
             }
+        }
+    }
+
+    private func expandedBody(stripped: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            UserAvatar(email: comment.creator, size: 28)
+            VStack(alignment: .leading, spacing: 6) {
+                headerLine
+                bodyContent(stripped: stripped, narrow: false)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func narrowBody(stripped: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                UserAvatar(email: comment.creator, size: 22)
+                headerLine
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            bodyContent(stripped: stripped, narrow: true)
+        }
+    }
+
+    private var headerLine: some View {
+        HStack(spacing: 6) {
+            Text(User.displayName(for: comment.creator))
+                .font(.callout.weight(.semibold))
+                .help(comment.creator)
+            Text(verbatim: "·")
+                .foregroundStyle(.tertiary)
+            Text(comment.creationTime, format: .relative(presentation: .named))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func bodyContent(stripped: String, narrow: Bool) -> some View {
+        if let attachment, isImageAttachment(attachment) {
+            AttachmentImagePreview(attachment: attachment, cornerRadius: narrow ? 0 : 6)
+        } else if let attachment {
+            AttachmentInlineLink(attachment: attachment)
+                .padding(.horizontal, narrow ? 12 : 0)
+        }
+        if isEditing {
+            VStack(alignment: .leading, spacing: 8) {
+                MarkdownEditor(
+                    text: $editedText,
+                    minHeight: 120,
+                    isDisabled: workspace.isUpdatingBug
+                )
+                HStack(spacing: 8) {
+                    if let saveError {
+                        Label(saveError, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer()
+                    Button("Cancel") {
+                        isEditing = false
+                        saveError = nil
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(workspace.isUpdatingBug)
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(workspace.isUpdatingBug || !canSave)
+                }
+            }
+            .padding(.horizontal, narrow ? 12 : 0)
+        } else if !stripped.isEmpty {
+            StructuredText(markdown: flattenBlockquotes(stripped))
+                .font(.body)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, narrow ? 12 : 0)
         }
     }
 
@@ -1841,6 +1890,7 @@ private func stripAttachmentHeader(_ text: String, hasAttachment: Bool) -> Strin
 
 private struct AttachmentImagePreview: View {
     let attachment: BugzillaKit.Attachment
+    var cornerRadius: CGFloat = 6
 
     private static let maxHeight: CGFloat = 360
 
@@ -1856,7 +1906,7 @@ private struct AttachmentImagePreview: View {
                             .resizable()
                             .scaledToFit()
                             .frame(maxHeight: Self.maxHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     case .failure:
                         failure
@@ -1873,7 +1923,7 @@ private struct AttachmentImagePreview: View {
 
     private var placeholder: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.secondary.opacity(0.12))
             ProgressView()
         }
@@ -1886,7 +1936,7 @@ private struct AttachmentImagePreview: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 80)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 
@@ -2203,7 +2253,7 @@ private struct AttachmentRow: View {
                     Text(displayName)
                         .strikethrough(attachment.isObsolete)
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.head)
                     if isPhabricator {
                         MetaPill(label: "Phab", color: .blue)
                     } else if attachment.isPatch {

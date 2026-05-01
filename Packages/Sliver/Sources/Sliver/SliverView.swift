@@ -43,11 +43,18 @@ public struct SliverView: View {
             }
         }
         .background(Color(theme.contextRow.withAlpha(1)))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(Color(theme.border), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            if cornerRadius > 0 {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color(theme.border), lineWidth: 1)
+            } else {
+                Rectangle()
+                    .strokeBorder(Color(theme.border), lineWidth: 1)
+            }
+        }
+        .clipShape(cornerRadius > 0
+            ? AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            : AnyShape(Rectangle()))
     }
 
     private var header: some View {
