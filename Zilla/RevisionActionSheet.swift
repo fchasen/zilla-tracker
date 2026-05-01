@@ -1,5 +1,5 @@
 import SwiftUI
-import Marginalia
+import MarginaliaEditor
 import PhabricatorKit
 
 struct RevisionActionSheetState: Identifiable, Equatable {

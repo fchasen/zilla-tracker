@@ -1,7 +1,7 @@
 #if os(iOS)
 import SwiftUI
 import PhabricatorKit
-import Marginalia
+import MarginaliaEditor
 
 struct RevisionCommentSheet: View {
     @Environment(\.dismiss) private var dismiss

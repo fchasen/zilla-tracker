@@ -11,11 +11,10 @@
 		3339A5C22FA00C00003FB395 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A5C12FA00C00003FB395 /* Textual */; };
 		3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7082FA06FFF003FB395 /* SearchfoxKit */; };
 		3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3339A7FF2FA15288003FB395 /* PhabricatorKit */; };
-		3339DB4D2FA40E4D0060FCCE /* Folio in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4C2FA40E4D0060FCCE /* Folio */; };
+		3339DB4D2FA40E4D0060FCCE /* FolioCodeView in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4C2FA40E4D0060FCCE /* FolioCodeView */; };
 		3339DB4F2FA40E4D0060FCCE /* FolioHighlight in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4E2FA40E4D0060FCCE /* FolioHighlight */; };
 		3339DB512FA40E4D0060FCCE /* FolioModel in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB502FA40E4D0060FCCE /* FolioModel */; };
-		A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */; };
-		B0C1D2E3F4A50000000F0001 /* Marginalia in Frameworks */ = {isa = PBXBuildFile; productRef = B0C1D2E3F4A50000000F0002 /* Marginalia */; };
+		B0C1D2E3F4A50000000F0001 /* MarginaliaEditor in Frameworks */ = {isa = PBXBuildFile; productRef = B0C1D2E3F4A50000000F0002 /* MarginaliaEditor */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,10 +68,9 @@
 				3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */,
 				3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */,
 				3339DB4F2FA40E4D0060FCCE /* FolioHighlight in Frameworks */,
-				A1B2C3D4E5F60000000F0001 /* PierreDiffsSwift in Frameworks */,
-				B0C1D2E3F4A50000000F0001 /* Marginalia in Frameworks */,
+				B0C1D2E3F4A50000000F0001 /* MarginaliaEditor in Frameworks */,
 				3339DB512FA40E4D0060FCCE /* FolioModel in Frameworks */,
-				3339DB4D2FA40E4D0060FCCE /* Folio in Frameworks */,
+				3339DB4D2FA40E4D0060FCCE /* FolioCodeView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,9 +135,8 @@
 				3339A5C12FA00C00003FB395 /* Textual */,
 				3339A7082FA06FFF003FB395 /* SearchfoxKit */,
 				3339A7FF2FA15288003FB395 /* PhabricatorKit */,
-				A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */,
-				B0C1D2E3F4A50000000F0002 /* Marginalia */,
-				3339DB4C2FA40E4D0060FCCE /* Folio */,
+				B0C1D2E3F4A50000000F0002 /* MarginaliaEditor */,
+				3339DB4C2FA40E4D0060FCCE /* FolioCodeView */,
 				3339DB4E2FA40E4D0060FCCE /* FolioHighlight */,
 				3339DB502FA40E4D0060FCCE /* FolioModel */,
 			);
@@ -230,9 +227,8 @@
 				3339A5C02FA00C00003FB395 /* XCRemoteSwiftPackageReference "Textual" */,
 				3339A7072FA06FFF003FB395 /* XCLocalSwiftPackageReference "Packages/SearchfoxKit" */,
 				3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
-				A1B2C3D4E5F60000000F0003 /* XCLocalSwiftPackageReference "Packages/PierreDiffsSwift" */,
-				B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/Marginalia" */,
-				3339DB4B2FA40E4D0060FCCE /* XCLocalSwiftPackageReference "Packages/Folio" */,
+				B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/MarginaliaEditor" */,
+				3339DB4B2FA40E4D0060FCCE /* XCLocalSwiftPackageReference "Packages/FolioCodeView" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -462,7 +458,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.4;
 				MARKETING_VERSION = 1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = mozilla.Zilla;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fchasen.Zilla;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -524,7 +520,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.4;
 				MARKETING_VERSION = 1.1;
-				PRODUCT_BUNDLE_IDENTIFIER = mozilla.Zilla;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fchasen.Zilla;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -694,17 +690,13 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/PhabricatorKit;
 		};
-		3339DB4B2FA40E4D0060FCCE /* XCLocalSwiftPackageReference "Packages/Folio" */ = {
+		3339DB4B2FA40E4D0060FCCE /* XCLocalSwiftPackageReference "Packages/FolioCodeView" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/Folio;
+			relativePath = Packages/FolioCodeView;
 		};
-		A1B2C3D4E5F60000000F0003 /* XCLocalSwiftPackageReference "Packages/PierreDiffsSwift" */ = {
+		B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/MarginaliaEditor" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/PierreDiffsSwift;
-		};
-		B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/Marginalia" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/Marginalia;
+			relativePath = Packages/MarginaliaEditor;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -737,9 +729,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = PhabricatorKit;
 		};
-		3339DB4C2FA40E4D0060FCCE /* Folio */ = {
+		3339DB4C2FA40E4D0060FCCE /* FolioCodeView */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = Folio;
+			productName = FolioCodeView;
 		};
 		3339DB4E2FA40E4D0060FCCE /* FolioHighlight */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -749,14 +741,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = FolioModel;
 		};
-		A1B2C3D4E5F60000000F0002 /* PierreDiffsSwift */ = {
+		B0C1D2E3F4A50000000F0002 /* MarginaliaEditor */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = PierreDiffsSwift;
-		};
-		B0C1D2E3F4A50000000F0002 /* Marginalia */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/Marginalia" */;
-			productName = Marginalia;
+			package = B0C1D2E3F4A50000000F0003 /* XCLocalSwiftPackageReference "Packages/MarginaliaEditor" */;
+			productName = MarginaliaEditor;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

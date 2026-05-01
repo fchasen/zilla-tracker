@@ -1,0 +1,164 @@
+import Foundation
+import MarginaliaSyntax
+import MarginaliaRendering
+#if canImport(AppKit) && os(macOS)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
+
+/// Pure transform: source text → list of `(NSRange, NSAttributedString.Key: Any)`
+/// pairs that the editor's `StorageDelegate` applies in a single batch.
+///
+/// Doesn't touch any UI types — fully testable without TextKit / a window.
+public final class Highlighter {
+    public enum Dialect: Sendable {
+        case commonMark
+        case remarkup
+    }
+
+    public struct Run: Equatable {
+        public let range: NSRange
+        public let attributes: [NSAttributedString.Key: AnyHashable]
+
+        public init(range: NSRange, attributes: [NSAttributedString.Key: AnyHashable]) {
+            self.range = range
+            self.attributes = attributes
+        }
+
+        public static func == (lhs: Run, rhs: Run) -> Bool {
+            lhs.range == rhs.range && lhs.attributes == rhs.attributes
+        }
+    }
+
+    public let theme: MarginaliaTheme
+    public let dialect: Dialect
+    private let parser: MarkdownParser
+    private let inlineParser: MarkdownParser
+    private let applier: HighlightApplier
+
+    public init(dialect: Dialect, theme: MarginaliaTheme = .default) throws {
+        self.theme = theme
+        self.dialect = dialect
+        self.parser = try MarkdownParser(grammar: .block)
+        self.inlineParser = try MarkdownParser(grammar: .inline)
+        self.applier = try HighlightApplier()
+    }
+
+    /// Compute highlight runs for the given source text.
+    ///
+    /// `blockRegions`, if provided, lets the highlighter look up the heading
+    /// level for each `text.title` span so H1 gets a bigger font than H2,
+    /// etc. When empty, the textTitle attributes fall back to the H2 scale.
+    public func runs(for source: String, blockRegions: [BlockRegion] = []) -> [Run] {
+        guard let tree = parser.parse(source), let root = tree.rootNode else { return [] }
+        let mapping = parser.mapping
+        var spans = applier.highlights(rootNode: root, in: tree, mapping: mapping, grammar: .block)
+
+        // Inline parse — run inline grammar over the full source. The block
+        // grammar emits `inline` nodes whose contents the inline grammar parses;
+        // a full-source inline pass produces correct spans for emphasis, links,
+        // code spans, etc. (Mismatched matches outside `inline` regions are
+        // fine — the block grammar's spans take precedence visually.)
+        if let inlineTree = inlineParser.parse(source), let inlineRoot = inlineTree.rootNode {
+            let inlineSpans = applier.highlights(
+                rootNode: inlineRoot,
+                in: inlineTree,
+                mapping: inlineParser.mapping,
+                grammar: .inline
+            )
+            spans.append(contentsOf: inlineSpans)
+        }
+
+        if dialect == .remarkup {
+            spans.append(contentsOf: RemarkupGrammar.highlights(in: source))
+        }
+
+        return spans.compactMap { span in
+            let attrs = attributes(for: span.tag, in: span.range, blockRegions: blockRegions)
+            guard !attrs.isEmpty else { return nil }
+            return Run(range: span.range, attributes: attrs)
+        }
+    }
+
+    /// Compute the markup-character ranges that should be hidden when the
+    /// cursor is *not* on those lines (caret-aware focus mode).
+    public func markupRanges(for source: String, blockRegions: [BlockRegion] = []) -> [NSRange] {
+        runs(for: source, blockRegions: blockRegions).filter { isMarkupRun($0) }.map(\.range)
+    }
+
+    private func isMarkupRun(_ run: Run) -> Bool {
+        guard let color = run.attributes[.foregroundColor] as? PlatformColor else { return false }
+        return color == theme.markupColor
+    }
+
+    private func attributes(
+        for tag: HighlightTag,
+        in range: NSRange,
+        blockRegions: [BlockRegion]
+    ) -> [NSAttributedString.Key: AnyHashable] {
+        switch tag {
+        case .textTitle:
+            let level = headingLevel(at: range, in: blockRegions) ?? 2
+            let scale = theme.headingScale[level] ?? 1.0
+            return [
+                .font: italicizedOrBold(theme.bodyFont, scale: scale, bold: true),
+                .foregroundColor: theme.foregroundColor
+            ]
+        case .textStrong:
+            return [.font: italicizedOrBold(theme.bodyFont, bold: true)]
+        case .textEmphasis:
+            return [.font: italicizedOrBold(theme.bodyFont, italic: true)]
+        case .textLiteral:
+            return [
+                .font: theme.monospaceFont,
+                .backgroundColor: theme.codeBackground
+            ]
+        case .textURI:
+            // The URL portion of a markdown link — render dimmed so the
+            // bracket text reads as the actual hyperlink label.
+            return [.foregroundColor: theme.linkURLColor]
+        case .textReference:
+            return [.foregroundColor: theme.linkColor]
+        case .punctuationSpecial, .punctuationDelimiter, .stringEscape:
+            return [.foregroundColor: theme.markupColor]
+        case .none, .unknown:
+            return [:]
+        }
+    }
+
+    private func headingLevel(at range: NSRange, in blockRegions: [BlockRegion]) -> Int? {
+        for region in blockRegions {
+            guard region.range.contains(range.location)
+                || (range.location == region.range.upperBound && range.length == 0) else { continue }
+            switch region.kind {
+            case .heading(let level): return level
+            case .setextHeading(let level): return level
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    private func italicizedOrBold(
+        _ base: PlatformFont,
+        scale: CGFloat = 1.0,
+        bold: Bool = false,
+        italic: Bool = false
+    ) -> PlatformFont {
+        let pointSize = base.pointSize * scale
+        #if canImport(AppKit) && os(macOS)
+        var traits: NSFontDescriptor.SymbolicTraits = []
+        if bold { traits.insert(.bold) }
+        if italic { traits.insert(.italic) }
+        let descriptor = base.fontDescriptor.withSymbolicTraits(traits)
+        return NSFont(descriptor: descriptor, size: pointSize) ?? base
+        #else
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if bold { traits.insert(.traitBold) }
+        if italic { traits.insert(.traitItalic) }
+        let descriptor = base.fontDescriptor.withSymbolicTraits(traits) ?? base.fontDescriptor
+        return UIFont(descriptor: descriptor, size: pointSize)
+        #endif
+    }
+}

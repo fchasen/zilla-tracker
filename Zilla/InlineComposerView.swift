@@ -1,6 +1,6 @@
 import SwiftUI
 import PhabricatorKit
-import Marginalia
+import MarginaliaEditor
 import MarginaliaView
 
 struct InlineComposerView: View {

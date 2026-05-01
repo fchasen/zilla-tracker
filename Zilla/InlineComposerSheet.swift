@@ -2,7 +2,7 @@
 import SwiftUI
 import SwiftData
 import PhabricatorKit
-import Marginalia
+import MarginaliaEditor
 
 struct InlineComposerSheet: View {
     let path: String

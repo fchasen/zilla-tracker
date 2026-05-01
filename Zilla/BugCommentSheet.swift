@@ -1,7 +1,7 @@
 #if os(iOS)
 import SwiftUI
 import BugzillaKit
-import Marginalia
+import MarginaliaEditor
 
 struct BugCommentSheet: View {
     @Environment(\.dismiss) private var dismiss

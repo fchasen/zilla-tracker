@@ -1,6 +1,6 @@
 import SwiftUI
 import BugzillaKit
-import Marginalia
+import MarginaliaEditor
 import PhabricatorKit
 import SearchfoxKit
 
