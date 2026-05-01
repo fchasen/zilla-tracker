@@ -280,20 +280,34 @@ struct ActivityRow: View {
         transaction.comments.last(where: { ($0.removed ?? false) == false })?.phid
     }
 
+    private var isCurrentUserRevisionAuthor: Bool {
+        guard let me = phab.currentUser?.phid,
+              let author = workspace.loadedRevision?.fields.authorPHID else { return false }
+        return me == author
+    }
+
     @ViewBuilder
     private var doneToggle: some View {
         let isDone = transaction.fields.isDone ?? false
-        Button {
-            markDone(!isDone)
-        } label: {
-            Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+        if isCurrentUserRevisionAuthor {
+            Button {
+                markDone(!isDone)
+            } label: {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isDone ? Color.green : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(doneInFlight)
+            .help(isDone ? "Mark as not done" : "Mark as done")
+            .accessibilityLabel(isDone ? "Mark as not done" : "Mark as done")
+        } else if isDone {
+            Image(systemName: "checkmark.seal.fill")
                 .font(.title3)
-                .foregroundStyle(isDone ? Color.green : Color.secondary)
+                .foregroundStyle(Color.green)
+                .help("Marked as done")
+                .accessibilityLabel("Marked as done")
         }
-        .buttonStyle(.plain)
-        .disabled(doneInFlight)
-        .help(isDone ? "Mark as not done" : "Mark as done")
-        .accessibilityLabel(isDone ? "Mark as not done" : "Mark as done")
     }
 
     private func markDone(_ newValue: Bool) {
