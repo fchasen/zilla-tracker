@@ -950,22 +950,22 @@ final class Workspace {
         await resolveUserDirectory(using: client)
     }
 
-    /// Opens an in-diff composer at `(path, line)`. If a composer is already
-    /// open elsewhere, it's replaced.
     @MainActor
     func beginInlineComposer(
         path: String,
         line: Int,
         length: Int,
         isNewFile: Bool,
-        replyTo: String?
+        replyTo: String?,
+        editingPHID: String? = nil
     ) {
         activeInlineComposer = ActiveInlineComposer(
             path: path,
             line: line,
             length: length,
             isNewFile: isNewFile,
-            replyTo: replyTo
+            replyTo: replyTo,
+            editingPHID: editingPHID
         )
     }
 
@@ -981,6 +981,7 @@ final class Workspace {
         length: Int,
         isNewFile: Bool,
         content: String,
+        replyTo: String? = nil,
         using client: PhabricatorClient
     ) async -> Error? {
         guard let diff = loadedRevisionDiff, let revision = loadedRevision else { return nil }
@@ -991,7 +992,8 @@ final class Workspace {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                content: content
+                content: content,
+                replyToCommentPHID: replyTo
             )
             cache?.invalidate(.revisionTransactions(revision.id))
             await refreshRevisionActivity(using: client)
@@ -1038,6 +1040,7 @@ final class Workspace {
         length: Int,
         isNewFile: Bool,
         newContent: String,
+        replyTo: String? = nil,
         using client: PhabricatorClient
     ) async -> Error? {
         if let error = await deleteInlineDraft(phid: phid, using: client) {
@@ -1049,6 +1052,7 @@ final class Workspace {
             length: length,
             isNewFile: isNewFile,
             content: newContent,
+            replyTo: replyTo,
             using: client
         )
     }

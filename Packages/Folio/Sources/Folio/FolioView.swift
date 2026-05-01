@@ -17,6 +17,8 @@ public struct FolioView: View {
     public let onExpandContext: ((ExpandDirection) -> Void)?
     public let onLineSelectionChange: ((FolioLineSelection?) -> Void)?
     public let selection: Binding<FolioLineSelection?>?
+    public let threadSlot: ((FolioCommentMark) -> AnyView)?
+    public let composerSlot: FolioComposerSlot?
 
     @State private var isExpanded: Bool = true
     @State private var contextAbove: Int
@@ -50,7 +52,9 @@ public struct FolioView: View {
         onCommentMarkTap: ((FolioCommentMark) -> Void)? = nil,
         onCreateComment: ((Int, AnchorRange.Side) -> Void)? = nil,
         onExpandContext: ((ExpandDirection) -> Void)? = nil,
-        onLineSelectionChange: ((FolioLineSelection?) -> Void)? = nil
+        onLineSelectionChange: ((FolioLineSelection?) -> Void)? = nil,
+        threadSlot: ((FolioCommentMark) -> AnyView)? = nil,
+        composerSlot: FolioComposerSlot? = nil
     ) {
         self.path = path
         self.content = content
@@ -66,6 +70,8 @@ public struct FolioView: View {
         self.onCreateComment = onCreateComment
         self.onExpandContext = onExpandContext
         self.onLineSelectionChange = onLineSelectionChange
+        self.threadSlot = threadSlot
+        self.composerSlot = composerSlot
         self._contextAbove = State(initialValue: contextLines)
         self._contextBelow = State(initialValue: contextLines)
         self._isExpanded = State(initialValue: !showsHeader || true)
@@ -538,6 +544,7 @@ public struct FolioView: View {
                         coordinateSpace: FolioSelectionMath.coordinateSpaceName,
                         intralineRanges: diff.unifiedIntralineByHunkIdx[absIdx] ?? []
                     )
+                    unifiedSlots(for: line)
                 }
             case .split:
                 let cache = diff.intralineDiffByText
@@ -580,7 +587,77 @@ public struct FolioView: View {
                         isRightInSelection: isLineSelected(rightLineNum, side: .newFile),
                         coordinateSpace: FolioSelectionMath.coordinateSpaceName
                     )
+                    splitSlots(for: row)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func unifiedSlots(for line: DiffLine) -> some View {
+        switch line.kind {
+        case .addition:
+            if let n = line.newNumber {
+                slotsAt(side: .newFile, line: n)
+            }
+        case .deletion:
+            if let o = line.oldNumber {
+                slotsAt(side: .oldFile, line: o)
+            }
+        case .context:
+            if let n = line.newNumber {
+                slotsAt(side: .newFile, line: n)
+            }
+            if let o = line.oldNumber {
+                slotsAt(side: .oldFile, line: o)
+            }
+        case .noNewline:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func splitSlots(for row: SplitRow) -> some View {
+        let leftLine = row.left?.oldNumber
+        let rightLine = row.right?.newNumber
+        if hasSlot(side: .oldFile, line: leftLine) || hasSlot(side: .newFile, line: rightLine) {
+            HStack(alignment: .top, spacing: 0) {
+                HStack(spacing: 0) {
+                    if let leftLine, hasSlot(side: .oldFile, line: leftLine) {
+                        slotsAt(side: .oldFile, line: leftLine)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Color.clear.frame(width: 1)
+
+                HStack(spacing: 0) {
+                    if let rightLine, hasSlot(side: .newFile, line: rightLine) {
+                        slotsAt(side: .newFile, line: rightLine)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func hasSlot(side: AnchorRange.Side, line: Int?) -> Bool {
+        guard let line else { return false }
+        if threadSlot != nil, findMark(side: side, line: line) != nil { return true }
+        if let composerSlot, composerSlot.side == side, composerSlot.line == line { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private func slotsAt(side: AnchorRange.Side, line: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let threadSlot, let mark = findMark(side: side, line: line) {
+                threadSlot(mark)
+            }
+            if let composerSlot, composerSlot.line == line, composerSlot.side == side {
+                composerSlot.content()
             }
         }
     }

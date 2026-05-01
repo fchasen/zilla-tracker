@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import PhabricatorKit
 import Folio
 import FolioModel
@@ -9,12 +10,30 @@ struct ChangesetView: View {
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.modelContext) private var modelContext
 
     let changeset: Changeset
     let latestDiffID: Int
 
     @State private var containerWidth: CGFloat = 800
     @State private var showAllHunks: Bool = false
+    @State private var lineSelection: FolioLineSelection?
+    #if os(iOS)
+    @State private var threadSheetRequest: ThreadSheetRequest?
+    @State private var composerSheetRequest: ComposerSheetRequest?
+
+    struct ThreadSheetRequest: Identifiable {
+        let rootPHID: String
+        var id: String { rootPHID }
+    }
+
+    struct ComposerSheetRequest: Identifiable {
+        let line: Int
+        let length: Int
+        let isNewFile: Bool
+        var id: String { "\(line)-\(length)-\(isNewFile)" }
+    }
+    #endif
 
     init(changeset: Changeset, latestDiffID: Int) {
         self.changeset = changeset
@@ -125,7 +144,9 @@ struct ChangesetView: View {
         }
         let mode: DiffViewMode = (containerWidth >= Self.splitWidthThreshold) ? .split : .unified
         let theme: HighlightTheme = (colorScheme == .dark) ? .dark : .light
-        let marks = commentMarks()
+        let visibleInlines = visibleInlineComments()
+        let threadsByRoot = threads(in: visibleInlines)
+        let marks = commentMarks(from: threadsByRoot)
         let hiddenLineEstimate = changeset.hunks
             .dropFirst(visibleCount)
             .reduce(0) { $0 + max($1.oldLen, $1.newLen) }
@@ -139,8 +160,11 @@ struct ChangesetView: View {
                     theme: theme,
                     cornerRadius: 0,
                     commentMarks: marks,
+                    selection: $lineSelection,
                     onCommentMarkTap: handleCommentMarkTap,
-                    onCreateComment: handleCreateComment
+                    onCreateComment: handleCreateComment,
+                    threadSlot: macThreadSlot(threadsByRoot: threadsByRoot),
+                    composerSlot: macComposerSlot()
                 )
                 .frame(maxWidth: .infinity)
             }
@@ -157,6 +181,108 @@ struct ChangesetView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        #if os(iOS)
+        .sheet(item: $threadSheetRequest) { req in
+            let visible = visibleInlineComments()
+            let threads = threads(in: visible)
+            let thread = threads[req.rootPHID] ?? []
+            InlineThreadSheet(
+                rootPHID: req.rootPHID,
+                thread: thread,
+                userDirectory: workspace.revisionUserDirectory,
+                currentUserPHID: phab.currentUser?.phid,
+                onEditDraft: handleEditDraft,
+                onDeleteDraft: handleDeleteDraft
+            )
+        }
+        .sheet(item: $composerSheetRequest) { req in
+            InlineComposerSheet(
+                path: changeset.currentPath,
+                line: req.line,
+                length: req.length,
+                isNewFile: req.isNewFile,
+                replyTo: nil,
+                titleText: "New comment"
+            )
+        }
+        #endif
+    }
+
+    private func macThreadSlot(threadsByRoot: [String: [InlineComment]]) -> ((FolioCommentMark) -> AnyView)? {
+        #if os(macOS)
+        return { mark in
+            let thread = threadsByRoot[mark.id] ?? []
+            let composerForThread = composerActiveForThread(thread: thread, mark: mark)
+            return AnyView(
+                InlineThreadView(
+                    thread: thread,
+                    userDirectory: workspace.revisionUserDirectory,
+                    currentUserPHID: phab.currentUser?.phid,
+                    onReply: { handleReply(mark: mark) },
+                    onEditDraft: handleEditDraft,
+                    onDeleteDraft: handleDeleteDraft,
+                    composerContent: composerForThread.map { active in
+                        { AnyView(composerHost(for: active, chromed: false)) }
+                    }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            )
+        }
+        #else
+        return nil
+        #endif
+    }
+
+    private func composerActiveForThread(thread: [InlineComment], mark: FolioCommentMark) -> ActiveInlineComposer? {
+        guard let active = workspace.activeInlineComposer,
+              active.path == changeset.currentPath else {
+            return nil
+        }
+        if active.replyTo == mark.id { return active }
+        if let editing = active.editingPHID, thread.contains(where: { $0.phid == editing }) {
+            return active
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func composerHost(for active: ActiveInlineComposer, chromed: Bool) -> some View {
+        InlineComposerHost(
+            path: active.path,
+            line: active.line,
+            length: active.length,
+            isNewFile: active.isNewFile,
+            replyTo: active.replyTo,
+            editingPHID: active.editingPHID,
+            chromed: chromed
+        )
+    }
+
+    private func macComposerSlot() -> FolioComposerSlot? {
+        #if os(macOS)
+        guard let active = workspace.activeInlineComposer,
+              active.path == changeset.currentPath else {
+            return nil
+        }
+        if active.replyTo != nil || active.editingPHID != nil {
+            return nil
+        }
+        let isNewFile = active.isNewFile
+        return FolioComposerSlot(
+            line: active.line,
+            side: isNewFile ? .newFile : .oldFile,
+            content: {
+                AnyView(
+                    composerHost(for: active, chromed: true)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                )
+            }
+        )
+        #else
+        return nil
+        #endif
     }
 
     private func expandLabel(remainingHunks: Int, lines: Int) -> String {
@@ -165,56 +291,89 @@ struct ChangesetView: View {
         return "Show \(hunkLabel) · \(lineLabel)"
     }
 
-    private func commentMarks() -> [FolioCommentMark] {
+    private func visibleInlineComments() -> [InlineComment] {
         let onLatest = workspace.loadedRevisionInlines.filter {
             $0.diffID == latestDiffID && $0.path == changeset.currentPath && !$0.isDeleted
         }
         let myPHID = phab.currentUser?.phid
-        let visible = onLatest.filter { inline in
+        return onLatest.filter { inline in
             inline.transactionPHID != nil || inline.authorPHID == myPHID
         }
-        guard !visible.isEmpty else { return [] }
+    }
 
+    private func threads(in visible: [InlineComment]) -> [String: [InlineComment]] {
         let visiblePHIDs = Set(visible.map(\.phid))
         let roots = visible.filter { inline in
             guard let parent = inline.replyToCommentPHID else { return true }
             return !visiblePHIDs.contains(parent)
         }
+        var result: [String: [InlineComment]] = [:]
+        let byCreated: (InlineComment, InlineComment) -> Bool = { lhs, rhs in
+            (lhs.dateCreated ?? .distantPast) < (rhs.dateCreated ?? .distantPast)
+        }
+        for root in roots {
+            var collected: [InlineComment] = [root]
+            var queue: [String] = [root.phid]
+            while let parent = queue.popLast() {
+                let children = visible
+                    .filter { $0.replyToCommentPHID == parent }
+                    .sorted(by: byCreated)
+                for child in children {
+                    collected.append(child)
+                    queue.append(child.phid)
+                }
+            }
+            result[root.phid] = collected
+        }
+        return result
+    }
 
-        return roots.map { root in
-            let count = threadSize(rootPHID: root.phid, in: visible)
+    private func commentMarks(from threadsByRoot: [String: [InlineComment]]) -> [FolioCommentMark] {
+        threadsByRoot.compactMap { _, thread in
+            guard let root = thread.first else { return nil }
             return FolioCommentMark(
                 id: root.phid,
                 side: root.isNewFile ? .newFile : .oldFile,
                 line: root.line,
-                count: count
+                count: thread.count
             )
         }
     }
 
-    private func threadSize(rootPHID: String, in inlines: [InlineComment]) -> Int {
-        var count = 1
-        var stack: [String] = [rootPHID]
-        while let parent = stack.popLast() {
-            for child in inlines where child.replyToCommentPHID == parent {
-                count += 1
-                stack.append(child.phid)
-            }
-        }
-        return count
-    }
-
     private func handleCreateComment(line: Int, side: AnchorRange.Side) {
+        let startLine: Int
+        let length: Int
+        if let sel = lineSelection, sel.side == side, sel.contains(line) {
+            startLine = sel.startLine
+            length = sel.endLine - sel.startLine + 1
+        } else {
+            startLine = line
+            length = 1
+        }
         workspace.beginInlineComposer(
             path: changeset.currentPath,
-            line: line,
-            length: 1,
+            line: startLine,
+            length: length,
             isNewFile: side == .newFile,
             replyTo: nil
         )
+        #if os(iOS)
+        composerSheetRequest = ComposerSheetRequest(
+            line: startLine,
+            length: length,
+            isNewFile: side == .newFile
+        )
+        #endif
+        lineSelection = nil
     }
 
     private func handleCommentMarkTap(_ mark: FolioCommentMark) {
+        #if os(iOS)
+        threadSheetRequest = ThreadSheetRequest(rootPHID: mark.id)
+        #endif
+    }
+
+    private func handleReply(mark: FolioCommentMark) {
         workspace.beginInlineComposer(
             path: changeset.currentPath,
             line: mark.line,
@@ -223,6 +382,39 @@ struct ChangesetView: View {
             replyTo: mark.id
         )
     }
+
+    private func handleEditDraft(comment: InlineComment) {
+        guard let revision = workspace.loadedRevision,
+              let diffID = workspace.loadedRevisionDiff?.id else { return }
+        let key = InlineDraftKey(
+            revisionID: revision.id,
+            diffID: diffID,
+            path: comment.path,
+            line: comment.line,
+            isNewFile: comment.isNewFile,
+            replyTo: comment.replyToCommentPHID
+        )
+        modelContext.saveInlineDraft(key, length: max(1, comment.length), content: comment.content)
+        workspace.beginInlineComposer(
+            path: comment.path,
+            line: comment.line,
+            length: max(1, comment.length),
+            isNewFile: comment.isNewFile,
+            replyTo: comment.replyToCommentPHID,
+            editingPHID: comment.phid
+        )
+    }
+
+    private func handleDeleteDraft(comment: InlineComment) {
+        let phid = comment.phid
+        let client = phab.client
+        Task { @MainActor in
+            if let error = await workspace.deleteInlineDraft(phid: phid, using: client) {
+                workspace.lastUpdateError = error.localizedDescription
+            }
+        }
+    }
+
 }
 
 struct ChangesetHeader: View {

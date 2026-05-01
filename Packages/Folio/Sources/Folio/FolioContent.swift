@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import FolioModel
 
 public enum FolioContent: Sendable {
@@ -18,4 +19,16 @@ public enum DiffViewMode: Sendable, Hashable {
 public enum ExpandDirection: Sendable, Hashable {
     case up
     case down
+}
+
+public struct FolioComposerSlot {
+    public let line: Int
+    public let side: AnchorRange.Side
+    public let content: () -> AnyView
+
+    public init(line: Int, side: AnchorRange.Side, content: @escaping () -> AnyView) {
+        self.line = line
+        self.side = side
+        self.content = content
+    }
 }
