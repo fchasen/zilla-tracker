@@ -7,7 +7,7 @@
       "blend-mode-specializations" : [
         {
           "appearance" : "dark",
-          "value" : "darken"
+          "value" : "plus-darker"
         }
       ],
       "blur-material-specializations" : [
@@ -16,6 +16,7 @@
           "value" : null
         }
       ],
+      "hidden" : false,
       "layers" : [
         {
           "blend-mode-specializations" : [
@@ -33,9 +34,90 @@
             },
             {
               "appearance" : "dark",
-              "value" : 1
+              "value" : 0.2
             }
           ]
+        }
+      ],
+      "opacity-specializations" : [
+        {
+          "value" : 0
+        },
+        {
+          "appearance" : "dark",
+          "value" : 1
+        }
+      ],
+      "shadow-specializations" : [
+        {
+          "appearance" : "dark",
+          "value" : {
+            "kind" : "none",
+            "opacity" : 0.5
+          }
+        }
+      ],
+      "specular-specializations" : [
+        {
+          "value" : false
+        },
+        {
+          "appearance" : "dark",
+          "value" : false
+        }
+      ],
+      "translucency-specializations" : [
+        {
+          "value" : {
+            "enabled" : false,
+            "value" : 0.5
+          }
+        },
+        {
+          "appearance" : "dark",
+          "value" : {
+            "enabled" : true,
+            "value" : 0.5
+          }
+        }
+      ]
+    },
+    {
+      "blend-mode-specializations" : [
+        {
+          "appearance" : "dark",
+          "value" : "plus-lighter"
+        }
+      ],
+      "blur-material-specializations" : [
+        {
+          "value" : null
+        },
+        {
+          "appearance" : "dark",
+          "value" : 1
+        }
+      ],
+      "layers" : [
+        {
+          "image-name" : "footprint-inverted.png",
+          "name" : "footprint-inverted",
+          "opacity-specializations" : [
+            {
+              "value" : 0
+            },
+            {
+              "appearance" : "dark",
+              "value" : 1
+            }
+          ],
+          "position" : {
+            "scale" : 1.2,
+            "translation-in-points" : [
+              0,
+              14
+            ]
+          }
         }
       ],
       "lighting-specializations" : [
@@ -47,18 +129,38 @@
       "opacity-specializations" : [
         {
           "appearance" : "dark",
-          "value" : 0.8
+          "value" : 1
         }
       ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
-      },
+      "shadow-specializations" : [
+        {
+          "value" : {
+            "kind" : "neutral",
+            "opacity" : 0.5
+          }
+        },
+        {
+          "appearance" : "dark",
+          "value" : {
+            "kind" : "neutral",
+            "opacity" : 0.5
+          }
+        }
+      ],
+      "specular-specializations" : [
+        {
+          "value" : false
+        },
+        {
+          "appearance" : "dark",
+          "value" : false
+        }
+      ],
       "translucency-specializations" : [
         {
           "appearance" : "dark",
           "value" : {
-            "enabled" : false,
+            "enabled" : true,
             "value" : 0.5
           }
         }
@@ -76,18 +178,43 @@
       ],
       "blur-material-specializations" : [
         {
-          "value" : null
+          "value" : 1
         },
         {
           "appearance" : "dark",
-          "value" : null
+          "value" : 1
         }
       ],
       "hidden" : false,
       "layers" : [
         {
+          "blend-mode-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : "normal"
+            }
+          ],
+          "glass-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : true
+            }
+          ],
           "image-name" : "footprint.png",
-          "name" : "footprint"
+          "name" : "footprint",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ],
+          "position" : {
+            "scale" : 1.2,
+            "translation-in-points" : [
+              0,
+              14
+            ]
+          }
         }
       ],
       "lighting-specializations" : [
@@ -126,7 +253,7 @@
       "translucency-specializations" : [
         {
           "value" : {
-            "enabled" : false,
+            "enabled" : true,
             "value" : 0.5
           }
         },
@@ -151,7 +278,7 @@
       ],
       "blur-material-specializations" : [
         {
-          "value" : 0.5
+          "value" : 1
         },
         {
           "appearance" : "dark",
@@ -159,31 +286,6 @@
         }
       ],
       "layers" : [
-        {
-          "blend-mode-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : "normal"
-            }
-          ],
-          "fill" : "none",
-          "hidden" : false,
-          "image-name" : "DFA775D8-AA77-454D-8B5E-28B962C84124.PNG",
-          "name" : "DFA775D8-AA77-454D-8B5E-28B962C84124",
-          "opacity-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : 0.4
-            }
-          ],
-          "position" : {
-            "scale" : 0.95,
-            "translation-in-points" : [
-              -10.050000000000182,
-              -22.39062500000017
-            ]
-          }
-        },
         {
           "blend-mode-specializations" : [
             {
@@ -200,12 +302,47 @@
             },
             {
               "appearance" : "dark",
-              "value" : 1
+              "value" : 0.7
             }
           ]
+        },
+        {
+          "blend-mode-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : "normal"
+            }
+          ],
+          "fill" : "none",
+          "glass-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            }
+          ],
+          "hidden" : false,
+          "image-name" : "DFA775D8-AA77-454D-8B5E-28B962C84124.PNG",
+          "name" : "DFA775D8-AA77-454D-8B5E-28B962C84124",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 1
+            }
+          ],
+          "position" : {
+            "scale" : 0.95,
+            "translation-in-points" : [
+              -10.050000000000182,
+              -22.39062500000017
+            ]
+          }
         }
       ],
       "lighting" : "individual",
+      "name" : "Group",
       "shadow-specializations" : [
         {
           "value" : {
