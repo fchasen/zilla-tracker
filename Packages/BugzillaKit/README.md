@@ -280,4 +280,4 @@ See `Tests/BugzillaKitTests/MockURLProtocol.swift` for the full pattern used by 
 
 ## License
 
-BugzillaKit is released under the same license as the parent project. See the repository root for the full text.
+BugzillaKit is released under the Mozilla Public License, v. 2.0. See <https://www.mozilla.org/MPL/2.0/> for the full text.

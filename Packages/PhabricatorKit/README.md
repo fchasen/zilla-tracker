@@ -282,4 +282,4 @@ The static helper `PhabricatorClient.makeEncoder()` is exposed so you can match 
 
 ## License
 
-PhabricatorKit is released under the same license as the parent project. See the repository root for the full text.
+PhabricatorKit is released under the Mozilla Public License, v. 2.0. See <https://www.mozilla.org/MPL/2.0/> for the full text.

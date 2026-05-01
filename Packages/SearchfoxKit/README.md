@@ -176,4 +176,4 @@ mv SearchfoxKit ../../Packages/SearchfoxKit
 
 ## License
 
-SearchfoxKit is released under the same license as the parent project. See the repository root for the full text.
+SearchfoxKit is released under the Mozilla Public License, v. 2.0. See <https://www.mozilla.org/MPL/2.0/> for the full text.

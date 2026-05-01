@@ -98,4 +98,4 @@ Sandboxed app with `com.apple.security.network.client`. Keychain access uses gen
 
 ## License
 
-See repository.
+Mozilla Public License, v. 2.0. See <https://www.mozilla.org/MPL/2.0/> for the full text.
