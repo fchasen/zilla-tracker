@@ -373,7 +373,7 @@ function createAnnotationDOM(annotation) {
       header.appendChild(subtitleSpan);
     }
 
-    if (index === 0 && !isEditable) {
+    if (index === 0 && !isEditable && metadata.deletable === true) {
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'pierre-annotation-delete';
       deleteBtn.textContent = '\u00D7';
