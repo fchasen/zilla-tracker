@@ -3,10 +3,12 @@ import Foundation
 public struct SplitRow: Sendable, Hashable {
     public let left: DiffLine?
     public let right: DiffLine?
+    public let intralineDiff: IntralineDiff.Result?
 
-    public init(left: DiffLine?, right: DiffLine?) {
+    public init(left: DiffLine?, right: DiffLine?, intralineDiff: IntralineDiff.Result? = nil) {
         self.left = left
         self.right = right
+        self.intralineDiff = intralineDiff
     }
 }
 
@@ -21,7 +23,10 @@ public enum SplitRowBuilder {
             for i in 0..<pairs {
                 let l = i < pendingDeletions.count ? pendingDeletions[i] : nil
                 let r = i < pendingAdditions.count ? pendingAdditions[i] : nil
-                rows.append(SplitRow(left: l, right: r))
+                let diff: IntralineDiff.Result? = (l != nil && r != nil)
+                    ? IntralineDiff.compute(old: l!.text, new: r!.text)
+                    : nil
+                rows.append(SplitRow(left: l, right: r, intralineDiff: diff))
             }
             pendingDeletions.removeAll(keepingCapacity: true)
             pendingAdditions.removeAll(keepingCapacity: true)

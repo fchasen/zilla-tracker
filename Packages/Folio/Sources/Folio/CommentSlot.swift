@@ -12,32 +12,35 @@ struct CommentSlot: View {
     private let width: CGFloat = 18
 
     var body: some View {
-        ZStack {
-            if let mark {
-                Button { onMarkTap?() } label: {
-                    bubble(count: mark.count)
-                }
-                .buttonStyle(.plain)
-                .help(mark.count > 1 ? "\(mark.count) comments" : "1 comment")
-            } else if isHovered, let onCreate {
-                Button(action: onCreate) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(Color(theme.commentMark))
-                        .frame(width: width - 2, height: 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(Color(theme.commentMarkBackground))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help("Add comment")
-            } else {
-                Color.clear
+        Color.clear
+            .frame(width: width)
+            .overlay(alignment: .center) {
+                slotContent
             }
+    }
+
+    @ViewBuilder
+    private var slotContent: some View {
+        if let mark {
+            Button { onMarkTap?() } label: {
+                bubble(count: mark.count)
+            }
+            .buttonStyle(.plain)
+            .help(mark.count > 1 ? "\(mark.count) comments" : "1 comment")
+        } else if isHovered, let onCreate {
+            Button(action: onCreate) {
+                Image(systemName: "plus")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Color(theme.commentMark))
+                    .frame(width: width - 2, height: 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Color(theme.commentMarkBackground))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Add comment")
         }
-        .frame(width: width)
-        .padding(.vertical, 1)
     }
 
     @ViewBuilder

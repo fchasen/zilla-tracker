@@ -5,6 +5,7 @@ public struct ExpandContextRow: View {
     public let label: String
     public let theme: HighlightTheme
     public let leadingGutterWidth: CGFloat
+    public let trailingGutterWidth: CGFloat?
     public let onExpandFromTop: (() -> Void)?
     public let onExpandFromBottom: (() -> Void)?
 
@@ -12,24 +13,58 @@ public struct ExpandContextRow: View {
         label: String,
         theme: HighlightTheme,
         leadingGutterWidth: CGFloat = 0,
+        trailingGutterWidth: CGFloat? = nil,
         onExpandFromTop: (() -> Void)? = nil,
         onExpandFromBottom: (() -> Void)? = nil
     ) {
         self.label = label
         self.theme = theme
         self.leadingGutterWidth = leadingGutterWidth
+        self.trailingGutterWidth = trailingGutterWidth
         self.onExpandFromTop = onExpandFromTop
         self.onExpandFromBottom = onExpandFromBottom
     }
 
     public var body: some View {
+        Group {
+            if let trailingGutterWidth {
+                splitLayout(trailing: trailingGutterWidth)
+            } else {
+                singleLayout
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var singleLayout: some View {
         HStack(spacing: 0) {
             chevronGutter
                 .frame(width: max(leadingGutterWidth, 32))
                 .background(Color(theme.contextGutter))
             labelArea
         }
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func splitLayout(trailing: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                chevronGutter
+                    .frame(width: max(leadingGutterWidth, 32))
+                    .background(Color(theme.contextGutter))
+                labelArea
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Rectangle()
+                .fill(Color(theme.border))
+                .frame(width: 1)
+            HStack(spacing: 0) {
+                Color(theme.contextGutter)
+                    .frame(width: max(trailing, 32))
+                Color(theme.contextRow)
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     @ViewBuilder

@@ -49,7 +49,7 @@ struct SplitFolioRow: View {
         let isHovered = side == .left ? isLeftHovered : isRightHovered
 
         HStack(alignment: .top, spacing: 0) {
-            gutter(text: number.map(String.init) ?? "")
+            gutter(text: number.map(String.init) ?? "", line: line)
             marker(for: line)
             CommentSlot(
                 mark: mark,
@@ -58,21 +58,32 @@ struct SplitFolioRow: View {
                 onMarkTap: onMarkTap,
                 onCreate: onCreate
             )
-            code(line: line, lineRange: lineRange)
+            code(line: line, lineRange: lineRange, side: side)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             ZStack {
-                HStack(spacing: 0) {
-                    Rectangle()
-                        .fill(Color(gutterColor(for: line)))
-                        .frame(width: gutterWidth + 8)
-                    Rectangle()
-                        .fill(Color(rowColor(for: line)))
+                if line == nil {
+                    DiagonalHatch(color: theme.emptyMirrorHatch, spacing: 6, lineWidth: 1)
+                } else {
+                    HStack(spacing: 0) {
+                        Rectangle()
+                            .fill(Color(gutterColor(for: line)))
+                            .frame(width: gutterWidth + 8)
+                        Rectangle()
+                            .fill(Color(rowColor(for: line)))
+                    }
                 }
                 if inSelection {
                     Rectangle().fill(Color(theme.selectionFill))
                 }
+            }
+        }
+        .overlay(alignment: .leading) {
+            if let line, let accent = theme.accentColor(for: line.kind) {
+                Rectangle()
+                    .fill(Color(accent))
+                    .frame(width: 3)
             }
         }
         #if os(macOS)
@@ -91,12 +102,17 @@ struct SplitFolioRow: View {
         )
     }
 
-    private func gutter(text: String) -> some View {
+    private func gutter(text: String, line: DiffLine?) -> some View {
         Text(text)
-            .foregroundColor(Color(theme.lineNumber))
+            .foregroundColor(Color(lineNumberColor(for: line)))
             .frame(width: gutterWidth, alignment: .trailing)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
+    }
+
+    private func lineNumberColor(for line: DiffLine?) -> PlatformColor {
+        guard let line else { return theme.lineNumber }
+        return theme.lineNumberColor(for: line.kind)
     }
 
     private func marker(for line: DiffLine?) -> some View {
@@ -106,8 +122,8 @@ struct SplitFolioRow: View {
             .padding(.vertical, 1)
     }
 
-    private func code(line: DiffLine?, lineRange: NSRange?) -> some View {
-        Text(highlighted(line: line, lineRange: lineRange))
+    private func code(line: DiffLine?, lineRange: NSRange?, side: CellSide) -> some View {
+        Text(highlighted(line: line, lineRange: lineRange, side: side))
             .foregroundColor(Color(theme.foreground))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 4)
@@ -116,14 +132,22 @@ struct SplitFolioRow: View {
             .textSelection(.enabled)
     }
 
-    private func highlighted(line: DiffLine?, lineRange: NSRange?) -> AttributedString {
+    private func highlighted(line: DiffLine?, lineRange: NSRange?, side: CellSide) -> AttributedString {
         guard let line, let lineRange else { return AttributedString("") }
-        return FolioHighlighter.attributed(
+        var attr = FolioHighlighter.attributed(
             text: line.text,
             lineRange: lineRange,
             runs: runs,
             defaultColor: theme.foreground
         )
+        if let intra = row.intralineDiff {
+            let ranges = side == .left ? intra.oldRanges : intra.newRanges
+            let bg: PlatformColor = side == .left ? theme.intralineRemoved : theme.intralineAdded
+            for range in ranges {
+                attr.applyBackground(on: line.text, range: range, color: bg)
+            }
+        }
+        return attr
     }
 
     private func markerString(for line: DiffLine?) -> String {

@@ -34,9 +34,17 @@ public struct HighlightTheme: Sendable {
     public var border: PlatformColor
 
     public var emptyMirror: PlatformColor
+    public var emptyMirrorHatch: PlatformColor
     public var commentMark: PlatformColor
     public var commentMarkBackground: PlatformColor
     public var selectionFill: PlatformColor
+
+    public var addedAccent: PlatformColor
+    public var removedAccent: PlatformColor
+    public var addedLineNumber: PlatformColor
+    public var removedLineNumber: PlatformColor
+    public var intralineAdded: PlatformColor
+    public var intralineRemoved: PlatformColor
 
     public init(
         keyword: PlatformColor,
@@ -62,9 +70,16 @@ public struct HighlightTheme: Sendable {
         headerBackground: PlatformColor,
         border: PlatformColor,
         emptyMirror: PlatformColor,
+        emptyMirrorHatch: PlatformColor,
         commentMark: PlatformColor,
         commentMarkBackground: PlatformColor,
-        selectionFill: PlatformColor
+        selectionFill: PlatformColor,
+        addedAccent: PlatformColor,
+        removedAccent: PlatformColor,
+        addedLineNumber: PlatformColor,
+        removedLineNumber: PlatformColor,
+        intralineAdded: PlatformColor,
+        intralineRemoved: PlatformColor
     ) {
         self.keyword = keyword
         self.type = type
@@ -89,9 +104,16 @@ public struct HighlightTheme: Sendable {
         self.headerBackground = headerBackground
         self.border = border
         self.emptyMirror = emptyMirror
+        self.emptyMirrorHatch = emptyMirrorHatch
         self.commentMark = commentMark
         self.commentMarkBackground = commentMarkBackground
         self.selectionFill = selectionFill
+        self.addedAccent = addedAccent
+        self.removedAccent = removedAccent
+        self.addedLineNumber = addedLineNumber
+        self.removedLineNumber = removedLineNumber
+        self.intralineAdded = intralineAdded
+        self.intralineRemoved = intralineRemoved
     }
 }
 
@@ -109,20 +131,27 @@ public extension HighlightTheme {
         attribute:  .srgb(0x116329),
         constant:   .srgb(0x0550AE),
         foreground: .srgb(0x24292F),
-        addedRow:   .srgb(0xE6FFEC),
-        removedRow: .srgb(0xFFEBE9),
+        addedRow:   .srgb(0x1F883D, alpha: 0.12),
+        removedRow: .srgb(0xCF222E, alpha: 0.10),
         contextRow: .srgb(0xFFFFFF, alpha: 0),
-        addedGutter:   .srgb(0xCCFFD8),
-        removedGutter: .srgb(0xFFD7D5),
+        addedGutter:   .srgb(0x1F883D, alpha: 0.20),
+        removedGutter: .srgb(0xCF222E, alpha: 0.18),
         contextGutter: .srgb(0xF6F8FA),
         lineNumber: .srgb(0x57606A),
         marker:     .srgb(0x57606A),
         headerBackground: .srgb(0xF6F8FA),
         border:     .srgb(0xD0D7DE),
         emptyMirror:           .srgb(0xF6F8FA, alpha: 0.6),
+        emptyMirrorHatch:      .srgb(0x57606A, alpha: 0.18),
         commentMark:           .srgb(0x0969DA),
         commentMarkBackground: .srgb(0xDDEEFF),
-        selectionFill:         .srgb(0x0969DA, alpha: 0.12)
+        selectionFill:         .srgb(0x0969DA, alpha: 0.12),
+        addedAccent:           .srgb(0x1F883D),
+        removedAccent:         .srgb(0xCF222E),
+        addedLineNumber:       .srgb(0x1F883D),
+        removedLineNumber:     .srgb(0xCF222E),
+        intralineAdded:        .srgb(0x1F883D, alpha: 0.32),
+        intralineRemoved:      .srgb(0xCF222E, alpha: 0.32)
     )
 
     static let dark = HighlightTheme(
@@ -138,22 +167,30 @@ public extension HighlightTheme {
         attribute:  .srgb(0x7EE787),
         constant:   .srgb(0x79C0FF),
         foreground: .srgb(0xC9D1D9),
-        addedRow:   .srgb(0x0E4429),
-        removedRow: .srgb(0x67060C),
+        addedRow:   .srgb(0x3FB950, alpha: 0.16),
+        removedRow: .srgb(0xF85149, alpha: 0.16),
         contextRow: .srgb(0x000000, alpha: 0),
-        addedGutter:   .srgb(0x113B25),
-        removedGutter: .srgb(0x4C0E14),
+        addedGutter:   .srgb(0x3FB950, alpha: 0.25),
+        removedGutter: .srgb(0xF85149, alpha: 0.25),
         contextGutter: .srgb(0x161B22),
         lineNumber: .srgb(0x8B949E),
         marker:     .srgb(0x8B949E),
         headerBackground: .srgb(0x161B22),
         border:     .srgb(0x30363D),
         emptyMirror:           .srgb(0x161B22, alpha: 0.6),
+        emptyMirrorHatch:      .srgb(0x8B949E, alpha: 0.18),
         commentMark:           .srgb(0x58A6FF),
         commentMarkBackground: .srgb(0x1F2A3D),
-        selectionFill:         .srgb(0x58A6FF, alpha: 0.18)
+        selectionFill:         .srgb(0x58A6FF, alpha: 0.18),
+        addedAccent:           .srgb(0x3FB950),
+        removedAccent:         .srgb(0xF85149),
+        addedLineNumber:       .srgb(0x3FB950),
+        removedLineNumber:     .srgb(0xF85149),
+        intralineAdded:        .srgb(0x3FB950, alpha: 0.35),
+        intralineRemoved:      .srgb(0xF85149, alpha: 0.35)
     )
 }
+
 
 extension PlatformColor {
     static func srgb(_ rgb: UInt32, alpha: CGFloat = 1) -> PlatformColor {

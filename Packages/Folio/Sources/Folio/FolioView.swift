@@ -195,6 +195,7 @@ public struct FolioView: View {
         let resources = highlightResources(for: hunk)
         let gutter = gutterWidth(for: hunk.lines[...])
         let leadingGutter = gutter + 8
+        let trailingGutter: CGFloat? = mode == .split ? leadingGutter : nil
 
         VStack(alignment: .leading, spacing: 0) {
             if bounds.linesAbove > 0 || onExpandContext != nil {
@@ -202,6 +203,7 @@ public struct FolioView: View {
                     label: ExpandContextRow.unmodifiedLabel(count: bounds.linesAbove),
                     theme: theme,
                     leadingGutterWidth: leadingGutter,
+                    trailingGutterWidth: trailingGutter,
                     onExpandFromBottom: {
                         withAnimation(.snappy(duration: 0.18)) {
                             expand(direction: .up, bounds: bounds)
@@ -222,6 +224,7 @@ public struct FolioView: View {
                     label: ExpandContextRow.unmodifiedLabel(count: bounds.linesBelow),
                     theme: theme,
                     leadingGutterWidth: leadingGutter,
+                    trailingGutterWidth: trailingGutter,
                     onExpandFromTop: {
                         withAnimation(.snappy(duration: 0.18)) {
                             expand(direction: .down, bounds: bounds)
@@ -251,6 +254,7 @@ public struct FolioView: View {
         let resources = highlightResources(for: hunk)
         let gutter = gutterWidth(for: hunk.lines[...])
         let leadingGutter = gutter + 8
+        let trailingGutter: CGFloat? = mode == .split ? leadingGutter : nil
 
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(folded.sections.enumerated()), id: \.offset) { idx, section in
@@ -274,6 +278,7 @@ public struct FolioView: View {
                         resources: resources,
                         gutter: gutter,
                         leadingGutter: leadingGutter,
+                        trailingGutter: trailingGutter,
                         mode: mode
                     )
                 }
@@ -291,6 +296,7 @@ public struct FolioView: View {
         resources: HighlightResources,
         gutter: CGFloat,
         leadingGutter: CGFloat,
+        trailingGutter: CGFloat?,
         mode: DiffViewMode
     ) -> some View {
         let state = gapStates[start] ?? GapRevealState()
@@ -326,6 +332,7 @@ public struct FolioView: View {
                     label: ExpandContextRow.unmodifiedLabel(count: hiddenCount),
                     theme: theme,
                     leadingGutterWidth: leadingGutter,
+                    trailingGutterWidth: trailingGutter,
                     onExpandFromTop: (pos == .leading) ? nil : {
                         withAnimation(.snappy(duration: 0.18)) {
                             expandGap(start: start, totalSize: totalSize, fromTop: true)
@@ -395,6 +402,7 @@ public struct FolioView: View {
         let visible = Array(hunk.lines[range])
         switch mode {
         case .unified:
+            let intralineByIdx = unifiedIntralineRanges(visible)
             ForEach(Array(visible.enumerated()), id: \.offset) { i, line in
                 let absIdx = range.lowerBound + i
                 let lookup = unifiedLookup(for: line)
@@ -408,7 +416,8 @@ public struct FolioView: View {
                     onCommentMarkTap: lookup.mark.flatMap { m in onCommentMarkTap.map { handler in { handler(m) } } },
                     onCreateComment: createCommentClosure(line: lookup.lineNum, side: lookup.side),
                     isInSelection: isLineSelected(lookup.lineNum, side: lookup.side),
-                    coordinateSpace: FolioSelectionMath.coordinateSpaceName
+                    coordinateSpace: FolioSelectionMath.coordinateSpaceName,
+                    intralineRanges: intralineByIdx[i] ?? []
                 )
             }
         case .split:
@@ -443,6 +452,35 @@ public struct FolioView: View {
                 )
             }
         }
+    }
+
+    private func unifiedIntralineRanges(_ visible: [DiffLine]) -> [Int: [NSRange]] {
+        var result: [Int: [NSRange]] = [:]
+        var pendingDeletions: [(idx: Int, line: DiffLine)] = []
+        var pendingAdditions: [(idx: Int, line: DiffLine)] = []
+
+        func flush() {
+            let pairs = min(pendingDeletions.count, pendingAdditions.count)
+            for i in 0..<pairs {
+                let (delIdx, delLine) = pendingDeletions[i]
+                let (addIdx, addLine) = pendingAdditions[i]
+                let diff = IntralineDiff.compute(old: delLine.text, new: addLine.text)
+                result[delIdx] = diff.oldRanges
+                result[addIdx] = diff.newRanges
+            }
+            pendingDeletions.removeAll(keepingCapacity: true)
+            pendingAdditions.removeAll(keepingCapacity: true)
+        }
+
+        for (i, line) in visible.enumerated() {
+            switch line.kind {
+            case .deletion: pendingDeletions.append((i, line))
+            case .addition: pendingAdditions.append((i, line))
+            case .context, .noNewline: flush()
+            }
+        }
+        flush()
+        return result
     }
 
     private func splitRowRangesAbsolute(

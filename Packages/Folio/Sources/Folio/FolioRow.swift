@@ -13,6 +13,7 @@ struct FolioRow: View {
     let onCreateComment: (() -> Void)?
     let isInSelection: Bool
     let coordinateSpace: String
+    let intralineRanges: [NSRange]
 
     @State private var isHovered: Bool = false
 
@@ -47,6 +48,13 @@ struct FolioRow: View {
                 }
             }
         }
+        .overlay(alignment: .leading) {
+            if let accent = theme.accentColor(for: line.kind) {
+                Rectangle()
+                    .fill(Color(accent))
+                    .frame(width: 3)
+            }
+        }
         .font(.system(.caption, design: .monospaced))
         .lineLimit(nil)
         .fixedSize(horizontal: false, vertical: true)
@@ -76,7 +84,7 @@ struct FolioRow: View {
 
     private func gutter(text: String) -> some View {
         Text(text)
-            .foregroundColor(Color(theme.lineNumber))
+            .foregroundColor(Color(theme.lineNumberColor(for: line.kind)))
             .frame(width: gutterWidth, alignment: .trailing)
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
@@ -100,12 +108,26 @@ struct FolioRow: View {
     }
 
     private var highlightedText: AttributedString {
-        FolioHighlighter.attributed(
+        var attr = FolioHighlighter.attributed(
             text: line.text,
             lineRange: lineRange,
             runs: runs,
             defaultColor: theme.foreground
         )
+        if !intralineRanges.isEmpty, let bg = intralineBackground {
+            for range in intralineRanges {
+                attr.applyBackground(on: line.text, range: range, color: bg)
+            }
+        }
+        return attr
+    }
+
+    private var intralineBackground: PlatformColor? {
+        switch line.kind {
+        case .addition: return theme.intralineAdded
+        case .deletion: return theme.intralineRemoved
+        case .context, .noNewline: return nil
+        }
     }
 }
 
@@ -133,6 +155,22 @@ extension HighlightTheme {
         case .addition: return addedGutter
         case .deletion: return removedGutter
         case .context, .noNewline: return contextGutter
+        }
+    }
+
+    func lineNumberColor(for kind: DiffLine.Kind) -> PlatformColor {
+        switch kind {
+        case .addition: return addedLineNumber
+        case .deletion: return removedLineNumber
+        case .context, .noNewline: return lineNumber
+        }
+    }
+
+    func accentColor(for kind: DiffLine.Kind) -> PlatformColor? {
+        switch kind {
+        case .addition: return addedAccent
+        case .deletion: return removedAccent
+        case .context, .noNewline: return nil
         }
     }
 }
