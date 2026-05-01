@@ -56,7 +56,7 @@ struct RevisionListView: View {
         }
         #if os(macOS)
         .navigationTitle(list.title)
-        .navigationSplitViewColumnWidth(min: 360, ideal: 460)
+        .navigationSplitViewColumnWidth(min: 360, ideal: 560)
         #else
         .navigationTitle("")
         .toolbarTitleDisplayMode(.inline)

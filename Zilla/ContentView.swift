@@ -2094,7 +2094,7 @@ struct BugListView: View {
         }
         .navigationTitle(title)
         #if os(macOS)
-        .navigationSplitViewColumnWidth(min: 360, ideal: 460)
+        .navigationSplitViewColumnWidth(min: 360, ideal: 560)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
