@@ -36,7 +36,7 @@ struct RevisionDetailView: View {
                 )
             }
         }
-        .navigationTitle(workspace.loadedRevision.map { "D\($0.id)" } ?? "D\(revisionID)")
+        .navigationTitle(Text(verbatim: "D\(workspace.loadedRevision?.id ?? revisionID)"))
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(action: onClose) {
