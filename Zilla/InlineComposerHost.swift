@@ -95,6 +95,7 @@ struct InlineComposerHost: View {
     private func post() async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let body = Markdown.toRemarkup(trimmed)
         isPosting = true
         defer { isPosting = false }
         let error: Error?
@@ -105,7 +106,7 @@ struct InlineComposerHost: View {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                newContent: trimmed,
+                newContent: body,
                 replyTo: replyTo,
                 using: phab.client
             )
@@ -115,7 +116,7 @@ struct InlineComposerHost: View {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                content: trimmed,
+                content: body,
                 replyTo: replyTo,
                 using: phab.client
             )
