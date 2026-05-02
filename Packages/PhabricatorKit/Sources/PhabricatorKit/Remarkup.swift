@@ -168,6 +168,21 @@ public enum Remarkup {
             let name = match.output.2.map(String.init)
             return resolveBracketLink(target: target, name: name, context: context)
         }
+        working = working.replacing(#/\{([TDF])(\d+)(?:,\s*([^}]+))?\}/#) { match in
+            let kind = String(match.output.1)
+            let id = String(match.output.2)
+            let url = "\(context.phabricator)/\(kind)\(id)"
+            if kind == "F" {
+                let opts = parseEmbedOptions(match.output.3.map(String.init) ?? "")
+                if opts["layout"] == "link" {
+                    let display = opts["name"] ?? "\(kind)\(id)"
+                    return "[\(display)](\(url))"
+                }
+                let alt = opts["alt"] ?? "\(kind)\(id)"
+                return "![\(alt)](\(url))"
+            }
+            return "[\(kind)\(id)](\(url))"
+        }
 
         working = working.replacing(#/\[([^\]]+)\]\(([^)\s]+)\)/#) { match in
             let placeholder = makePlaceholder(index: protected.count)
@@ -198,11 +213,6 @@ public enum Remarkup {
             "**\(String(match.output.1))**"
         }
 
-        working = working.replacing(#/\{(T|D|F)(\d+)\}/#) { match in
-            let kind = String(match.output.1)
-            let id = String(match.output.2)
-            return "[\(kind)\(id)](\(context.phabricator)/\(kind)\(id))"
-        }
         working = working.replacing(#/(^|[^A-Za-z0-9_\/])(T|D)(\d+)(#\d+)?(?![A-Za-z0-9_])/#) { match in
             let prefix = String(match.output.1)
             let kind = String(match.output.2)
@@ -234,6 +244,25 @@ public enum Remarkup {
             working = working.replacingOccurrences(of: makePlaceholder(index: index), with: original)
         }
         return working
+    }
+
+    static func parseEmbedOptions(_ raw: String) -> [String: String] {
+        var result: [String: String] = [:]
+        for part in raw.split(separator: ",") {
+            let trimmed = part.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            if let eq = trimmed.firstIndex(of: "=") {
+                let key = trimmed[..<eq].trimmingCharacters(in: .whitespaces)
+                var value = trimmed[trimmed.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+                if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+                    value = String(value.dropFirst().dropLast())
+                }
+                result[key] = value
+            } else {
+                result[trimmed] = "true"
+            }
+        }
+        return result
     }
 
     static func resolveBracketLink(target: String, name: String?, context: Context) -> String {

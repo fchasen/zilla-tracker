@@ -254,10 +254,38 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
-    func testEmbedFormReferences() {
+    func testFileEmbedRendersAsImage() {
         XCTAssertEqual(
             Remarkup.toCommonMark("attached {F1234} for proof"),
-            "attached [F1234](https://phabricator.services.mozilla.com/F1234) for proof"
+            "attached ![F1234](https://phabricator.services.mozilla.com/F1234) for proof"
+        )
+    }
+
+    func testFileEmbedAltText() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{F1234, alt=\"a duckling\"}"),
+            "![a duckling](https://phabricator.services.mozilla.com/F1234)"
+        )
+    }
+
+    func testFileEmbedLayoutLinkRendersAsLink() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{F1234, layout=link, name=foo.png}"),
+            "[foo.png](https://phabricator.services.mozilla.com/F1234)"
+        )
+    }
+
+    func testFileEmbedFloatFlagIgnored() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{F1234, layout=left, float, size=full}"),
+            "![F1234](https://phabricator.services.mozilla.com/F1234)"
+        )
+    }
+
+    func testTaskEmbedFormStillLink() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{T123}"),
+            "[T123](https://phabricator.services.mozilla.com/T123)"
         )
     }
 
