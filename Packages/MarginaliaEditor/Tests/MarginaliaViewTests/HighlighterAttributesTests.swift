@@ -60,6 +60,50 @@ final class HighlighterAttributesTests: XCTestCase {
         XCTAssertEqual(font.pointSize, expected, accuracy: 0.01)
     }
 
+    // MARK: - inline emphasis inside headings
+
+    private func runRange(_ source: String, of needle: String) -> NSRange {
+        (source as NSString).range(of: needle)
+    }
+
+    func testBoldInsideH1KeepsHeadingScale() throws {
+        let source = "# this is **bold** end\n"
+        let runs = try runs(for: source)
+        let boldRange = runRange(source, of: "**bold**")
+        let strongRun = try XCTUnwrap(
+            runs.first { $0.range == boldRange },
+            "expected a strong run covering the **bold** span"
+        )
+        let strongFont = try XCTUnwrap(strongRun.attributes[.font] as? NSFont)
+        let expected = NSFont.systemFontSize * (MarginaliaTheme.default.headingScale[1] ?? 1.0)
+        XCTAssertEqual(strongFont.pointSize, expected, accuracy: 0.01,
+                       "bold inside an H1 must inherit the H1 font scale")
+    }
+
+    func testItalicInsideH2KeepsHeadingScale() throws {
+        let source = "## hi *am* there\n"
+        let runs = try runs(for: source)
+        let italicRange = runRange(source, of: "*am*")
+        let emphasisRun = try XCTUnwrap(
+            runs.first { $0.range == italicRange },
+            "expected an emphasis run covering *am*"
+        )
+        let italicFont = try XCTUnwrap(emphasisRun.attributes[.font] as? NSFont)
+        let expected = NSFont.systemFontSize * (MarginaliaTheme.default.headingScale[2] ?? 1.0)
+        XCTAssertEqual(italicFont.pointSize, expected, accuracy: 0.01,
+                       "italic inside an H2 must inherit the H2 font scale")
+    }
+
+    func testItalicOutsideHeadingUsesBodySize() throws {
+        let source = "plain *am* line\n"
+        let runs = try runs(for: source)
+        let italicRange = runRange(source, of: "*am*")
+        let emphasisRun = try XCTUnwrap(runs.first { $0.range == italicRange })
+        let italicFont = try XCTUnwrap(emphasisRun.attributes[.font] as? NSFont)
+        XCTAssertEqual(italicFont.pointSize, NSFont.systemFontSize, accuracy: 0.01,
+                       "italic outside any heading must use the body font size")
+    }
+
     // MARK: - link colors
 
     func testLinkBracketAndURLAreDifferentColors() throws {

@@ -106,9 +106,11 @@ public final class Highlighter {
                 .foregroundColor: theme.foregroundColor
             ]
         case .textStrong:
-            return [.font: italicizedOrBold(theme.bodyFont, bold: true)]
+            let scale = headingScale(at: range, in: blockRegions)
+            return [.font: italicizedOrBold(theme.bodyFont, scale: scale, bold: true)]
         case .textEmphasis:
-            return [.font: italicizedOrBold(theme.bodyFont, italic: true)]
+            let scale = headingScale(at: range, in: blockRegions)
+            return [.font: italicizedOrBold(theme.bodyFont, scale: scale, italic: true)]
         case .textLiteral:
             return [
                 .font: theme.monospaceFont,
@@ -138,6 +140,11 @@ public final class Highlighter {
             }
         }
         return nil
+    }
+
+    private func headingScale(at range: NSRange, in blockRegions: [BlockRegion]) -> CGFloat {
+        guard let level = headingLevel(at: range, in: blockRegions) else { return 1.0 }
+        return theme.headingScale[level] ?? 1.0
     }
 
     private func italicizedOrBold(
