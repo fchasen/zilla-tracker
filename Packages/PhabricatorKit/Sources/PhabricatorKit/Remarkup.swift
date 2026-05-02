@@ -199,11 +199,12 @@ public enum Remarkup {
             let id = String(match.output.2)
             return "[\(kind)\(id)](\(context.phabricator)/\(kind)\(id))"
         }
-        working = working.replacing(#/(^|[^A-Za-z0-9_\/])(T|D)(\d+)(?![A-Za-z0-9_])/#) { match in
+        working = working.replacing(#/(^|[^A-Za-z0-9_\/])(T|D)(\d+)(#\d+)?(?![A-Za-z0-9_])/#) { match in
             let prefix = String(match.output.1)
             let kind = String(match.output.2)
             let id = String(match.output.3)
-            return "\(prefix)[\(kind)\(id)](\(context.phabricator)/\(kind)\(id))"
+            let anchor = match.output.4.map(String.init) ?? ""
+            return "\(prefix)[\(kind)\(id)\(anchor)](\(context.phabricator)/\(kind)\(id)\(anchor))"
         }
         working = working.replacing(#/(^|[^A-Za-z0-9_])@([A-Za-z0-9_][A-Za-z0-9_.\-]*)/#) { match in
             let prefix = String(match.output.1)

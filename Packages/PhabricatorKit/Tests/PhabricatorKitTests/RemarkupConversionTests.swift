@@ -177,6 +177,27 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
+    func testTaskCommentAnchor() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("see T123#412 for details"),
+            "see [T123#412](https://phabricator.services.mozilla.com/T123#412) for details"
+        )
+    }
+
+    func testRevisionCommentAnchor() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("D45#67 has the discussion"),
+            "[D45#67](https://phabricator.services.mozilla.com/D45#67) has the discussion"
+        )
+    }
+
+    func testTaskAnchorRequiresDigits() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("T123#abc not a comment ref"),
+            "[T123](https://phabricator.services.mozilla.com/T123)#abc not a comment ref"
+        )
+    }
+
     func testEmbedFormReferences() {
         XCTAssertEqual(
             Remarkup.toCommonMark("attached {F1234} for proof"),
