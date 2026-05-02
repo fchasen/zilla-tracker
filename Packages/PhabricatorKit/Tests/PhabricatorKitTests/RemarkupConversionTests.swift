@@ -97,6 +97,34 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
+    func testSilentNoteCallout() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("(NOTE) Dr. Egon Spengler is the best resource."),
+            "> Dr. Egon Spengler is the best resource."
+        )
+    }
+
+    func testSilentWarningCallout() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("(WARNING) crossing the streams"),
+            "> crossing the streams"
+        )
+    }
+
+    func testSilentImportantCallout() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("(IMPORTANT) read this"),
+            "> read this"
+        )
+    }
+
+    func testSilentCalloutNotMatchedMidLine() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("see (NOTE) in the docs"),
+            "see (NOTE) in the docs"
+        )
+    }
+
     func testCalloutNotMatchedMidLine() {
         XCTAssertEqual(
             Remarkup.toCommonMark("see NOTE: in the docs"),

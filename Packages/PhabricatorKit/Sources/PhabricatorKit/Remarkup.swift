@@ -130,16 +130,20 @@ public enum Remarkup {
     }
 
     static func rewriteCallout(_ line: String) -> String? {
-        guard let match = line.firstMatch(of: #/^(NOTE|WARNING|IMPORTANT):\s*(.*)$/#) else { return nil }
-        let label: String
-        switch String(match.output.1) {
-        case "NOTE": label = "Note"
-        case "WARNING": label = "Warning"
-        case "IMPORTANT": label = "Important"
-        default: label = String(match.output.1)
+        if let match = line.firstMatch(of: #/^(NOTE|WARNING|IMPORTANT):\s*(.*)$/#) {
+            let label: String
+            switch String(match.output.1) {
+            case "NOTE": label = "Note"
+            case "WARNING": label = "Warning"
+            case "IMPORTANT": label = "Important"
+            default: label = String(match.output.1)
+            }
+            return "> **\(label):** " + String(match.output.2)
         }
-        let body = String(match.output.2)
-        return "> **\(label):** " + body
+        if let match = line.firstMatch(of: #/^\((NOTE|WARNING|IMPORTANT)\)\s*(.*)$/#) {
+            return "> " + String(match.output.2)
+        }
+        return nil
     }
 
     static func transformInline(_ line: String, context: Context) -> String {
