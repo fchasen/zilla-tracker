@@ -16,7 +16,7 @@ public enum Remarkup {
         let normalized = source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-        let lines = rewriteOrderedLists(normalized.components(separatedBy: "\n"))
+        let lines = rewritePipeTables(rewriteOrderedLists(normalized.components(separatedBy: "\n")))
         var output: [String] = []
         var inFence = false
         var inLiteral = false
@@ -109,6 +109,59 @@ public enum Remarkup {
             }
         }
         return result
+    }
+
+    static func rewritePipeTables(_ lines: [String]) -> [String] {
+        var result: [String] = []
+        var inFence = false
+        var inLiteral = false
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            if !inFence && line.trimmingCharacters(in: .whitespaces) == "%%%" {
+                inLiteral.toggle()
+                result.append(line)
+                i += 1
+                continue
+            }
+            if !inLiteral && parseFenceLine(line) != nil {
+                inFence.toggle()
+                result.append(line)
+                i += 1
+                continue
+            }
+            if inFence || inLiteral {
+                result.append(line)
+                i += 1
+                continue
+            }
+            if isTableRow(line), i + 1 < lines.count, isTableSeparatorRow(lines[i + 1]) {
+                while i < lines.count, isTableRow(lines[i]) {
+                    result.append(normalizeTableRow(lines[i]))
+                    i += 1
+                }
+                continue
+            }
+            result.append(line)
+            i += 1
+        }
+        return result
+    }
+
+    static func isTableRow(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).hasPrefix("|")
+    }
+
+    static func isTableSeparatorRow(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("|") else { return false }
+        let allowed: Set<Character> = ["|", "-", ":", " "]
+        return trimmed.contains("-") && trimmed.allSatisfy { allowed.contains($0) }
+    }
+
+    static func normalizeTableRow(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasSuffix("|") ? trimmed : trimmed + " |"
     }
 
     static func parseFenceLine(_ line: String) -> FenceInfo? {

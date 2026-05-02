@@ -502,6 +502,43 @@ final class RemarkupConversionTests: XCTestCase {
         XCTAssertEqual(Remarkup.toCommonMark(input), expected)
     }
 
+    func testPipeTableAddsTrailingPipes() {
+        let input = """
+        | Fruit  | Color  | Price
+        | -----  | -----  | -----
+        | Apple  | red    | `$0.93`
+        | Banana | yellow | `$0.19`
+        """
+        let expected = """
+        | Fruit  | Color  | Price |
+        | -----  | -----  | ----- |
+        | Apple  | red    | `$0.93` |
+        | Banana | yellow | `$0.19` |
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), expected)
+    }
+
+    func testPipeTableAlreadyGFMUnchanged() {
+        let input = """
+        | H1 | H2 |
+        | --- | --- |
+        | a | b |
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), input)
+    }
+
+    func testProseWithPipesNotTreatedAsTable() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("either | this | or | that"),
+            "either | this | or | that"
+        )
+    }
+
+    func testPipeRowWithoutSeparatorNotNormalized() {
+        let input = "| just a single bar line"
+        XCTAssertEqual(Remarkup.toCommonMark(input), input)
+    }
+
     func testCustomBaseURLs() {
         let phab = URL(string: "https://phab.example.com")!
         let bz = URL(string: "https://bz.example.com")!
