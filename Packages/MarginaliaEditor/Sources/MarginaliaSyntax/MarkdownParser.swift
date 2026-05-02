@@ -55,8 +55,9 @@ public final class MarkdownParser {
     public func applyEdit(replacing nsRange: NSRange, with replacement: String, newSource: String) -> [TSRange] {
         guard let oldTree = self.tree else {
             self.parse(newSource)
-            let endByte = UInt32(newSource.utf8.count)
-            let endPoint = TreeSitterMapping(text: newSource).point(forByte: endByte)
+            let mapping = TreeSitterMapping(text: newSource)
+            let endByte = mapping.byteOffset(forUTF16: (newSource as NSString).length)
+            let endPoint = mapping.point(forByte: endByte)
             return [TSRange(
                 points: Point.zero..<endPoint,
                 bytes: 0..<endByte
