@@ -1,18 +1,18 @@
-import XCTest
+import Testing
 import Foundation
 import MarginaliaSyntax
 @testable import MarginaliaView
 
-final class EditorControllerFragilityTests: XCTestCase {
+@Suite(.serialized) struct EditorControllerFragilityTests {
 
-    func testTextRoundTripsThroughController() throws {
+    @Test func textRoundTripsThroughController() throws {
         let source = "# Heading\n\nplain paragraph"
         let c = try EditorController(initialText: source)
         c.refreshNow()
-        XCTAssertEqual(c.text, source)
+        #expect(c.text == source)
     }
 
-    func testRapidSequentialApplyEditsConvergeWithFromScratchParse() throws {
+    @Test func rapidSequentialApplyEditsConvergeWithFromScratchParse() throws {
         let c = try EditorController(initialText: "")
         c.applyEdit(replacing: NSRange(location: 0, length: 0), with: "hello")
         c.applyEdit(replacing: NSRange(location: 5, length: 0), with: " world")
@@ -22,49 +22,48 @@ final class EditorControllerFragilityTests: XCTestCase {
         let final = c.text
         let fresh = try MarkdownParser(grammar: .block)
         fresh.parse(final)
+        let root = try #require(fresh.rootNode)
 
-        let kindsFresh = BlockClassifier
-            .classify(rootNode: fresh.rootNode!, mapping: fresh.mapping)
-            .map { $0.kind }
+        let kindsFresh = BlockClassifier.classify(rootNode: root, mapping: fresh.mapping).map { $0.kind }
         let kindsLive = c.blockRegions.map { $0.kind }
-        XCTAssertEqual(kindsLive, kindsFresh)
+        #expect(kindsLive == kindsFresh)
     }
 
-    func testHighlightAttributesAfterMultilineEditCoverNewParagraphs() throws {
+    @Test func highlightAttributesAfterMultilineEditCoverNewParagraphs() throws {
         let c = try EditorController(initialText: "")
         c.applyEdit(replacing: NSRange(location: 0, length: 0), with: "# heading\n\n")
         c.applyEdit(replacing: NSRange(location: 11, length: 0), with: "- item\n")
         c.refreshNow()
         let kinds = c.blockRegions.map { $0.kind }
         let hasHeading = kinds.contains(where: { if case .heading = $0 { return true } else { return false } })
-        XCTAssertTrue(hasHeading)
-        XCTAssertTrue(kinds.contains(.unorderedList))
+        #expect(hasHeading)
+        #expect(kinds.contains(.unorderedList))
     }
 
-    func testSetTextAcrossEmojiBoundaryDoesNotCrash() throws {
+    @Test func setTextAcrossEmojiBoundaryDoesNotCrash() throws {
         let c = try EditorController(initialText: "🚀 hello 🚀")
         c.refreshNow()
         c.setText("🚀")
         c.refreshNow()
-        XCTAssertEqual(c.text, "🚀")
+        #expect(c.text == "🚀")
     }
 
-    func testApplyEditResultClampsStaleSelectionWithoutCrash() throws {
+    @Test func applyEditResultClampsStaleSelectionWithoutCrash() throws {
         let c = try EditorController(initialText: "")
         c.selection = NSRange(location: 999, length: 5)
         c.applyEdit(EditResult(text: "short", selection: NSRange(location: 999, length: 5)))
-        XCTAssertEqual(c.text, "short")
-        XCTAssertEqual(c.selection.location, 5)
-        XCTAssertEqual(c.selection.length, 0)
+        #expect(c.text == "short")
+        #expect(c.selection.location == 5)
+        #expect(c.selection.length == 0)
     }
 
-    func testBareControllerInit() throws {
+    @Test func bareControllerInit() throws {
         let c = try EditorController(initialText: "")
-        XCTAssertEqual(c.text, "")
+        #expect(c.text == "")
     }
 
-    func testControllerInitWithMarkdown() throws {
+    @Test func controllerInitWithMarkdown() throws {
         let c = try EditorController(initialText: "# H\n")
-        XCTAssertEqual(c.text, "# H\n")
+        #expect(c.text == "# H\n")
     }
 }

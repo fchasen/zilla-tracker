@@ -57,7 +57,7 @@ public final class EditorController {
     private var highlighter: Highlighter
     private let parser: MarkdownParser
     private let layoutDelegate: LayoutManagerDelegate
-    private var pendingRefresh = false
+    private var refreshing = false
     private var storageObserver: NSObjectProtocol?
 
     public init(
@@ -87,7 +87,7 @@ public final class EditorController {
         storageObserver = NotificationCenter.default.addObserver(
             forName: NSTextStorage.didProcessEditingNotification,
             object: textStorage,
-            queue: .main
+            queue: nil
         ) { [weak self] _ in
             self?.scheduleRefresh()
             self?.intrinsicSizeInvalidator?()
@@ -174,7 +174,6 @@ public final class EditorController {
 
     /// Force the highlight + classify pass to run synchronously, e.g. from tests.
     public func refreshNow() {
-        pendingRefresh = false
         runRefresh()
     }
 
@@ -187,13 +186,7 @@ public final class EditorController {
     }
 
     private func scheduleRefresh() {
-        guard !pendingRefresh else { return }
-        pendingRefresh = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.pendingRefresh else { return }
-            self.runRefresh()
-            self.pendingRefresh = false
-        }
+        runRefresh()
     }
 
     private func refresh() {
@@ -201,6 +194,9 @@ public final class EditorController {
     }
 
     private func runRefresh() {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
         let source = textStorage.string
 
         if let tree = parser.parse(source), let root = tree.rootNode {
