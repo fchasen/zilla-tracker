@@ -21,10 +21,11 @@ public final class CodeBlockLayoutFragment: NSTextLayoutFragment {
 
     public override func draw(at point: CGPoint, in context: CGContext) {
         let bounds = layoutFragmentFrame
+        let containerWidth = textLayoutManager?.textContainer?.size.width ?? bounds.width
         let rect = CGRect(
             x: 0,
             y: 0,
-            width: bounds.width,
+            width: containerWidth,
             height: bounds.height
         ).insetBy(dx: -2, dy: -1)
 
@@ -47,13 +48,16 @@ public final class BlockquoteLayoutFragment: NSTextLayoutFragment {
     public var barInset: CGFloat = 1
 
     public override func draw(at point: CGPoint, in context: CGContext) {
-        let bounds = layoutFragmentFrame
-        let barRect = CGRect(
-            x: barInset,
-            y: 0,
-            width: barWidth,
-            height: bounds.height
-        )
+        let lines = textLineFragments
+        let barRect: CGRect
+        if let first = lines.first, let last = lines.last {
+            let topY = first.typographicBounds.minY
+            let bottomY = last.typographicBounds.maxY
+            barRect = CGRect(x: barInset, y: topY, width: barWidth, height: bottomY - topY)
+        } else {
+            let bounds = layoutFragmentFrame
+            barRect = CGRect(x: barInset, y: 0, width: barWidth, height: bounds.height)
+        }
 
         context.saveGState()
         context.translateBy(x: point.x, y: point.y)
