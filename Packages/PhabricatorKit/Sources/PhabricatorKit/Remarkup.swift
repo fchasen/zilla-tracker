@@ -19,15 +19,28 @@ public enum Remarkup {
         let lines = rewriteOrderedLists(normalized.components(separatedBy: "\n"))
         var output: [String] = []
         var inFence = false
+        var inLiteral = false
+        var literalBuf: [String] = []
         for line in lines {
-            if let fence = parseFenceLine(line) {
-                if !inFence {
-                    inFence = true
-                    output.append(fence.rewritten)
+            if !inFence && line.trimmingCharacters(in: .whitespaces) == "%%%" {
+                if inLiteral {
+                    output.append("```")
+                    output.append(contentsOf: literalBuf)
+                    output.append("```")
+                    literalBuf = []
+                    inLiteral = false
                 } else {
-                    inFence = false
-                    output.append(fence.rewritten)
+                    inLiteral = true
                 }
+                continue
+            }
+            if inLiteral {
+                literalBuf.append(line)
+                continue
+            }
+            if let fence = parseFenceLine(line) {
+                inFence.toggle()
+                output.append(fence.rewritten)
                 continue
             }
             if inFence {
@@ -35,6 +48,10 @@ public enum Remarkup {
                 continue
             }
             output.append(transformLine(line, context: context))
+        }
+        if inLiteral {
+            output.append("```")
+            output.append(contentsOf: literalBuf)
         }
         return output.joined(separator: "\n")
     }

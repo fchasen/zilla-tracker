@@ -468,6 +468,40 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
+    func testLiteralBlockBecomesCodeFence() {
+        let input = """
+        intro
+        %%%
+        [[http://example.com | not a link]]
+        //not italic//
+        %%%
+        outro
+        """
+        let expected = """
+        intro
+        ```
+        [[http://example.com | not a link]]
+        //not italic//
+        ```
+        outro
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), expected)
+    }
+
+    func testLiteralBlockPreservesContentVerbatim() {
+        let input = """
+        %%%
+        T123 won't autolink
+        %%%
+        """
+        let expected = """
+        ```
+        T123 won't autolink
+        ```
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), expected)
+    }
+
     func testCustomBaseURLs() {
         let phab = URL(string: "https://phab.example.com")!
         let bz = URL(string: "https://bz.example.com")!
