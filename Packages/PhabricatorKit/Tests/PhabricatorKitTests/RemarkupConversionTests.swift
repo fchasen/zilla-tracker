@@ -245,6 +245,75 @@ final class RemarkupConversionTests: XCTestCase {
         XCTAssertEqual(Remarkup.toCommonMark(input), input)
     }
 
+    func testOrderedListRunConverts() {
+        let input = """
+        # Articuno
+        # Zapdos
+        # Moltres
+        """
+        let expected = """
+        1. Articuno
+        2. Zapdos
+        3. Moltres
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), expected)
+    }
+
+    func testSingleHashLineStaysHeader() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("# Just a header"),
+            "# Just a header"
+        )
+    }
+
+    func testOrderedListResetsAfterBreak() {
+        let input = """
+        # one
+        # two
+
+        prose
+
+        # three
+        # four
+        """
+        let expected = """
+        1. one
+        2. two
+
+        prose
+
+        1. three
+        2. four
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), expected)
+    }
+
+    func testNestedOrderedListNumberedPerIndent() {
+        let input = """
+        - Hand
+          # Thumb
+          # Index
+        - Foot
+        """
+        let expected = """
+        - Hand
+          1. Thumb
+          2. Index
+        - Foot
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), expected)
+    }
+
+    func testHashLinesInsideFenceUnchanged() {
+        let input = """
+        ```
+        # not a list
+        # still not a list
+        ```
+        """
+        XCTAssertEqual(Remarkup.toCommonMark(input), input)
+    }
+
     func testBracketLinkNamedExternal() {
         XCTAssertEqual(
             Remarkup.toCommonMark("[[http://example.com/path | example]]"),

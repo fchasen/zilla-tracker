@@ -16,7 +16,7 @@ public enum Remarkup {
         let normalized = source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
+        let lines = rewriteOrderedLists(normalized.components(separatedBy: "\n"))
         var output: [String] = []
         var inFence = false
         for line in lines {
@@ -46,6 +46,52 @@ public enum Remarkup {
 
     struct FenceInfo {
         let rewritten: String
+    }
+
+    static func rewriteOrderedLists(_ lines: [String]) -> [String] {
+        var result: [String] = []
+        var inFence = false
+        var counter = 0
+        var lastIndent: String? = nil
+
+        func isHashListLine(_ line: String) -> Bool {
+            line.firstMatch(of: #/^\s*#\s+\S/#) != nil
+        }
+
+        for (idx, line) in lines.enumerated() {
+            if parseFenceLine(line) != nil {
+                inFence.toggle()
+                counter = 0
+                lastIndent = nil
+                result.append(line)
+                continue
+            }
+            if inFence {
+                result.append(line)
+                continue
+            }
+            guard let match = line.firstMatch(of: #/^(\s*)#\s+(.+)$/#) else {
+                counter = 0
+                lastIndent = nil
+                result.append(line)
+                continue
+            }
+            let leading = String(match.output.1)
+            let body = String(match.output.2)
+            let prevIsHash = idx > 0 && isHashListLine(lines[idx - 1])
+            let nextIsHash = idx + 1 < lines.count && isHashListLine(lines[idx + 1])
+            if prevIsHash || nextIsHash {
+                if lastIndent != leading { counter = 0 }
+                counter += 1
+                lastIndent = leading
+                result.append("\(leading)\(counter). \(body)")
+            } else {
+                counter = 0
+                lastIndent = nil
+                result.append(line)
+            }
+        }
+        return result
     }
 
     static func parseFenceLine(_ line: String) -> FenceInfo? {
