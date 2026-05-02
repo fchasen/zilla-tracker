@@ -113,13 +113,10 @@ public final class EditorController {
         set { setText(newValue) }
     }
 
-    /// Apply a single edit and update the parse incrementally.
-    /// Caller is responsible for ensuring the edit's NSRange is valid against
-    /// the current `text`.
+    /// Apply a single edit. Caller is responsible for ensuring the edit's
+    /// NSRange is valid against the current `text`.
     public func applyEdit(replacing range: NSRange, with replacement: String) {
         textStorage.replaceCharacters(in: range, with: replacement)
-        let newText = textStorage.string
-        parser.applyEdit(replacing: range, with: replacement, newSource: newText)
         scheduleRefresh()
     }
 
