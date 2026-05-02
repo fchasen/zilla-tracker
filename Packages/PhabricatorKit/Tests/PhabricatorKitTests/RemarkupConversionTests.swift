@@ -198,6 +198,34 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
+    func testRepositorySVNCommit() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("landed in rNSPR12345"),
+            "landed in [rNSPR12345](https://phabricator.services.mozilla.com/rNSPR12345)"
+        )
+    }
+
+    func testRepositoryGitCommit() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("see rMOZILLACENTRALaf3192cd5b"),
+            "see [rMOZILLACENTRALaf3192cd5b](https://phabricator.services.mozilla.com/rMOZILLACENTRALaf3192cd5b)"
+        )
+    }
+
+    func testRepositoryShortHashRejected() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("rXabc is too short"),
+            "rXabc is too short"
+        )
+    }
+
+    func testRepositoryWordBoundary() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("released today"),
+            "released today"
+        )
+    }
+
     func testEmbedFormReferences() {
         XCTAssertEqual(
             Remarkup.toCommonMark("attached {F1234} for proof"),

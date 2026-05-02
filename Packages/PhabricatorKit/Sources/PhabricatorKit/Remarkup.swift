@@ -206,6 +206,12 @@ public enum Remarkup {
             let anchor = match.output.4.map(String.init) ?? ""
             return "\(prefix)[\(kind)\(id)\(anchor)](\(context.phabricator)/\(kind)\(id)\(anchor))"
         }
+        working = working.replacing(#/(^|[^A-Za-z0-9_\/])r([A-Z]+)([a-f0-9]{7,}|\d+)(?![A-Za-z0-9_])/#) { match in
+            let prefix = String(match.output.1)
+            let callsign = String(match.output.2)
+            let id = String(match.output.3)
+            return "\(prefix)[r\(callsign)\(id)](\(context.phabricator)/r\(callsign)\(id))"
+        }
         working = working.replacing(#/(^|[^A-Za-z0-9_])@([A-Za-z0-9_][A-Za-z0-9_.\-]*)/#) { match in
             let prefix = String(match.output.1)
             let raw = String(match.output.2)
