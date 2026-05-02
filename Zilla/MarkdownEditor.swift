@@ -3,6 +3,7 @@ import BugzillaKit
 import MarginaliaEditor
 import PhabricatorKit
 import SearchfoxKit
+import Textual
 
 struct MarkdownEditor: View {
     @Binding var text: String
@@ -13,20 +14,18 @@ struct MarkdownEditor: View {
 
     @Environment(\.zillaFontScale) private var fontScale
 
+    @State private var selection: NSRange = NSRange(location: 0, length: 0)
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
 
     var body: some View {
-        Marginalia(text: $text)
+        Marginalia(text: $text, selection: $selection)
             .dialect(dialect)
             .theme(.default(fontScale: fontScale))
-            .defaultPreview(normalize: { source, dialect in
-                switch dialect {
-                case .remarkup:   return Remarkup.toCommonMark(source)
-                case .commonMark: return source
-                }
-            })
+            .previewView { source, dialect in
+                StructuredText(markdown: MarkdownEditor.normalize(source, dialect: dialect))
+            }
             .configuration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
             .frame(minHeight: minHeight)
             .overlay {
@@ -87,15 +86,15 @@ struct MarkdownEditor: View {
 
     private func insertBugLink(_ bugID: Bug.ID) {
         let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)"
-        text += "[bug \(bugID)](\(url))"
+        insertLink(defaultLabel: "bug \(bugID)", url: url)
     }
 
     private func insertMarkdownLink(label: String, url: String) {
-        text += "[\(label)](\(url))"
+        insertLink(defaultLabel: label, url: url)
     }
 
     private func insertUserMention(_ user: User) {
-        text += ":\(mentionHandle(for: user))"
+        insertAtCursor(":\(mentionHandle(for: user))")
     }
 
     private func mentionHandle(for user: User) -> String {
@@ -113,6 +112,38 @@ struct MarkdownEditor: View {
         } else {
             label = hit.path
         }
-        text += "[\(label)](\(hit.url))"
+        insertLink(defaultLabel: label, url: hit.url)
+    }
+
+    private func insertLink(defaultLabel: String, url: String) {
+        let safe = MarkdownEditor.safeRange(selection, in: text)
+        let ns = text as NSString
+        let label = safe.length > 0 ? ns.substring(with: safe) : defaultLabel
+        let inserted = "[\(label)](\(url))"
+        text = ns.replacingCharacters(in: safe, with: inserted)
+        let cursorAfter = safe.location + (inserted as NSString).length
+        selection = NSRange(location: cursorAfter, length: 0)
+    }
+
+    private func insertAtCursor(_ string: String) {
+        let safe = MarkdownEditor.safeRange(selection, in: text)
+        let ns = text as NSString
+        text = ns.replacingCharacters(in: safe, with: string)
+        let cursorAfter = safe.location + (string as NSString).length
+        selection = NSRange(location: cursorAfter, length: 0)
+    }
+
+    static func normalize(_ source: String, dialect: Highlighter.Dialect) -> String {
+        switch dialect {
+        case .remarkup:   return Remarkup.toCommonMark(source)
+        case .commonMark: return source
+        }
+    }
+
+    static func safeRange(_ range: NSRange, in text: String) -> NSRange {
+        let length = (text as NSString).length
+        let location = max(0, min(range.location, length))
+        let remaining = max(0, length - location)
+        return NSRange(location: location, length: max(0, min(range.length, remaining)))
     }
 }
