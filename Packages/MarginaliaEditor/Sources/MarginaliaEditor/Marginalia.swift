@@ -38,6 +38,7 @@ public struct Marginalia: View {
     @Environment(\.marginaliaTheme) private var theme
     @Environment(\.marginaliaInlineContentProvider) private var inlineProvider
     @Environment(\.marginaliaPreviewRenderer) private var previewRenderer
+    @Environment(\.marginaliaPreviewViewBuilder) private var previewViewBuilder
 
     @State private var showPreview = false
     @AppStorage("marginalia.toolbarVisible") private var toolbarVisible = true
@@ -56,7 +57,7 @@ public struct Marginalia: View {
                         MarginaliaToolbar(
                             items: configuration.toolbar,
                             showPreview: $showPreview,
-                            canPreview: previewRenderer != nil,
+                            canPreview: previewRenderer != nil || previewViewBuilder != nil,
                             perform: { action in
                                 guard let controller = hosting.controller else { return }
                                 MarginaliaToolbarActions.perform(
@@ -79,9 +80,14 @@ public struct Marginalia: View {
                 }
                 .padding(6)
             }
-            if showPreview, let renderer = previewRenderer {
-                MarginaliaPreview(source: text, dialect: dialect, renderer: renderer)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if showPreview, (previewRenderer != nil || previewViewBuilder != nil) {
+                MarginaliaPreview(
+                    source: text,
+                    dialect: dialect,
+                    renderer: previewRenderer,
+                    viewBuilder: previewViewBuilder
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 editorBody
             }
@@ -158,7 +164,7 @@ public struct Marginalia: View {
     private func makeIOSEditMenuBuilder(controller: EditorController) -> MarginaliaTextViewIOS.EditMenuBuilder? {
         let toolbar = configuration.toolbar
         guard !toolbar.isEmpty else { return nil }
-        let canPreview = previewRenderer != nil
+        let canPreview = previewRenderer != nil || previewViewBuilder != nil
         let textBinding = $text
         let showPreviewBinding = $showPreview
         let isShowingPreview = showPreview
