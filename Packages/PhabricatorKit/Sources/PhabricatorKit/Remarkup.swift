@@ -113,6 +113,12 @@ public enum Remarkup {
         var protected: [String] = []
         var working = text
 
+        working = working.replacing(#/\[\[\s*([^\]|]+?)\s*(?:\|\s*([^\]]+?)\s*)?\]\]/#) { match in
+            let target = String(match.output.1)
+            let name = match.output.2.map(String.init)
+            return resolveBracketLink(target: target, name: name, context: context)
+        }
+
         working = working.replacing(#/\[([^\]]+)\]\(([^)\s]+)\)/#) { match in
             let placeholder = makePlaceholder(index: protected.count)
             protected.append(String(match.0))
@@ -171,6 +177,25 @@ public enum Remarkup {
             working = working.replacingOccurrences(of: makePlaceholder(index: index), with: original)
         }
         return working
+    }
+
+    static func resolveBracketLink(target: String, name: String?, context: Context) -> String {
+        let url: String
+        if target.firstMatch(of: #/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//#) != nil {
+            url = target
+        } else if target.hasPrefix("/") {
+            url = context.phabricator + target
+        } else {
+            let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
+            url = "\(context.phabricator)/w/\(encoded)"
+        }
+        let display: String
+        if let name, !name.isEmpty {
+            display = name
+        } else {
+            display = target
+        }
+        return "[\(display)](\(url))"
     }
 
     static func makePlaceholder(index: Int) -> String {

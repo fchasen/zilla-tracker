@@ -245,6 +245,55 @@ final class RemarkupConversionTests: XCTestCase {
         XCTAssertEqual(Remarkup.toCommonMark(input), input)
     }
 
+    func testBracketLinkNamedExternal() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("[[http://example.com/path | example]]"),
+            "[example](http://example.com/path)"
+        )
+    }
+
+    func testBracketLinkBareExternal() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("[[https://example.com]]"),
+            "[https://example.com](https://example.com)"
+        )
+    }
+
+    func testBracketLinkPhabricatorPath() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("[[/herald/transcript/ | Herald Transcripts]]"),
+            "[Herald Transcripts](https://phabricator.services.mozilla.com/herald/transcript/)"
+        )
+    }
+
+    func testBracketLinkPhrictionNamed() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("[[legal/boring_documents/ | exciting legal documents]]"),
+            "[exciting legal documents](https://phabricator.services.mozilla.com/w/legal/boring_documents/)"
+        )
+    }
+
+    func testBracketLinkPhrictionBare() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("[[wiki page]]"),
+            "[wiki page](https://phabricator.services.mozilla.com/w/wiki%20page)"
+        )
+    }
+
+    func testBracketLinkInsideSentence() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("see [[/D123 | the revision]] for context"),
+            "see [the revision](https://phabricator.services.mozilla.com/D123) for context"
+        )
+    }
+
+    func testBracketLinkInsideInlineCodeUntouched() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("syntax is `[[target | name]]` here"),
+            "syntax is `[[target | name]]` here"
+        )
+    }
+
     func testCustomBaseURLs() {
         let phab = URL(string: "https://phab.example.com")!
         let bz = URL(string: "https://bz.example.com")!
