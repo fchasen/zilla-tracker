@@ -21,7 +21,6 @@ public struct MarginaliaTheme: Equatable {
     /// `linkColor` so the user reads the label, not the URL, as the
     /// "clickable" thing.
     public var linkURLColor: PlatformColor
-    public var codeBackground: PlatformColor
     public var blockquoteBarColor: PlatformColor
     public var headingScale: [Int: CGFloat]
 
@@ -32,7 +31,6 @@ public struct MarginaliaTheme: Equatable {
         markupColor: PlatformColor,
         linkColor: PlatformColor,
         linkURLColor: PlatformColor,
-        codeBackground: PlatformColor,
         blockquoteBarColor: PlatformColor,
         headingScale: [Int: CGFloat] = [1: 1.6, 2: 1.4, 3: 1.25, 4: 1.15, 5: 1.05, 6: 1.0]
     ) {
@@ -42,7 +40,6 @@ public struct MarginaliaTheme: Equatable {
         self.markupColor = markupColor
         self.linkColor = linkColor
         self.linkURLColor = linkURLColor
-        self.codeBackground = codeBackground
         self.blockquoteBarColor = blockquoteBarColor
         self.headingScale = headingScale
     }
@@ -63,7 +60,6 @@ public struct MarginaliaTheme: Equatable {
             markupColor: .tertiaryLabelColor,
             linkColor: .linkColor,
             linkURLColor: NSColor.secondaryLabelColor,
-            codeBackground: NSColor.secondaryLabelColor.withAlphaComponent(0.08),
             blockquoteBarColor: NSColor.tertiaryLabelColor
         )
         #else
@@ -74,7 +70,6 @@ public struct MarginaliaTheme: Equatable {
             markupColor: .tertiaryLabel,
             linkColor: .link,
             linkURLColor: UIColor.secondaryLabel,
-            codeBackground: UIColor.secondaryLabel.withAlphaComponent(0.08),
             blockquoteBarColor: .tertiaryLabel
         )
         #endif

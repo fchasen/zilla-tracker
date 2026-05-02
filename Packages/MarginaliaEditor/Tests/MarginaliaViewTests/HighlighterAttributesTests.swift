@@ -104,6 +104,33 @@ final class HighlighterAttributesTests: XCTestCase {
                        "italic outside any heading must use the body font size")
     }
 
+    // MARK: - code styling
+
+    func testInlineCodeIsMonospaceWithNoBackground() throws {
+        let runs = try runs(for: "say `hello world` plain\n")
+        let inlineCode = runs.first { run in
+            guard let font = run.attributes[.font] as? NSFont else { return false }
+            return font.fontName.contains("Mono") || font == MarginaliaTheme.default.monospaceFont
+        }
+        let unwrapped = try XCTUnwrap(inlineCode, "expected an inline-code run with a monospace font")
+        XCTAssertNil(unwrapped.attributes[.backgroundColor],
+                     "inline code must not carry a background attribute")
+    }
+
+    func testFencedCodeBlockContentIsMonospaceWithNoBackground() throws {
+        let source = "```\nlet x = 1\n```\n"
+        let runs = try runs(for: source)
+        let codeRuns = runs.filter { run in
+            guard let font = run.attributes[.font] as? NSFont else { return false }
+            return font == MarginaliaTheme.default.monospaceFont
+        }
+        XCTAssertFalse(codeRuns.isEmpty, "fenced code content should produce monospace runs")
+        for run in codeRuns {
+            XCTAssertNil(run.attributes[.backgroundColor],
+                         "code block content must not carry a background attribute")
+        }
+    }
+
     // MARK: - link colors
 
     func testLinkBracketAndURLAreDifferentColors() throws {

@@ -10,13 +10,13 @@ import UIKit
 
 final class LayoutFragmentTests: XCTestCase {
 
-    func testCodeBlockGetsCodeFragment() throws {
+    func testCodeBlockGetsDefaultFragment() throws {
         let c = try EditorController(initialText: "```\nlet x = 1\n```\n")
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        XCTAssertTrue(fragments.contains { $0 is CodeBlockLayoutFragment },
-                      "expected CodeBlockLayoutFragment for fenced code: \(fragments.map(\.self))")
+        XCTAssertFalse(fragments.contains { $0 is BlockquoteLayoutFragment })
+        XCTAssertFalse(fragments.contains { $0 is HorizontalRuleLayoutFragment })
     }
 
     func testBlockquoteGetsBlockquoteFragment() throws {
@@ -42,9 +42,8 @@ final class LayoutFragmentTests: XCTestCase {
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        XCTAssertFalse(fragments.contains { $0 is CodeBlockLayoutFragment },
-                       "paragraph should not get the code fragment")
         XCTAssertFalse(fragments.contains { $0 is BlockquoteLayoutFragment })
+        XCTAssertFalse(fragments.contains { $0 is HorizontalRuleLayoutFragment })
     }
 
     private func collectFragments(in controller: EditorController) -> [NSTextLayoutFragment] {

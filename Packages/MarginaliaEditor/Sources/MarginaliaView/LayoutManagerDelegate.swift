@@ -32,8 +32,6 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
         }
 
         switch kind {
-        case .fencedCode, .indentedCode:
-            return CodeBlockLayoutFragment(textElement: textElement, range: textElement.elementRange)
         case .blockquote:
             return BlockquoteLayoutFragment(textElement: textElement, range: textElement.elementRange)
         case .horizontalRule:

@@ -112,10 +112,7 @@ public final class Highlighter {
             let scale = headingScale(at: range, in: blockRegions)
             return [.font: italicizedOrBold(theme.bodyFont, scale: scale, italic: true)]
         case .textLiteral:
-            return [
-                .font: theme.monospaceFont,
-                .backgroundColor: theme.codeBackground
-            ]
+            return [.font: theme.monospaceFont]
         case .textURI:
             // The URL portion of a markdown link — render dimmed so the
             // bracket text reads as the actual hyperlink label.
