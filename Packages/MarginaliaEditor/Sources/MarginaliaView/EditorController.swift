@@ -56,9 +56,9 @@ public final class EditorController {
 
     private var highlighter: Highlighter
     private let parser: MarkdownParser
-    private let storageDelegate: StorageDelegateProxy
     private let layoutDelegate: LayoutManagerDelegate
     private var pendingRefresh = false
+    private var storageObserver: NSObjectProtocol?
 
     public init(
         initialText: String = "",
@@ -79,18 +79,27 @@ public final class EditorController {
         self.textContainer = NSTextContainer(size: containerSize)
         self.layoutManager.textContainer = textContainer
 
-        self.storageDelegate = StorageDelegateProxy()
         self.layoutDelegate = LayoutManagerDelegate()
 
-        textStorage.delegate = storageDelegate
-        storageDelegate.onProcessed = { [weak self] in
-            self?.scheduleRefresh()
-            self?.intrinsicSizeInvalidator?()
-        }
         layoutManager.delegate = layoutDelegate
         layoutDelegate.controller = self
 
+        storageObserver = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification,
+            object: textStorage,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scheduleRefresh()
+            self?.intrinsicSizeInvalidator?()
+        }
+
         refresh()
+    }
+
+    deinit {
+        if let storageObserver {
+            NotificationCenter.default.removeObserver(storageObserver)
+        }
     }
 
     /// Replace the entire text. Triggers a full re-parse + re-highlight.
@@ -108,11 +117,9 @@ public final class EditorController {
     /// Caller is responsible for ensuring the edit's NSRange is valid against
     /// the current `text`.
     public func applyEdit(replacing range: NSRange, with replacement: String) {
-        let oldText = textStorage.string
         textStorage.replaceCharacters(in: range, with: replacement)
         let newText = textStorage.string
         parser.applyEdit(replacing: range, with: replacement, newSource: newText)
-        _ = oldText  // (held for symmetry; future incremental path can compare)
         scheduleRefresh()
     }
 
@@ -170,6 +177,7 @@ public final class EditorController {
 
     /// Force the highlight + classify pass to run synchronously, e.g. from tests.
     public func refreshNow() {
+        pendingRefresh = false
         runRefresh()
     }
 
@@ -185,7 +193,7 @@ public final class EditorController {
         guard !pendingRefresh else { return }
         pendingRefresh = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.pendingRefresh else { return }
             self.runRefresh()
             self.pendingRefresh = false
         }
@@ -281,25 +289,3 @@ public final class EditorController {
     }
 }
 
-/// Lightweight `NSTextStorageDelegate` shim — owns no state, just relays the
-/// `didProcessEditing` callback to the `EditorController`. Avoids the
-/// retain-cycle that an inline closure on `NSTextStorage` would create.
-final class StorageDelegateProxy: NSObject, NSTextStorageDelegate {
-    var onProcessed: (() -> Void)?
-
-#if os(macOS)
-    func textStorage(_ textStorage: NSTextStorage,
-                     didProcessEditing editedMask: NSTextStorageEditActions,
-                     range editedRange: NSRange,
-                     changeInLength delta: Int) {
-        onProcessed?()
-    }
-#else
-    func textStorage(_ textStorage: NSTextStorage,
-                     didProcessEditing editedMask: NSTextStorage.EditActions,
-                     range editedRange: NSRange,
-                     changeInLength delta: Int) {
-        onProcessed?()
-    }
-#endif
-}
