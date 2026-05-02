@@ -539,6 +539,83 @@ final class RemarkupConversionTests: XCTestCase {
         XCTAssertEqual(Remarkup.toCommonMark(input), input)
     }
 
+    func testPasteEmbedLinks() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("see {P123}"),
+            "see [P123](https://phabricator.services.mozilla.com/P123)"
+        )
+    }
+
+    func testPasteEmbedWithOptionsLinks() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{P123, lines=15}"),
+            "[P123](https://phabricator.services.mozilla.com/P123)"
+        )
+    }
+
+    func testMockEmbedLinks() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{M456}"),
+            "[M456](https://phabricator.services.mozilla.com/M456)"
+        )
+    }
+
+    func testCountdownEmbedLinks() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{C789}"),
+            "[C789](https://phabricator.services.mozilla.com/C789)"
+        )
+    }
+
+    func testMemeEmbedFallback() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{meme, src=grumpy, above=top, below=bottom}"),
+            "[meme: grumpy]"
+        )
+    }
+
+    func testNavEmbedJoinsSegments() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{nav Home > Grocery Store > Lemons}"),
+            "Home → Grocery Store → Lemons"
+        )
+    }
+
+    func testNavEmbedWithOptionsUsesName() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{nav icon=home, name=Home > Grocery Store > icon=lemon-o, name=Lemons}"),
+            "Home → Grocery Store → Lemons"
+        )
+    }
+
+    func testKeyEmbedSingle() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("Press {key M} to view"),
+            "Press <kbd>M</kbd> to view"
+        )
+    }
+
+    func testKeyEmbedModifierSequence() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{key command option shift 3}"),
+            "<kbd>⌘+⌥+⇧+3</kbd>"
+        )
+    }
+
+    func testIconEmbedFallback() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{icon camera}"),
+            "[icon: camera]"
+        )
+    }
+
+    func testIconEmbedWithOptions() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{icon cog spin color=blue}"),
+            "[icon: cog]"
+        )
+    }
+
     func testCustomBaseURLs() {
         let phab = URL(string: "https://phab.example.com")!
         let bz = URL(string: "https://bz.example.com")!

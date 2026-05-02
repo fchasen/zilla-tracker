@@ -253,6 +253,35 @@ public enum Remarkup {
             }
             return "[\(kind)\(id)](\(url))"
         }
+        working = working.replacing(#/\{([PMC])(\d+)(?:,\s*[^}]*)?\}/#) { match in
+            let kind = String(match.output.1)
+            let id = String(match.output.2)
+            return "[\(kind)\(id)](\(context.phabricator)/\(kind)\(id))"
+        }
+        working = working.replacing(#/\{meme(?:\s*,\s*([^}]*))?\}/#) { match in
+            let opts = parseEmbedOptions(match.output.1.map(String.init) ?? "")
+            return "[meme: \(opts["src"] ?? "image")]"
+        }
+        working = working.replacing(#/\{nav\s+([^}]+)\}/#) { match in
+            let raw = String(match.output.1)
+            let names = raw.split(separator: ">").compactMap { segment -> String? in
+                let trimmed = segment.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return nil }
+                if trimmed.contains("=") {
+                    return parseEmbedOptions(trimmed)["name"] ?? trimmed
+                }
+                return trimmed
+            }
+            return names.joined(separator: " → ")
+        }
+        working = working.replacing(#/\{key\s+([^}]+)\}/#) { match in
+            let raw = String(match.output.1).trimmingCharacters(in: .whitespaces)
+            let parts = raw.split(separator: " ").map { mapKeyToken(String($0)) }
+            return "<kbd>" + parts.joined(separator: "+") + "</kbd>"
+        }
+        working = working.replacing(#/\{icon\s+([A-Za-z0-9\-]+)(?:\s+[^}]*)?\}/#) { match in
+            "[icon: \(String(match.output.1))]"
+        }
 
         working = working.replacing(#/\[([^\]]+)\]\(([^)\s]+)\)/#) { match in
             let placeholder = makePlaceholder(index: protected.count)
@@ -314,6 +343,29 @@ public enum Remarkup {
             working = working.replacingOccurrences(of: makePlaceholder(index: index), with: original)
         }
         return working
+    }
+
+    static func mapKeyToken(_ raw: String) -> String {
+        switch raw.lowercased() {
+        case "command", "cmd": return "⌘"
+        case "option", "opt", "alt": return "⌥"
+        case "shift": return "⇧"
+        case "control", "ctrl": return "⌃"
+        case "return", "enter": return "↩"
+        case "escape", "esc": return "⎋"
+        case "delete", "del": return "⌫"
+        case "tab": return "⇥"
+        case "space": return "␣"
+        case "up": return "↑"
+        case "down": return "↓"
+        case "left": return "←"
+        case "right": return "→"
+        case "up-left": return "↖"
+        case "up-right": return "↗"
+        case "down-left": return "↙"
+        case "down-right": return "↘"
+        default: return raw
+        }
     }
 
     static func parseEmbedOptions(_ raw: String) -> [String: String] {
