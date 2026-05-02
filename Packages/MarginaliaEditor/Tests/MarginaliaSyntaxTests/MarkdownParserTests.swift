@@ -1,18 +1,19 @@
-import XCTest
+import Testing
+import Foundation
 import SwiftTreeSitter
 @testable import MarginaliaSyntax
 
-final class MarkdownParserTests: XCTestCase {
+@Suite(.serialized) struct MarkdownParserTests {
 
-    func testFreshParse() throws {
+    @Test func freshParse() throws {
         let p = try MarkdownParser(grammar: .block)
-        let tree = p.parse("# heading\n")
-        XCTAssertNotNil(tree)
-        let s = tree!.rootNode!.sExpressionString ?? ""
-        XCTAssertTrue(s.contains("atx_heading"))
+        let tree = try #require(p.parse("# heading\n"))
+        let root = try #require(tree.rootNode)
+        let s = root.sExpressionString ?? ""
+        #expect(s.contains("atx_heading"))
     }
 
-    func testIncrementalReParseAfterTextInsert() throws {
+    @Test func incrementalReParseAfterTextInsert() throws {
         let p = try MarkdownParser(grammar: .block)
         p.parse("Hello\n")
         let changed = p.applyEdit(
@@ -20,24 +21,25 @@ final class MarkdownParserTests: XCTestCase {
             with: "# ",
             newSource: "# Hello\n"
         )
-        XCTAssertFalse(changed.isEmpty)
-        let s = p.rootNode!.sExpressionString ?? ""
-        XCTAssertTrue(s.contains("atx_heading"))
+        #expect(!changed.isEmpty)
+        let root = try #require(p.rootNode)
+        let s = root.sExpressionString ?? ""
+        #expect(s.contains("atx_heading"))
     }
 
-    func testIncrementalParseTracksMappingState() throws {
+    @Test func incrementalParseTracksMappingState() throws {
         let p = try MarkdownParser(grammar: .block)
         p.parse("a")
-        XCTAssertEqual(p.mapping.text, "a")
+        #expect(p.mapping.text == "a")
         p.applyEdit(
             replacing: NSRange(location: 1, length: 0),
             with: "b",
             newSource: "ab"
         )
-        XCTAssertEqual(p.mapping.text, "ab")
+        #expect(p.mapping.text == "ab")
     }
 
-    func testIncrementalReParseDeletion() throws {
+    @Test func incrementalReParseDeletion() throws {
         let p = try MarkdownParser(grammar: .block)
         p.parse("# heading\nbody\n")
         let changed = p.applyEdit(
@@ -45,14 +47,15 @@ final class MarkdownParserTests: XCTestCase {
             with: "",
             newSource: "heading\nbody\n"
         )
-        XCTAssertFalse(changed.isEmpty)
+        #expect(!changed.isEmpty)
         // After removing "# " the heading becomes a paragraph
-        let s = p.rootNode!.sExpressionString ?? ""
-        XCTAssertFalse(s.contains("atx_heading"))
-        XCTAssertTrue(s.contains("paragraph"))
+        let root = try #require(p.rootNode)
+        let s = root.sExpressionString ?? ""
+        #expect(!s.contains("atx_heading"))
+        #expect(s.contains("paragraph"))
     }
 
-    func testIncrementalReParseFenceOpening() throws {
+    @Test func incrementalReParseFenceOpening() throws {
         // Opening a fence affects classification of subsequent lines —
         // changedRanges should reflect that the lines below shifted role.
         let p = try MarkdownParser(grammar: .block)
@@ -62,27 +65,28 @@ final class MarkdownParserTests: XCTestCase {
             with: "```\n",
             newSource: "```\ntext\nmore\n"
         )
-        let s = p.rootNode!.sExpressionString ?? ""
-        XCTAssertTrue(s.contains("fenced_code_block"))
+        let root = try #require(p.rootNode)
+        let s = root.sExpressionString ?? ""
+        #expect(s.contains("fenced_code_block"))
     }
 
-    func testInlineGrammarDirectParse() throws {
+    @Test func inlineGrammarDirectParse() throws {
         let p = try MarkdownParser(grammar: .inline)
-        let tree = p.parse("**bold** and *italic*")
-        XCTAssertNotNil(tree)
-        let s = tree!.rootNode!.sExpressionString ?? ""
-        XCTAssertTrue(s.contains("strong_emphasis") || s.contains("emphasis"),
-                      "expected emphasis nodes in: \(s)")
+        let tree = try #require(p.parse("**bold** and *italic*"))
+        let root = try #require(tree.rootNode)
+        let s = root.sExpressionString ?? ""
+        #expect(s.contains("strong_emphasis") || s.contains("emphasis"),
+                "expected emphasis nodes in: \(s)")
     }
 
-    func testApplyEditWithoutPriorParseFallsBackToFreshParse() throws {
+    @Test func applyEditWithoutPriorParseFallsBackToFreshParse() throws {
         let p = try MarkdownParser(grammar: .block)
         let changed = p.applyEdit(
             replacing: NSRange(location: 0, length: 0),
             with: "# h",
             newSource: "# h"
         )
-        XCTAssertFalse(changed.isEmpty)
-        XCTAssertEqual(p.mapping.text, "# h")
+        #expect(!changed.isEmpty)
+        #expect(p.mapping.text == "# h")
     }
 }

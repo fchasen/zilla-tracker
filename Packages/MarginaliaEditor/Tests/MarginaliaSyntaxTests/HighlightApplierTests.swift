@@ -1,100 +1,97 @@
-import XCTest
+import Testing
+import Foundation
 import SwiftTreeSitter
 @testable import MarginaliaSyntax
 
-final class HighlightApplierTests: XCTestCase {
+@Suite(.serialized) struct HighlightApplierTests {
 
     private func block(_ source: String) throws -> [HighlightSpan] {
         let p = try MarkdownParser(grammar: .block)
-        guard let tree = p.parse(source), let root = tree.rootNode else {
-            XCTFail("parse failed")
-            return []
-        }
+        let tree = try #require(p.parse(source))
+        let root = try #require(tree.rootNode)
         let applier = try HighlightApplier()
         return applier.highlights(rootNode: root, in: tree, mapping: p.mapping, grammar: .block)
     }
 
     private func inline(_ source: String) throws -> [HighlightSpan] {
         let p = try MarkdownParser(grammar: .inline)
-        guard let tree = p.parse(source), let root = tree.rootNode else {
-            XCTFail("parse failed")
-            return []
-        }
+        let tree = try #require(p.parse(source))
+        let root = try #require(tree.rootNode)
         let applier = try HighlightApplier()
         return applier.highlights(rootNode: root, in: tree, mapping: p.mapping, grammar: .inline)
     }
 
     // MARK: - block grammar
 
-    func testHeadingMarkerAndTitle() throws {
+    @Test func headingMarkerAndTitle() throws {
         let spans = try block("# heading\n")
-        XCTAssertTrue(spans.contains { $0.tag == .punctuationSpecial },
-                      "expected '#' marker as punctuation.special: \(spans)")
-        XCTAssertTrue(spans.contains { $0.tag == .textTitle },
-                      "expected heading title: \(spans)")
+        #expect(spans.contains { $0.tag == .punctuationSpecial },
+                "expected '#' marker as punctuation.special: \(spans)")
+        #expect(spans.contains { $0.tag == .textTitle },
+                "expected heading title: \(spans)")
     }
 
-    func testHeadingTitleRangeMatchesUTF16() throws {
+    @Test func headingTitleRangeMatchesUTF16() throws {
         let spans = try block("# h\n")
         let title = spans.first { $0.tag == .textTitle }
-        XCTAssertNotNil(title)
+        #expect(title != nil)
         // "# h\n" — title text "h" lives at utf16 offset 2 length 1
-        XCTAssertEqual(title?.range.location, 2)
-        XCTAssertEqual(title?.range.length, 1)
+        #expect(title?.range.location == 2)
+        #expect(title?.range.length == 1)
     }
 
-    func testFencedCodeBlockHighlights() throws {
+    @Test func fencedCodeBlockHighlights() throws {
         let spans = try block("```\nlet x = 1\n```\n")
-        XCTAssertTrue(spans.contains { $0.tag == .textLiteral })
-        XCTAssertTrue(spans.contains { $0.tag == .punctuationDelimiter })
+        #expect(spans.contains { $0.tag == .textLiteral })
+        #expect(spans.contains { $0.tag == .punctuationDelimiter })
     }
 
-    func testListMarkers() throws {
+    @Test func listMarkers() throws {
         let spans = try block("- a\n- b\n")
         let markers = spans.filter { $0.tag == .punctuationSpecial }
-        XCTAssertGreaterThanOrEqual(markers.count, 2)
+        #expect(markers.count >= 2)
     }
 
-    func testThematicBreak() throws {
+    @Test func thematicBreak() throws {
         let spans = try block("---\n")
-        XCTAssertTrue(spans.contains { $0.tag == .punctuationSpecial })
+        #expect(spans.contains { $0.tag == .punctuationSpecial })
     }
 
-    func testBlockquoteMarker() throws {
+    @Test func blockquoteMarker() throws {
         let spans = try block("> quoted\n")
-        XCTAssertTrue(spans.contains { $0.tag == .punctuationSpecial })
+        #expect(spans.contains { $0.tag == .punctuationSpecial })
     }
 
     // MARK: - inline grammar
 
-    func testStrongEmphasis() throws {
+    @Test func strongEmphasis() throws {
         let spans = try inline("**bold**")
-        XCTAssertTrue(spans.contains { $0.tag == .textStrong })
-        XCTAssertTrue(spans.contains { $0.tag == .punctuationDelimiter })
+        #expect(spans.contains { $0.tag == .textStrong })
+        #expect(spans.contains { $0.tag == .punctuationDelimiter })
     }
 
-    func testEmphasis() throws {
+    @Test func emphasis() throws {
         let spans = try inline("*italic*")
-        XCTAssertTrue(spans.contains { $0.tag == .textEmphasis })
+        #expect(spans.contains { $0.tag == .textEmphasis })
     }
 
-    func testCodeSpan() throws {
+    @Test func codeSpan() throws {
         let spans = try inline("`code`")
-        XCTAssertTrue(spans.contains { $0.tag == .textLiteral })
+        #expect(spans.contains { $0.tag == .textLiteral })
     }
 
-    func testInlineLink() throws {
+    @Test func inlineLink() throws {
         let spans = try inline("[label](https://example.com)")
-        XCTAssertTrue(spans.contains { $0.tag == .textURI })
-        XCTAssertTrue(spans.contains { $0.tag == .textReference })
+        #expect(spans.contains { $0.tag == .textURI })
+        #expect(spans.contains { $0.tag == .textReference })
     }
 
-    func testEmphasisRangeIncludesContent() throws {
+    @Test func emphasisRangeIncludesContent() throws {
         let spans = try inline("**bold**")
         let strongSpan = spans.first { $0.tag == .textStrong }
-        XCTAssertNotNil(strongSpan)
+        #expect(strongSpan != nil)
         // strong_emphasis covers the whole "**bold**" — utf16 [0, 8)
-        XCTAssertEqual(strongSpan?.range.location, 0)
-        XCTAssertEqual(strongSpan?.range.length, 8)
+        #expect(strongSpan?.range.location == 0)
+        #expect(strongSpan?.range.length == 8)
     }
 }

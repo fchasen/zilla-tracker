@@ -1,4 +1,4 @@
-import XCTest
+import Testing
 import MarginaliaSyntax
 import MarginaliaRendering
 @testable import MarginaliaView
@@ -8,42 +8,42 @@ import AppKit
 import UIKit
 #endif
 
-final class LayoutFragmentTests: XCTestCase {
+@Suite(.serialized) struct LayoutFragmentTests {
 
-    func testCodeBlockGetsDefaultFragment() throws {
+    @Test func codeBlockGetsDefaultFragment() throws {
         let c = try EditorController(initialText: "```\nlet x = 1\n```\n")
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        XCTAssertFalse(fragments.contains { $0 is BlockquoteLayoutFragment })
-        XCTAssertFalse(fragments.contains { $0 is HorizontalRuleLayoutFragment })
+        #expect(!fragments.contains { $0 is BlockquoteLayoutFragment })
+        #expect(!fragments.contains { $0 is HorizontalRuleLayoutFragment })
     }
 
-    func testBlockquoteGetsBlockquoteFragment() throws {
+    @Test func blockquoteGetsBlockquoteFragment() throws {
         let c = try EditorController(initialText: "> a quote\n")
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        XCTAssertTrue(fragments.contains { $0 is BlockquoteLayoutFragment },
-                      "expected BlockquoteLayoutFragment for block_quote: \(fragments.map(\.self))")
+        #expect(fragments.contains { $0 is BlockquoteLayoutFragment },
+                "expected BlockquoteLayoutFragment for block_quote: \(fragments.map(\.self))")
     }
 
-    func testThematicBreakGetsHorizontalRuleFragment() throws {
+    @Test func thematicBreakGetsHorizontalRuleFragment() throws {
         let c = try EditorController(initialText: "---\n")
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        XCTAssertTrue(fragments.contains { $0 is HorizontalRuleLayoutFragment },
-                      "expected HorizontalRuleLayoutFragment for thematic_break: \(fragments.map(\.self))")
+        #expect(fragments.contains { $0 is HorizontalRuleLayoutFragment },
+                "expected HorizontalRuleLayoutFragment for thematic_break: \(fragments.map(\.self))")
     }
 
-    func testParagraphGetsDefaultFragment() throws {
+    @Test func paragraphGetsDefaultFragment() throws {
         let c = try EditorController(initialText: "just prose\n")
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        XCTAssertFalse(fragments.contains { $0 is BlockquoteLayoutFragment })
-        XCTAssertFalse(fragments.contains { $0 is HorizontalRuleLayoutFragment })
+        #expect(!fragments.contains { $0 is BlockquoteLayoutFragment })
+        #expect(!fragments.contains { $0 is HorizontalRuleLayoutFragment })
     }
 
     private func collectFragments(in controller: EditorController) -> [NSTextLayoutFragment] {

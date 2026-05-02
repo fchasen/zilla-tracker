@@ -1,87 +1,88 @@
-import XCTest
+import Testing
+import Foundation
 @testable import MarginaliaSyntax
 
-final class RemarkupGrammarTests: XCTestCase {
+@Suite(.serialized) struct RemarkupGrammarTests {
 
-    func testRemarkupItalic() {
+    @Test func remarkupItalic() {
         let spans = RemarkupGrammar.highlights(in: "this is //italic// text")
         let italic = spans.first { $0.tag == .textEmphasis }
-        XCTAssertNotNil(italic)
-        XCTAssertEqual(italic?.range.location, 8)
-        XCTAssertEqual(italic?.range.length, 10)  // "//italic//"
+        #expect(italic != nil)
+        #expect(italic?.range.location == 8)
+        #expect(italic?.range.length == 10)  // "//italic//"
     }
 
-    func testRevisionAutolink() {
+    @Test func revisionAutolink() {
         let spans = RemarkupGrammar.highlights(in: "see D12345 for details")
         let link = spans.first { $0.tag == .textURI }
-        XCTAssertNotNil(link)
-        XCTAssertEqual(link?.range.location, 4)
-        XCTAssertEqual(link?.range.length, 6)
+        #expect(link != nil)
+        #expect(link?.range.location == 4)
+        #expect(link?.range.length == 6)
     }
 
-    func testTaskAutolink() {
+    @Test func taskAutolink() {
         let spans = RemarkupGrammar.highlights(in: "fixes T999")
         let link = spans.first { $0.tag == .textURI }
-        XCTAssertNotNil(link)
-        XCTAssertEqual(link?.range.location, 6)
-        XCTAssertEqual(link?.range.length, 4)
+        #expect(link != nil)
+        #expect(link?.range.location == 6)
+        #expect(link?.range.length == 4)
     }
 
-    func testFileEmbed() {
+    @Test func fileEmbed() {
         let spans = RemarkupGrammar.highlights(in: "image: {F1234}")
         let embed = spans.first { $0.tag == .textURI }
-        XCTAssertNotNil(embed)
+        #expect(embed != nil)
     }
 
-    func testPasteEmbed() {
+    @Test func pasteEmbed() {
         let spans = RemarkupGrammar.highlights(in: "paste: {P567}")
         let embed = spans.first { $0.tag == .textURI }
-        XCTAssertNotNil(embed)
+        #expect(embed != nil)
     }
 
-    func testUserMention() {
+    @Test func userMention() {
         let spans = RemarkupGrammar.highlights(in: "cc @alice and @bob.smith")
         let mentions = spans.filter { $0.tag == .textReference }
-        XCTAssertEqual(mentions.count, 2)
+        #expect(mentions.count == 2)
     }
 
-    func testNoteCallout() {
+    @Test func noteCallout() {
         let spans = RemarkupGrammar.highlights(in: "NOTE: pay attention")
         let callout = spans.first { $0.tag == .textTitle }
-        XCTAssertNotNil(callout)
-        XCTAssertEqual(callout?.range.length, 5)  // "NOTE:"
+        #expect(callout != nil)
+        #expect(callout?.range.length == 5)  // "NOTE:"
     }
 
-    func testWarningCalloutMidLineNotMatched() {
+    @Test func warningCalloutMidLineNotMatched() {
         // Callouts must be at start of line
         let spans = RemarkupGrammar.highlights(in: "this WARNING: should not match")
         let title = spans.first { $0.tag == .textTitle }
-        XCTAssertNil(title)
+        #expect(title == nil)
     }
 
-    func testRemarkupHeading() {
+    @Test func remarkupHeading() {
         let spans = RemarkupGrammar.highlights(in: "== title ==")
         let heading = spans.first { $0.tag == .textTitle }
-        XCTAssertNotNil(heading)
+        #expect(heading != nil)
     }
 
-    func testItalicDoesNotEatAcrossNewline() {
+    @Test func italicDoesNotEatAcrossNewline() {
         // // marker at start of line, // never closes — shouldn't span a newline
         let spans = RemarkupGrammar.highlights(in: "//start\nmiddle//")
         let italic = spans.first { $0.tag == .textEmphasis }
-        XCTAssertNil(italic)
+        #expect(italic == nil)
     }
 
-    func testRevisionAutolinkNotMatchedInWord() {
+    @Test func revisionAutolinkNotMatchedInWord() {
         // D12 inside identifier shouldn't match
         let spans = RemarkupGrammar.highlights(in: "fooD12bar")
         let link = spans.first { $0.tag == .textURI }
-        XCTAssertNil(link)
+        #expect(link == nil)
     }
 
-    func testSpansAreSorted() {
+    @Test func spansAreSorted() {
         let spans = RemarkupGrammar.highlights(in: "@user fixes D1 and T2")
         let locations = spans.map { $0.range.location }
-        XCTAssertEqual(locations, locations.sorted())
+        #expect(locations == locations.sorted())
     }
 }

@@ -1,5 +1,5 @@
 #if canImport(AppKit) && os(macOS)
-import XCTest
+import Testing
 import AppKit
 import MarginaliaSyntax
 @testable import MarginaliaView
@@ -8,7 +8,8 @@ import MarginaliaSyntax
 /// taller as the user types, instead of scrolling internally. The mechanic
 /// is `MarginaliaNSTextView.intrinsicContentSize` returning the laid-out
 /// content height — SwiftUI then uses that to size the representable.
-final class IntrinsicSizeTests: XCTestCase {
+@MainActor
+@Suite(.serialized) struct IntrinsicSizeTests {
 
     private func makeTextView(width: CGFloat = 200) throws -> (EditorController, MarginaliaNSTextView) {
         let c = try EditorController(initialText: "")
@@ -22,12 +23,12 @@ final class IntrinsicSizeTests: XCTestCase {
         return (c, textView)
     }
 
-    func testEmptyEditorHasNonZeroIntrinsicHeight() throws {
+    @Test func emptyEditorHasNonZeroIntrinsicHeight() throws {
         let (_, textView) = try makeTextView()
-        XCTAssertGreaterThan(textView.intrinsicContentSize.height, 0)
+        #expect(textView.intrinsicContentSize.height > 0)
     }
 
-    func testIntrinsicHeightGrowsWithMoreLines() throws {
+    @Test func intrinsicHeightGrowsWithMoreLines() throws {
         let (c, textView) = try makeTextView()
         let oneLine = textView.intrinsicContentSize.height
 
@@ -35,47 +36,43 @@ final class IntrinsicSizeTests: XCTestCase {
         c.refreshNow()
 
         let manyLines = textView.intrinsicContentSize.height
-        XCTAssertGreaterThan(manyLines, oneLine)
+        #expect(manyLines > oneLine)
     }
 
-    func testIntrinsicWidthIsNoIntrinsicMetric() throws {
+    @Test func intrinsicWidthIsNoIntrinsicMetric() throws {
         let (_, textView) = try makeTextView()
-        XCTAssertEqual(textView.intrinsicContentSize.width, NSView.noIntrinsicMetric)
+        #expect(textView.intrinsicContentSize.width == NSView.noIntrinsicMetric)
     }
 
-    func testFitsContentDisabledFallsBackToSuper() throws {
+    @Test func fitsContentDisabledFallsBackToSuper() throws {
         let (_, textView) = try makeTextView()
         textView.fitsContent = false
-        // NSTextView's default intrinsicContentSize returns
-        // (noIntrinsicMetric, noIntrinsicMetric) when neither dimension is
-        // tracked — we just verify we're not returning the fitsContent
-        // computed height anymore.
-        XCTAssertEqual(textView.intrinsicContentSize.height, NSView.noIntrinsicMetric)
+        #expect(textView.intrinsicContentSize.height == NSView.noIntrinsicMetric)
     }
 
-    func testIntrinsicSizeInvalidatorFiresOnStorageChange() throws {
+    @Test func intrinsicSizeInvalidatorFiresOnStorageChange() throws {
         let c = try EditorController(initialText: "")
         var fired = 0
         c.intrinsicSizeInvalidator = { fired += 1 }
         c.setText("hello")
-        XCTAssertGreaterThan(fired, 0)
+        #expect(fired > 0)
     }
 
     // MARK: - minimumIntrinsicHeight
 
-    func testMinimumIntrinsicHeightFloorsEmptyEditor() throws {
+    @Test func minimumIntrinsicHeightFloorsEmptyEditor() throws {
         let (_, textView) = try makeTextView()
         textView.minimumIntrinsicHeight = 200
-        XCTAssertEqual(textView.intrinsicContentSize.height, 200, accuracy: 1)
+        #expect(abs(textView.intrinsicContentSize.height - 200) < 1)
     }
 
-    func testIntrinsicHeightStillGrowsBeyondMinimum() throws {
+    @Test func intrinsicHeightStillGrowsBeyondMinimum() throws {
         let (c, textView) = try makeTextView()
         textView.minimumIntrinsicHeight = 50
         let lots = Array(repeating: "a long line of text that fills width", count: 12).joined(separator: "\n")
         c.setText(lots)
         c.refreshNow()
-        XCTAssertGreaterThan(textView.intrinsicContentSize.height, 50)
+        #expect(textView.intrinsicContentSize.height > 50)
     }
 }
 #endif

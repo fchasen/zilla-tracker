@@ -1,86 +1,79 @@
 #if canImport(AppKit) && os(macOS)
-import XCTest
+import Testing
 import AppKit
 import MarginaliaSyntax
 import MarginaliaRendering
 @testable import MarginaliaView
 
-final class BulletAttachmentTests: XCTestCase {
+@Suite(.serialized) struct BulletAttachmentTests {
 
     // MARK: - glyph + level mapping
 
-    func testGlyphCyclesPerLevel() {
-        XCTAssertEqual(BulletAttachment.glyph(forLevel: 0), "•")
-        XCTAssertEqual(BulletAttachment.glyph(forLevel: 1), "◦")
-        XCTAssertEqual(BulletAttachment.glyph(forLevel: 2), "▪")
-        XCTAssertEqual(BulletAttachment.glyph(forLevel: 3), "▫")
-        // Cycles back at 4
-        XCTAssertEqual(BulletAttachment.glyph(forLevel: 4), "•")
+    @Test func glyphCyclesPerLevel() {
+        #expect(BulletAttachment.glyph(forLevel: 0) == "•")
+        #expect(BulletAttachment.glyph(forLevel: 1) == "◦")
+        #expect(BulletAttachment.glyph(forLevel: 2) == "▪")
+        #expect(BulletAttachment.glyph(forLevel: 3) == "▫")
+        #expect(BulletAttachment.glyph(forLevel: 4) == "•")
     }
 
-    func testLevelFromLeading() {
-        XCTAssertEqual(BulletAttachment.level(forLeading: ""), 0)
-        XCTAssertEqual(BulletAttachment.level(forLeading: "  "), 1)
-        XCTAssertEqual(BulletAttachment.level(forLeading: "    "), 2)
-        XCTAssertEqual(BulletAttachment.level(forLeading: "\t"), 1)
-        XCTAssertEqual(BulletAttachment.level(forLeading: "\t\t"), 2)
+    @Test func levelFromLeading() {
+        #expect(BulletAttachment.level(forLeading: "") == 0)
+        #expect(BulletAttachment.level(forLeading: "  ") == 1)
+        #expect(BulletAttachment.level(forLeading: "    ") == 2)
+        #expect(BulletAttachment.level(forLeading: "\t") == 1)
+        #expect(BulletAttachment.level(forLeading: "\t\t") == 2)
     }
 
     // MARK: - integration with the controller
 
-    func testTopLevelBulletGetsGlyphSubstitution() throws {
+    @Test func topLevelBulletGetsGlyphSubstitution() throws {
         let c = try EditorController(initialText: "- foo")
         c.refreshNow()
         var range = NSRange(location: 0, length: 0)
         let attrs = c.textStorage.attributes(at: 0, effectiveRange: &range)
-        XCTAssertNotNil(attrs[.glyphInfoCompat],
-                        "Expected glyphInfo substitution on top-level dash.")
+        #expect(attrs[.glyphInfoCompat] != nil,
+                "Expected glyphInfo substitution on top-level dash.")
     }
 
-    func testNestedBulletGetsDifferentGlyph() throws {
+    @Test func nestedBulletGetsDifferentGlyph() throws {
         let c = try EditorController(initialText: "- top\n  - nested\n")
         c.refreshNow()
-        // Top-level dash at 0
         var topRange = NSRange()
         let topAttrs = c.textStorage.attributes(at: 0, effectiveRange: &topRange)
-        // Nested dash at 8 (after "- top\n  ")
         var nestRange = NSRange()
         let nestAttrs = c.textStorage.attributes(at: 8, effectiveRange: &nestRange)
         let topInfo = topAttrs[.glyphInfo]
         let nestInfo = nestAttrs[.glyphInfo]
-        XCTAssertNotNil(topInfo)
-        XCTAssertNotNil(nestInfo)
-        // The two glyph-info instances should be different identities (different
-        // glyph for each level).
+        #expect(topInfo != nil)
+        #expect(nestInfo != nil)
         if let topGI = topInfo, let nestGI = nestInfo {
-            XCTAssertFalse(topGI as AnyObject === nestGI as AnyObject)
+            #expect(!(topGI as AnyObject === nestGI as AnyObject))
         }
     }
 
-    func testBulletNotAppliedToHorizontalRule() throws {
-        // `---` is a horizontal rule, not a list. The first dash must not
-        // get a bullet glyph.
+    @Test func bulletNotAppliedToHorizontalRule() throws {
         let c = try EditorController(initialText: "---\n")
         c.refreshNow()
         var range = NSRange(location: 0, length: 0)
         let attrs = c.textStorage.attributes(at: 0, effectiveRange: &range)
-        XCTAssertNil(attrs[.glyphInfoCompat])
+        #expect(attrs[.glyphInfoCompat] == nil)
     }
 
-    func testBulletNotAppliedToNumberedListMarker() throws {
+    @Test func bulletNotAppliedToNumberedListMarker() throws {
         let c = try EditorController(initialText: "1. one\n")
         c.refreshNow()
         var range = NSRange(location: 0, length: 0)
         let attrs = c.textStorage.attributes(at: 0, effectiveRange: &range)
-        XCTAssertNil(attrs[.glyphInfoCompat])
+        #expect(attrs[.glyphInfoCompat] == nil)
     }
 
-    func testTaskMarkerDashGetsBulletGlyph() throws {
+    @Test func taskMarkerDashGetsBulletGlyph() throws {
         let c = try EditorController(initialText: "- [ ] task")
         c.refreshNow()
         var range = NSRange(location: 0, length: 0)
         let attrs = c.textStorage.attributes(at: 0, effectiveRange: &range)
-        XCTAssertNotNil(attrs[.glyphInfoCompat])
+        #expect(attrs[.glyphInfoCompat] != nil)
     }
 }
 #endif

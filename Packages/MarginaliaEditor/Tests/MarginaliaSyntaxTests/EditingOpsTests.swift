@@ -1,426 +1,426 @@
-import XCTest
+import Testing
+import Foundation
 @testable import MarginaliaSyntax
 
-final class EditingOpsTests: XCTestCase {
+@Suite(.serialized) struct EditingOpsTests {
 
     // MARK: - wrap
 
-    func testWrapEmptyTextEmptySelection() {
+    @Test func wrapEmptyTextEmptySelection() {
         let result = EditingOps.wrap(
             in: "",
             selection: NSRange(location: 0, length: 0),
             prefix: "**", suffix: "**", placeholder: "bold"
         )
-        XCTAssertEqual(result.text, "**bold**")
-        XCTAssertEqual(result.selection, NSRange(location: 2, length: 4))
+        #expect(result.text == "**bold**")
+        #expect(result.selection == NSRange(location: 2, length: 4))
     }
 
-    func testWrapInsertsAtCursorNotAtEnd() {
+    @Test func wrapInsertsAtCursorNotAtEnd() {
         let result = EditingOps.wrap(
             in: "hello world",
             selection: NSRange(location: 6, length: 0),
             prefix: "*", suffix: "*", placeholder: "italic"
         )
-        XCTAssertEqual(result.text, "hello *italic*world")
-        XCTAssertEqual(result.selection, NSRange(location: 7, length: 6))
+        #expect(result.text == "hello *italic*world")
+        #expect(result.selection == NSRange(location: 7, length: 6))
     }
 
-    func testWrapNonEmptySelection() {
+    @Test func wrapNonEmptySelection() {
         let result = EditingOps.wrap(
             in: "hello world",
             selection: NSRange(location: 0, length: 5),
             prefix: "**", suffix: "**", placeholder: "bold"
         )
-        XCTAssertEqual(result.text, "**hello** world")
-        XCTAssertEqual(result.selection, NSRange(location: 0, length: 9))
+        #expect(result.text == "**hello** world")
+        #expect(result.selection == NSRange(location: 0, length: 9))
     }
 
-    func testWrapSelectionAtEnd() {
+    @Test func wrapSelectionAtEnd() {
         let result = EditingOps.wrap(
             in: "hello world",
             selection: NSRange(location: 6, length: 5),
             prefix: "**", suffix: "**", placeholder: "bold"
         )
-        XCTAssertEqual(result.text, "hello **world**")
-        XCTAssertEqual(result.selection, NSRange(location: 6, length: 9))
+        #expect(result.text == "hello **world**")
+        #expect(result.selection == NSRange(location: 6, length: 9))
     }
 
-    func testWrapAsymmetricMarkers() {
+    @Test func wrapAsymmetricMarkers() {
         let result = EditingOps.wrap(
             in: "click here",
             selection: NSRange(location: 0, length: 5),
             prefix: "[", suffix: "](url)", placeholder: "label"
         )
-        XCTAssertEqual(result.text, "[click](url) here")
-        XCTAssertEqual(result.selection, NSRange(location: 0, length: 12))
+        #expect(result.text == "[click](url) here")
+        #expect(result.selection == NSRange(location: 0, length: 12))
     }
 
-    func testWrapPreservesUnicodeUTF16Lengths() {
+    @Test func wrapPreservesUnicodeUTF16Lengths() {
         // 🚀 is one Character, two UTF-16 code units
         let result = EditingOps.wrap(
             in: "🚀x",
             selection: NSRange(location: 2, length: 1),
             prefix: "*", suffix: "*", placeholder: "italic"
         )
-        XCTAssertEqual(result.text, "🚀*x*")
-        XCTAssertEqual(result.selection, NSRange(location: 2, length: 3))
+        #expect(result.text == "🚀*x*")
+        #expect(result.selection == NSRange(location: 2, length: 3))
     }
 
     // MARK: - prefixLines
 
-    func testPrefixLinesEmptyText() {
+    @Test func prefixLinesEmptyText() {
         let result = EditingOps.prefixLines(
             in: "",
             selection: NSRange(location: 0, length: 0),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- ")
-        XCTAssertEqual(result.selection, NSRange(location: 2, length: 0))
+        #expect(result.text == "- ")
+        #expect(result.selection == NSRange(location: 2, length: 0))
     }
 
-    func testPrefixLinesCursorAtEndOfLine() {
+    @Test func prefixLinesCursorAtEndOfLine() {
         let result = EditingOps.prefixLines(
             in: "hello",
             selection: NSRange(location: 5, length: 0),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- hello")
-        XCTAssertEqual(result.selection, NSRange(location: 7, length: 0))
+        #expect(result.text == "- hello")
+        #expect(result.selection == NSRange(location: 7, length: 0))
     }
 
-    func testPrefixLinesCursorMidLine() {
+    @Test func prefixLinesCursorMidLine() {
         let result = EditingOps.prefixLines(
             in: "hello world",
             selection: NSRange(location: 6, length: 0),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- hello world")
-        XCTAssertEqual(result.selection, NSRange(location: 8, length: 0))
+        #expect(result.text == "- hello world")
+        #expect(result.selection == NSRange(location: 8, length: 0))
     }
 
-    func testPrefixLinesSingleLineSelection() {
+    @Test func prefixLinesSingleLineSelection() {
         let result = EditingOps.prefixLines(
             in: "hello",
             selection: NSRange(location: 0, length: 5),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- hello")
-        XCTAssertEqual(result.selection, NSRange(location: 0, length: 7))
+        #expect(result.text == "- hello")
+        #expect(result.selection == NSRange(location: 0, length: 7))
     }
 
-    func testPrefixLinesMultiLineSelection() {
+    @Test func prefixLinesMultiLineSelection() {
         let result = EditingOps.prefixLines(
             in: "hello\nworld\nfoo",
             selection: NSRange(location: 0, length: 11),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- hello\n- world\nfoo")
-        XCTAssertEqual(result.selection, NSRange(location: 0, length: 15))
+        #expect(result.text == "- hello\n- world\nfoo")
+        #expect(result.selection == NSRange(location: 0, length: 15))
     }
 
-    func testPrefixLinesPartialSelectionExtendsToFullLines() {
+    @Test func prefixLinesPartialSelectionExtendsToFullLines() {
         let result = EditingOps.prefixLines(
             in: "hello\nworld\nfoo",
             selection: NSRange(location: 2, length: 5),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- hello\n- world\nfoo")
+        #expect(result.text == "- hello\n- world\nfoo")
     }
 
-    func testPrefixLinesSelectionIncludingTrailingNewline() {
+    @Test func prefixLinesSelectionIncludingTrailingNewline() {
         let result = EditingOps.prefixLines(
             in: "hello\nworld",
             selection: NSRange(location: 0, length: 6),
             marker: "- "
         )
-        XCTAssertEqual(result.text, "- hello\nworld")
+        #expect(result.text == "- hello\nworld")
     }
 
-    func testPrefixLinesBlockquoteMarker() {
+    @Test func prefixLinesBlockquoteMarker() {
         let result = EditingOps.prefixLines(
             in: "a\nb",
             selection: NSRange(location: 0, length: 3),
             marker: "> "
         )
-        XCTAssertEqual(result.text, "> a\n> b")
+        #expect(result.text == "> a\n> b")
     }
 
     // MARK: - numberedList
 
-    func testNumberedListEmptyText() {
+    @Test func numberedListEmptyText() {
         let result = EditingOps.numberedList(
             in: "",
             selection: NSRange(location: 0, length: 0)
         )
-        XCTAssertEqual(result.text, "1. ")
-        XCTAssertEqual(result.selection, NSRange(location: 3, length: 0))
+        #expect(result.text == "1. ")
+        #expect(result.selection == NSRange(location: 3, length: 0))
     }
 
-    func testNumberedListCursorOnLine() {
+    @Test func numberedListCursorOnLine() {
         let result = EditingOps.numberedList(
             in: "hello",
             selection: NSRange(location: 5, length: 0)
         )
-        XCTAssertEqual(result.text, "1. hello")
+        #expect(result.text == "1. hello")
     }
 
-    func testNumberedListMultiLineSelection() {
+    @Test func numberedListMultiLineSelection() {
         let result = EditingOps.numberedList(
             in: "first\nsecond\nthird",
             selection: NSRange(location: 0, length: 18)
         )
-        XCTAssertEqual(result.text, "1. first\n2. second\n3. third")
+        #expect(result.text == "1. first\n2. second\n3. third")
     }
 
-    func testNumberedListNumbersExceedingTen() {
+    @Test func numberedListNumbersExceedingTen() {
         let lines = (1...12).map { "line\($0)" }.joined(separator: "\n")
         let result = EditingOps.numberedList(
             in: lines,
             selection: NSRange(location: 0, length: (lines as NSString).length)
         )
-        XCTAssertTrue(result.text.contains("10. line10"))
-        XCTAssertTrue(result.text.contains("11. line11"))
-        XCTAssertTrue(result.text.contains("12. line12"))
+        #expect(result.text.contains("10. line10"))
+        #expect(result.text.contains("11. line11"))
+        #expect(result.text.contains("12. line12"))
     }
 
     // MARK: - wrapCodeBlock
 
-    func testWrapCodeBlockEmptyText() {
+    @Test func wrapCodeBlockEmptyText() {
         let result = EditingOps.wrapCodeBlock(
             in: "",
             selection: NSRange(location: 0, length: 0)
         )
-        XCTAssertEqual(result.text, "```\ncode\n```\n")
-        XCTAssertEqual(result.selection, NSRange(location: 4, length: 4))
+        #expect(result.text == "```\ncode\n```\n")
+        #expect(result.selection == NSRange(location: 4, length: 4))
     }
 
-    func testWrapCodeBlockAtStartOfNewLine() {
+    @Test func wrapCodeBlockAtStartOfNewLine() {
         let result = EditingOps.wrapCodeBlock(
             in: "hello\n",
             selection: NSRange(location: 6, length: 0)
         )
-        XCTAssertEqual(result.text, "hello\n```\ncode\n```\n")
-        XCTAssertEqual(result.selection, NSRange(location: 10, length: 4))
+        #expect(result.text == "hello\n```\ncode\n```\n")
+        #expect(result.selection == NSRange(location: 10, length: 4))
     }
 
-    func testWrapCodeBlockMidLineAddsLeadingNewline() {
+    @Test func wrapCodeBlockMidLineAddsLeadingNewline() {
         let result = EditingOps.wrapCodeBlock(
             in: "hello world",
             selection: NSRange(location: 6, length: 0)
         )
-        XCTAssertEqual(result.text, "hello \n```\ncode\n```\nworld")
+        #expect(result.text == "hello \n```\ncode\n```\nworld")
     }
 
-    func testWrapCodeBlockSelectionAtLineStart() {
+    @Test func wrapCodeBlockSelectionAtLineStart() {
         let result = EditingOps.wrapCodeBlock(
             in: "let x = 1",
             selection: NSRange(location: 0, length: 9)
         )
-        XCTAssertEqual(result.text, "```\nlet x = 1\n```\n")
+        #expect(result.text == "```\nlet x = 1\n```\n")
     }
 
-    func testWrapCodeBlockSelectionWithTrailingNewline() {
+    @Test func wrapCodeBlockSelectionWithTrailingNewline() {
         let result = EditingOps.wrapCodeBlock(
             in: "let x = 1\n",
             selection: NSRange(location: 0, length: 10)
         )
-        XCTAssertEqual(result.text, "```\nlet x = 1\n```\n")
+        #expect(result.text == "```\nlet x = 1\n```\n")
     }
 
-    func testWrapCodeBlockSelectionMidLine() {
+    @Test func wrapCodeBlockSelectionMidLine() {
         let result = EditingOps.wrapCodeBlock(
             in: "before code after",
             selection: NSRange(location: 7, length: 4)
         )
-        XCTAssertEqual(result.text, "before \n```\ncode\n```\n after")
+        #expect(result.text == "before \n```\ncode\n```\n after")
     }
 
-    func testWrapCodeBlockCustomPlaceholder() {
+    @Test func wrapCodeBlockCustomPlaceholder() {
         let result = EditingOps.wrapCodeBlock(
             in: "",
             selection: NSRange(location: 0, length: 0),
             placeholder: "swift"
         )
-        XCTAssertEqual(result.text, "```\nswift\n```\n")
-        XCTAssertEqual(result.selection, NSRange(location: 4, length: 5))
+        #expect(result.text == "```\nswift\n```\n")
+        #expect(result.selection == NSRange(location: 4, length: 5))
     }
 
     // MARK: - insertHorizontalRule
 
-    func testInsertHorizontalRuleAtStartOfEmptyText() {
+    @Test func insertHorizontalRuleAtStartOfEmptyText() {
         let result = EditingOps.insertHorizontalRule(
             in: "",
             selection: NSRange(location: 0, length: 0)
         )
-        XCTAssertEqual(result.text, "---\n\n")
-        XCTAssertEqual(result.selection, NSRange(location: 5, length: 0))
+        #expect(result.text == "---\n\n")
+        #expect(result.selection == NSRange(location: 5, length: 0))
     }
 
-    func testInsertHorizontalRuleAtStartOfLineSkipsLeadingNewline() {
+    @Test func insertHorizontalRuleAtStartOfLineSkipsLeadingNewline() {
         let result = EditingOps.insertHorizontalRule(
             in: "first\n",
             selection: NSRange(location: 6, length: 0)
         )
-        XCTAssertEqual(result.text, "first\n---\n\n")
+        #expect(result.text == "first\n---\n\n")
     }
 
-    func testInsertHorizontalRuleMidLineAddsLeadingNewline() {
+    @Test func insertHorizontalRuleMidLineAddsLeadingNewline() {
         let result = EditingOps.insertHorizontalRule(
             in: "hello world",
             selection: NSRange(location: 6, length: 0)
         )
-        XCTAssertEqual(result.text, "hello \n---\n\nworld")
+        #expect(result.text == "hello \n---\n\nworld")
     }
 
     // MARK: - indentListLines / outdentListLines
 
-    func testIndentBulletListItem() {
+    @Test func indentBulletListItem() {
         let result = EditingOps.indentListLines(
             in: "- one",
             selection: NSRange(location: 5, length: 0)
         )
-        XCTAssertEqual(result?.text, "  - one")
-        XCTAssertEqual(result?.selection, NSRange(location: 7, length: 0))
+        #expect(result?.text == "  - one")
+        #expect(result?.selection == NSRange(location: 7, length: 0))
     }
 
-    func testIndentNumberedListItem() {
+    @Test func indentNumberedListItem() {
         let result = EditingOps.indentListLines(
             in: "1. one",
             selection: NSRange(location: 6, length: 0)
         )
-        XCTAssertEqual(result?.text, "  1. one")
+        #expect(result?.text == "  1. one")
     }
 
-    func testIndentNonListLineReturnsNil() {
+    @Test func indentNonListLineReturnsNil() {
         let result = EditingOps.indentListLines(
             in: "just prose",
             selection: NSRange(location: 4, length: 0)
         )
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testOutdentRemovesTwoSpaceIndent() {
+    @Test func outdentRemovesTwoSpaceIndent() {
         let result = EditingOps.outdentListLines(
             in: "  - nested",
             selection: NSRange(location: 5, length: 0)
         )
-        XCTAssertEqual(result?.text, "- nested")
-        XCTAssertEqual(result?.selection, NSRange(location: 3, length: 0))
+        #expect(result?.text == "- nested")
+        #expect(result?.selection == NSRange(location: 3, length: 0))
     }
 
-    func testOutdentRemovesTab() {
+    @Test func outdentRemovesTab() {
         let result = EditingOps.outdentListLines(
             in: "\t- nested",
             selection: NSRange(location: 4, length: 0)
         )
-        XCTAssertEqual(result?.text, "- nested")
+        #expect(result?.text == "- nested")
     }
 
-    func testOutdentWithoutLeadingIndentReturnsNil() {
+    @Test func outdentWithoutLeadingIndentReturnsNil() {
         let result = EditingOps.outdentListLines(
             in: "- top-level",
             selection: NSRange(location: 5, length: 0)
         )
-        XCTAssertNil(result)
+        #expect(result == nil)
     }
 
-    func testIndentMultipleLinesPrefixesEachListLine() {
+    @Test func indentMultipleLinesPrefixesEachListLine() {
         let result = EditingOps.indentListLines(
             in: "- one\n- two\nplain",
             selection: NSRange(location: 0, length: 17)
         )
-        XCTAssertEqual(result?.text, "  - one\n  - two\nplain")
+        #expect(result?.text == "  - one\n  - two\nplain")
     }
 
     // MARK: - applyListMarker (smart list-button behavior)
 
-    func testApplyBulletOnBulletIndents() {
+    @Test func applyBulletOnBulletIndents() {
         let result = EditingOps.applyListMarker(
             in: "- one",
             selection: NSRange(location: 5, length: 0),
             kind: .bullet
         )
-        XCTAssertEqual(result?.text, "  - one")
+        #expect(result?.text == "  - one")
     }
 
-    func testApplyBulletOnNumberedSwitchesToBullet() {
+    @Test func applyBulletOnNumberedSwitchesToBullet() {
         let result = EditingOps.applyListMarker(
             in: "1. one",
             selection: NSRange(location: 6, length: 0),
             kind: .bullet
         )
-        XCTAssertEqual(result?.text, "- one")
+        #expect(result?.text == "- one")
     }
 
-    func testApplyNumberedOnTaskSwitchesToNumbered() {
+    @Test func applyNumberedOnTaskSwitchesToNumbered() {
         let result = EditingOps.applyListMarker(
             in: "- [ ] task",
             selection: NSRange(location: 10, length: 0),
             kind: .numbered
         )
-        XCTAssertEqual(result?.text, "1. task")
+        #expect(result?.text == "1. task")
     }
 
-    func testApplyTaskOnBulletSwitchesToTask() {
+    @Test func applyTaskOnBulletSwitchesToTask() {
         let result = EditingOps.applyListMarker(
             in: "- one",
             selection: NSRange(location: 5, length: 0),
             kind: .task
         )
-        XCTAssertEqual(result?.text, "- [ ] one")
+        #expect(result?.text == "- [ ] one")
     }
 
-    func testApplyBulletOnPlainAddsMarker() {
+    @Test func applyBulletOnPlainAddsMarker() {
         let result = EditingOps.applyListMarker(
             in: "plain prose",
             selection: NSRange(location: 5, length: 0),
             kind: .bullet
         )
-        XCTAssertEqual(result?.text, "- plain prose")
+        #expect(result?.text == "- plain prose")
     }
 
-    func testApplyTaskOnTaskIndents() {
+    @Test func applyTaskOnTaskIndents() {
         let result = EditingOps.applyListMarker(
             in: "- [ ] task",
             selection: NSRange(location: 10, length: 0),
             kind: .task
         )
-        XCTAssertEqual(result?.text, "  - [ ] task")
+        #expect(result?.text == "  - [ ] task")
     }
 
-    func testApplyNumberedOnNumberedIndents() {
+    @Test func applyNumberedOnNumberedIndents() {
         let result = EditingOps.applyListMarker(
             in: "1. one",
             selection: NSRange(location: 6, length: 0),
             kind: .numbered
         )
-        XCTAssertEqual(result?.text, "  1. one")
+        #expect(result?.text == "  1. one")
     }
 
-    func testSwitchPreservesLeadingIndent() {
+    @Test func switchPreservesLeadingIndent() {
         let result = EditingOps.applyListMarker(
             in: "  - nested",
             selection: NSRange(location: 10, length: 0),
             kind: .numbered
         )
-        XCTAssertEqual(result?.text, "  1. nested")
+        #expect(result?.text == "  1. nested")
     }
 
     // MARK: - defensive bounds
 
-    func testPrefixLinesWithStaleSelectionDoesNotCrash() {
+    @Test func prefixLinesWithStaleSelectionDoesNotCrash() {
         // `lineRangeExcludingTerminator` used to crash inside `lineRange(for:)`
         // when handed a selection past the text end. Clamping internally
         // turns it into a no-op insert at the end.
-        let result = EditingOps.prefixLines(
+        _ = EditingOps.prefixLines(
             in: "short",
             selection: NSRange(location: 999, length: 100),
             marker: "- "
         )
-        XCTAssertNotNil(result)
     }
 
-    func testIndentListLinesWithStaleSelectionDoesNotCrash() {
+    @Test func indentListLinesWithStaleSelectionDoesNotCrash() {
         let result = EditingOps.indentListLines(
             in: "- item",
             selection: NSRange(location: 999, length: 100)
@@ -430,7 +430,7 @@ final class EditingOpsTests: XCTestCase {
         _ = result
     }
 
-    func testOutdentListLinesWithStaleSelectionDoesNotCrash() {
+    @Test func outdentListLinesWithStaleSelectionDoesNotCrash() {
         let result = EditingOps.outdentListLines(
             in: "  - item",
             selection: NSRange(location: 999, length: 100)
@@ -440,11 +440,11 @@ final class EditingOpsTests: XCTestCase {
 
     // MARK: - EditResult
 
-    func testEditResultEquality() {
+    @Test func editResultEquality() {
         let a = EditResult(text: "hello", selection: NSRange(location: 1, length: 2))
         let b = EditResult(text: "hello", selection: NSRange(location: 1, length: 2))
         let c = EditResult(text: "world", selection: NSRange(location: 1, length: 2))
-        XCTAssertEqual(a, b)
-        XCTAssertNotEqual(a, c)
+        #expect(a == b)
+        #expect(a != c)
     }
 }

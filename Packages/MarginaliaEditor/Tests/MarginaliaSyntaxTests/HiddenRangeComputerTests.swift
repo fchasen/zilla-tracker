@@ -1,18 +1,19 @@
-import XCTest
+import Testing
+import Foundation
 @testable import MarginaliaSyntax
 
-final class HiddenRangeComputerTests: XCTestCase {
+@Suite(.serialized) struct HiddenRangeComputerTests {
 
-    func testNoMarkupYieldsEmpty() {
+    @Test func noMarkupYieldsEmpty() {
         let hidden = HiddenRangeComputer.hiddenRanges(
             markupRanges: [],
             cursorRange: NSRange(location: 0, length: 0),
             in: "plain"
         )
-        XCTAssertEqual(hidden, [])
+        #expect(hidden == [])
     }
 
-    func testCursorOnSameLineAsMarkupKeepsVisible() {
+    @Test func cursorOnSameLineAsMarkupKeepsVisible() {
         // "**bold**" on a single line, cursor at offset 3 (inside)
         // The two `**` markup ranges should NOT be hidden.
         let asterisksLeft = NSRange(location: 0, length: 2)
@@ -22,10 +23,10 @@ final class HiddenRangeComputerTests: XCTestCase {
             cursorRange: NSRange(location: 3, length: 0),
             in: "**bold**"
         )
-        XCTAssertEqual(hidden, [])
+        #expect(hidden == [])
     }
 
-    func testCursorOnDifferentLineHidesMarkup() {
+    @Test func cursorOnDifferentLineHidesMarkup() {
         // line 0 = "**bold**", line 1 = "next"
         // Cursor on line 1 → markup on line 0 should be hidden.
         let text = "**bold**\nnext"
@@ -37,10 +38,10 @@ final class HiddenRangeComputerTests: XCTestCase {
             cursorRange: cursor,
             in: text
         )
-        XCTAssertEqual(hidden, [asterisksLeft, asterisksRight])
+        #expect(hidden == [asterisksLeft, asterisksRight])
     }
 
-    func testMultipleLinesOnlyActiveLineKept() {
+    @Test func multipleLinesOnlyActiveLineKept() {
         // line 0 = "**a**", line 1 = "**b**", line 2 = "**c**"
         // Cursor on line 1 → line 0 + line 2 markup hidden, line 1 visible.
         let text = "**a**\n**b**\n**c**"
@@ -57,10 +58,10 @@ final class HiddenRangeComputerTests: XCTestCase {
             cursorRange: cursor,
             in: text
         )
-        XCTAssertEqual(hidden, [line0Markup1, line0Markup2, line2Markup1, line2Markup2])
+        #expect(hidden == [line0Markup1, line0Markup2, line2Markup1, line2Markup2])
     }
 
-    func testSelectionTouchingTwoLinesKeepsBothVisible() {
+    @Test func selectionTouchingTwoLinesKeepsBothVisible() {
         let text = "**a**\n**b**\n**c**"
         let line0M = NSRange(location: 0, length: 2)
         let line1M = NSRange(location: 6, length: 2)
@@ -73,10 +74,10 @@ final class HiddenRangeComputerTests: XCTestCase {
             cursorRange: selection,
             in: text
         )
-        XCTAssertEqual(hidden, [line2M])
+        #expect(hidden == [line2M])
     }
 
-    func testCursorAtEndOfFile() {
+    @Test func cursorAtEndOfFile() {
         let text = "**a**\n**b**"
         let line0M = NSRange(location: 0, length: 2)
         let line1M = NSRange(location: 6, length: 2)
@@ -86,41 +87,39 @@ final class HiddenRangeComputerTests: XCTestCase {
             cursorRange: cursor,
             in: text
         )
-        XCTAssertEqual(hidden, [line0M])
+        #expect(hidden == [line0M])
     }
 
     // MARK: - defensive clamping
 
-    func testStaleCursorRangePastEndDoesNotCrash() {
+    @Test func staleCursorRangePastEndDoesNotCrash() {
         // The historical NSRangeException: cursor at 62 against a 58-length
         // text (e.g. after a Shift-Tab outdent that shrunk the text but
         // before `selection` was clamped). Must clamp internally.
         let text = "short text only 58 characters long ........... yes" + "..."
-        XCTAssertEqual((text as NSString).length, 53)
+        #expect((text as NSString).length == 53)
         let cursor = NSRange(location: 200, length: 0)
         let markup = [NSRange(location: 0, length: 1)]
         // No crash:
-        let hidden = HiddenRangeComputer.hiddenRanges(
+        _ = HiddenRangeComputer.hiddenRanges(
             markupRanges: markup,
             cursorRange: cursor,
             in: text
         )
-        XCTAssertNotNil(hidden)
     }
 
-    func testStaleMarkupRangePastEndDoesNotCrash() {
+    @Test func staleMarkupRangePastEndDoesNotCrash() {
         let text = "abc"
         let stale = [NSRange(location: 100, length: 5)]
         let cursor = NSRange(location: 0, length: 0)
-        let hidden = HiddenRangeComputer.hiddenRanges(
+        _ = HiddenRangeComputer.hiddenRanges(
             markupRanges: stale,
             cursorRange: cursor,
             in: text
         )
-        XCTAssertNotNil(hidden)
     }
 
-    func testHeadingHashHiddenWhenCursorElsewhere() {
+    @Test func headingHashHiddenWhenCursorElsewhere() {
         let text = "# heading\nbody\n"
         let headingHash = NSRange(location: 0, length: 1)
         let cursor = NSRange(location: 12, length: 0)  // in "body"
@@ -129,6 +128,6 @@ final class HiddenRangeComputerTests: XCTestCase {
             cursorRange: cursor,
             in: text
         )
-        XCTAssertEqual(hidden, [headingHash])
+        #expect(hidden == [headingHash])
     }
 }

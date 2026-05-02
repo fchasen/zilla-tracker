@@ -1,15 +1,15 @@
-import XCTest
+import Testing
 @testable import MarginaliaView
 
-final class MarginaliaViewSmokeTests: XCTestCase {
-    func testHighlighterInitializes() throws {
+@Suite(.serialized) struct MarginaliaViewSmokeTests {
+    @Test func highlighterInitializes() throws {
         let h = try Highlighter(dialect: .commonMark)
-        XCTAssertEqual(h.dialect, .commonMark)
+        #expect(h.dialect == .commonMark)
     }
 
-    func testHighlighterEmitsRunsForBoldText() throws {
+    @Test func highlighterEmitsRunsForBoldText() throws {
         let h = try Highlighter(dialect: .commonMark)
         let runs = h.runs(for: "**bold**")
-        XCTAssertFalse(runs.isEmpty)
+        #expect(!runs.isEmpty)
     }
 }

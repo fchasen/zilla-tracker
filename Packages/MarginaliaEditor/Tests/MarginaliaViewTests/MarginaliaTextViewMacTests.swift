@@ -1,5 +1,5 @@
 #if canImport(AppKit) && os(macOS)
-import XCTest
+import Testing
 import AppKit
 import SwiftUI
 import MarginaliaSyntax
@@ -11,7 +11,8 @@ import MarginaliaSyntax
 /// character to the front of the string — when SwiftUI re-renders the
 /// representable while the `selection` binding is still stale (the most
 /// common case being the `.constant(NSRange(0, 0))` default).
-final class MarginaliaTextViewMacTests: XCTestCase {
+@MainActor
+@Suite(.serialized) struct MarginaliaTextViewMacTests {
 
     // MARK: - helpers
 
@@ -55,7 +56,7 @@ final class MarginaliaTextViewMacTests: XCTestCase {
 
     // MARK: - the regression: typing must not reset the cursor
 
-    func testTypingDoesNotResetCursorWithConstantSelection() throws {
+    @Test func typingDoesNotResetCursorWithConstantSelection() throws {
         let (_, textView, coord) = try makeStack(
             text: .constant("hello"),
             selection: .constant(NSRange(location: 0, length: 0))
@@ -64,34 +65,28 @@ final class MarginaliaTextViewMacTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: 5, length: 0))
         fireSelectionChanged(textView, on: coord)
 
-        // SwiftUI re-renders updateNSView with the still-stale constant binding.
         coord.apply(
             text: "hello",
             selection: NSRange(location: 0, length: 0),
             to: textView
         )
 
-        XCTAssertEqual(
-            textView.selectedRange(),
-            NSRange(location: 5, length: 0),
+        #expect(
+            textView.selectedRange() == NSRange(location: 5, length: 0),
             "Cursor must remain where the user put it; the constant (0,0) binding must not snap it back."
         )
-        XCTAssertEqual(
-            coord.lastAppliedSelection,
-            NSRange(location: 0, length: 0),
+        #expect(
+            coord.lastAppliedSelection == NSRange(location: 0, length: 0),
             "lastAppliedSelection must track the binding, never the user-driven cursor."
         )
     }
 
-    func testTypingDoesNotPrependWithConstantBinding() throws {
+    @Test func typingDoesNotPrependWithConstantBinding() throws {
         let (c, textView, coord) = try makeStack(
             text: .constant("hello"),
             selection: .constant(NSRange(location: 0, length: 0))
         )
 
-        // Position cursor at the end and type three characters, with a re-render
-        // (`apply` with stale binding) interleaved between each keystroke — the
-        // pattern that produced "cbahello" before the fix.
         let endLocation = (c.text as NSString).length
         textView.setSelectedRange(NSRange(location: endLocation, length: 0))
         fireSelectionChanged(textView, on: coord)
@@ -103,7 +98,6 @@ final class MarginaliaTextViewMacTests: XCTestCase {
             fireTextChanged(textView, on: coord)
             fireSelectionChanged(textView, on: coord)
 
-            // Stale-binding re-render between each keystroke.
             coord.apply(
                 text: "hello",
                 selection: NSRange(location: 0, length: 0),
@@ -111,12 +105,12 @@ final class MarginaliaTextViewMacTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(c.text, "helloabc", "Characters should append, not prepend.")
+        #expect(c.text == "helloabc", "Characters should append, not prepend.")
     }
 
     // MARK: - external binding changes still propagate
 
-    func testExternalSelectionChangeIsApplied() throws {
+    @Test func externalSelectionChangeIsApplied() throws {
         let textBox = Box("hello")
         let selBox = Box(NSRange(location: 0, length: 0))
 
@@ -125,15 +119,14 @@ final class MarginaliaTextViewMacTests: XCTestCase {
             selection: makeBinding(selBox)
         )
 
-        // External code moves the selection.
         selBox.value = NSRange(location: 2, length: 0)
         coord.apply(text: textBox.value, selection: selBox.value, to: textView)
 
-        XCTAssertEqual(textView.selectedRange(), NSRange(location: 2, length: 0))
-        XCTAssertEqual(coord.lastAppliedSelection, NSRange(location: 2, length: 0))
+        #expect(textView.selectedRange() == NSRange(location: 2, length: 0))
+        #expect(coord.lastAppliedSelection == NSRange(location: 2, length: 0))
     }
 
-    func testExternalTextChangeIsApplied() throws {
+    @Test func externalTextChangeIsApplied() throws {
         let textBox = Box("hello")
         let selBox = Box(NSRange(location: 0, length: 0))
 
@@ -145,35 +138,32 @@ final class MarginaliaTextViewMacTests: XCTestCase {
         textBox.value = "world"
         coord.apply(text: textBox.value, selection: selBox.value, to: textView)
 
-        XCTAssertEqual(c.text, "world")
-        XCTAssertEqual(textView.string, "world")
-        XCTAssertEqual(coord.lastAppliedText, "world")
+        #expect(c.text == "world")
+        #expect(textView.string == "world")
+        #expect(coord.lastAppliedText == "world")
     }
 
     // MARK: - redundant-apply skip
 
-    func testRedundantApplyDoesNotMoveCursor() throws {
+    @Test func redundantApplyDoesNotMoveCursor() throws {
         let (_, textView, coord) = try makeStack(
             text: .constant("hello"),
             selection: .constant(NSRange(location: 0, length: 0))
         )
 
-        // First apply primes lastApplied state.
         coord.apply(text: "hello", selection: NSRange(location: 0, length: 0), to: textView)
 
-        // Now the user moves the cursor.
         textView.setSelectedRange(NSRange(location: 3, length: 0))
         fireSelectionChanged(textView, on: coord)
 
-        // A second apply with identical binding values must not disturb the cursor.
         coord.apply(text: "hello", selection: NSRange(location: 0, length: 0), to: textView)
 
-        XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 0))
+        #expect(textView.selectedRange() == NSRange(location: 3, length: 0))
     }
 
     // MARK: - delegate writes propagate to bindings
 
-    func testDelegateWritesPropagateToBindings() throws {
+    @Test func delegateWritesPropagateToBindings() throws {
         let textBox = Box("hello")
         let selBox = Box(NSRange(location: 0, length: 0))
 
@@ -182,22 +172,20 @@ final class MarginaliaTextViewMacTests: XCTestCase {
             selection: makeBinding(selBox)
         )
 
-        // User moves cursor — should write through to selBox.
         textView.setSelectedRange(NSRange(location: 3, length: 0))
         fireSelectionChanged(textView, on: coord)
-        XCTAssertEqual(selBox.value, NSRange(location: 3, length: 0))
-        XCTAssertEqual(c.selection, NSRange(location: 3, length: 0))
+        #expect(selBox.value == NSRange(location: 3, length: 0))
+        #expect(c.selection == NSRange(location: 3, length: 0))
 
-        // User types — should write through to textBox.
         c.textStorage.replaceCharacters(in: NSRange(location: 3, length: 0), with: "X")
         textView.setSelectedRange(NSRange(location: 4, length: 0))
         fireTextChanged(textView, on: coord)
-        XCTAssertEqual(textBox.value, "helXlo")
+        #expect(textBox.value == "helXlo")
     }
 
     // MARK: - apply is suppressed during its own delegate echo
 
-    func testApplyDoesNotEchoBackThroughDelegate() throws {
+    @Test func applyDoesNotEchoBackThroughDelegate() throws {
         let textBox = Box("hello")
         let selBox = Box(NSRange(location: 0, length: 0))
 
@@ -206,26 +194,20 @@ final class MarginaliaTextViewMacTests: XCTestCase {
             selection: makeBinding(selBox)
         )
 
-        // External selection update.
         selBox.value = NSRange(location: 2, length: 0)
         coord.apply(text: textBox.value, selection: selBox.value, to: textView)
 
-        // If `setSelectedRange` inside apply re-fires the delegate without the
-        // isApplyingFromBinding guard, the delegate would write back to selBox
-        // again — harmless on its own, but it would re-trigger an apply loop.
-        // The guard means the box is set exactly once, by us.
-        XCTAssertEqual(selBox.value, NSRange(location: 2, length: 0))
+        #expect(selBox.value == NSRange(location: 2, length: 0))
     }
 
     // MARK: - list continuation lands in a state that's stable on re-render
 
-    func testListContinuationLeavesSelectionStableOnReRender() throws {
+    @Test func listContinuationLeavesSelectionStableOnReRender() throws {
         let (c, textView, coord) = try makeStack(
             text: .constant("- item"),
             selection: .constant(NSRange(location: 0, length: 0)),
             initialText: "- item"
         )
-        // Cursor at end of "- item"
         let endLocation = (c.text as NSString).length
         textView.setSelectedRange(NSRange(location: endLocation, length: 0))
         fireSelectionChanged(textView, on: coord)
@@ -234,21 +216,18 @@ final class MarginaliaTextViewMacTests: XCTestCase {
             textView,
             doCommandBy: #selector(NSResponder.insertNewline(_:))
         )
-        XCTAssertTrue(handled, "Return on a list line should be handled by ListContinuation.")
-        XCTAssertEqual(c.text, "- item\n- ")
+        #expect(handled, "Return on a list line should be handled by ListContinuation.")
+        #expect(c.text == "- item\n- ")
         let expectedCursor = ("- item\n- " as NSString).length
-        XCTAssertEqual(textView.selectedRange(), NSRange(location: expectedCursor, length: 0))
+        #expect(textView.selectedRange() == NSRange(location: expectedCursor, length: 0))
 
-        // Now SwiftUI re-renders with the still-constant (0, 0) selection
-        // binding. The new cursor must not be reset.
         coord.apply(
             text: c.text,
             selection: NSRange(location: 0, length: 0),
             to: textView
         )
-        XCTAssertEqual(
-            textView.selectedRange(),
-            NSRange(location: expectedCursor, length: 0),
+        #expect(
+            textView.selectedRange() == NSRange(location: expectedCursor, length: 0),
             "ListContinuation result must survive a stale-binding re-render."
         )
     }
