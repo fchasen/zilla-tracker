@@ -296,7 +296,6 @@ public final class EditorController {
 
         let newMapping = computeMapping(for: source)
         rebuildDisplayIfNeeded(with: newMapping)
-        displayMapping = newMapping
 
         applyAttributes(runs: analysis.runs, full: source)
         applyImageAttachmentChips()
@@ -506,16 +505,27 @@ public final class EditorController {
     }
 
     private func rebuildDisplayIfNeeded(with newMapping: SourceDisplayMapping) {
-        guard textStorage.string != newMapping.displayString else { return }
+        guard textStorage.string != newMapping.displayString else {
+            // No display change but the new mapping still has to win — the
+            // analysis attribute pass and any subsequent translations have to
+            // see the up-to-date mapping.
+            displayMapping = newMapping
+            return
+        }
         let oldDisplaySelection = currentDisplaySelection()
         let sourceSelection = displayMapping.sourceRange(forDisplay: oldDisplaySelection)
+        let newDisplaySelection = newMapping.displayRange(forSource: sourceSelection)
         syncing = true
         textStorage.replaceCharacters(
             in: NSRange(location: 0, length: textStorage.length),
             with: newMapping.displayString
         )
         syncing = false
-        let newDisplaySelection = newMapping.displayRange(forSource: sourceSelection)
+        // Switch to the new mapping BEFORE moving the cursor — when
+        // `setSelectedRange` synchronously fires `textViewDidChangeSelection`,
+        // the delegate translates the new display position back through the
+        // (now-current) mapping and lands on the right source position.
+        displayMapping = newMapping
         setDisplaySelection(newDisplaySelection)
     }
 
