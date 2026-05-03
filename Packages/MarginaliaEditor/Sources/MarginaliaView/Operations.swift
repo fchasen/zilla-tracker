@@ -73,11 +73,15 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformHeading(md, level: level)
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { current in
+            if level == 0 {
+                return BlockSpec(kind: .paragraph,
+                                 blockquoteDepth: current.blockquoteDepth,
+                                 listLevel: current.listLevel)
+            }
+            return BlockSpec(kind: .heading(level: level),
+                             blockquoteDepth: current.blockquoteDepth)
         }
     }
 
@@ -91,15 +95,14 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        if let range = injectEmptyListIfNeeded(
-            in: storage, range: range, kind: .bullet,
-            compiler: compiler, theme: theme
-        ) { return range }
-        return mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformList(md, kind: .bullet)
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { current in
+            if case .unorderedListItem = current.kind {
+                return BlockSpec(kind: .paragraph, blockquoteDepth: current.blockquoteDepth)
+            }
+            return BlockSpec(kind: .unorderedListItem,
+                             blockquoteDepth: current.blockquoteDepth,
+                             listLevel: current.listLevel)
         }
     }
 
@@ -113,15 +116,14 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        if let range = injectEmptyListIfNeeded(
-            in: storage, range: range, kind: .ordered,
-            compiler: compiler, theme: theme
-        ) { return range }
-        return mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformList(md, kind: .ordered)
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { current in
+            if case .orderedListItem = current.kind {
+                return BlockSpec(kind: .paragraph, blockquoteDepth: current.blockquoteDepth)
+            }
+            return BlockSpec(kind: .orderedListItem(index: 1),
+                             blockquoteDepth: current.blockquoteDepth,
+                             listLevel: current.listLevel)
         }
     }
 
@@ -135,15 +137,14 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        if let range = injectEmptyListIfNeeded(
-            in: storage, range: range, kind: .task,
-            compiler: compiler, theme: theme
-        ) { return range }
-        return mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformList(md, kind: .task)
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { current in
+            if case .taskListItem = current.kind {
+                return BlockSpec(kind: .paragraph, blockquoteDepth: current.blockquoteDepth)
+            }
+            return BlockSpec(kind: .taskListItem(checked: false),
+                             blockquoteDepth: current.blockquoteDepth,
+                             listLevel: current.listLevel)
         }
     }
 
@@ -193,14 +194,16 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        if let result = injectEmptyBlockquoteIfNeeded(
-            in: storage, range: range, compiler: compiler, theme: theme
-        ) { return result }
-        return mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformBlockquote(md)
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { current in
+            if current.blockquoteDepth > 0 {
+                return BlockSpec(kind: current.kind,
+                                 blockquoteDepth: current.blockquoteDepth - 1,
+                                 listLevel: current.listLevel)
+            }
+            return BlockSpec(kind: current.kind,
+                             blockquoteDepth: current.blockquoteDepth + 1,
+                             listLevel: current.listLevel)
         }
     }
 
@@ -239,11 +242,13 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            wrapInCodeFence(md)
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { current in
+            if case .fencedCode = current.kind {
+                return BlockSpec(kind: .paragraph, blockquoteDepth: current.blockquoteDepth)
+            }
+            return BlockSpec(kind: .fencedCode(language: nil),
+                             blockquoteDepth: current.blockquoteDepth)
         }
     }
 
@@ -261,11 +266,11 @@ public enum Operations {
             in: storage, range: range, delta: 1,
             compiler: compiler, theme: theme
         ) { return result }
-        return mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformIndent(md)
+        return applySpec(in: storage, range: range,
+                         env: env(compiler, serializer, theme, dialect, mode)) { current in
+            BlockSpec(kind: current.kind,
+                      blockquoteDepth: current.blockquoteDepth,
+                      listLevel: current.listLevel + 1)
         }
     }
 
@@ -283,11 +288,11 @@ public enum Operations {
             in: storage, range: range, delta: -1,
             compiler: compiler, theme: theme
         ) { return result }
-        return mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            transformOutdent(md)
+        return applySpec(in: storage, range: range,
+                         env: env(compiler, serializer, theme, dialect, mode)) { current in
+            BlockSpec(kind: current.kind,
+                      blockquoteDepth: current.blockquoteDepth,
+                      listLevel: max(0, current.listLevel - 1))
         }
     }
 
@@ -422,169 +427,82 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
-            in: storage, range: range, compiler: compiler, serializer: serializer,
-            dialect: dialect, mode: mode, theme: theme
-        ) { md in
-            md + "\n---\n"
+        applySpec(in: storage, range: range,
+                  env: env(compiler, serializer, theme, dialect, mode)) { _ in
+            BlockSpec(kind: .horizontalRule)
         }
     }
 
-    /// Round-trip the paragraph(s) covered by `range` through markdown,
-    /// applying `transform` to the markdown form, then replace the affected
-    /// storage with the recompiled result.
-    private static func mutateBlocks(
+    /// Apply a `BlockSpec` mutation per paragraph covered by `range`.
+    /// Reads the current spec for each paragraph, runs `transform` to
+    /// compute the new spec, then dispatches to `Step.setSpec` to render
+    /// each line. Returns the cursor at the end of the last touched line.
+    private static func applySpec(
         in storage: NSTextStorage,
         range: NSRange,
-        compiler: MarkdownAttributedCompiler,
-        serializer: AttributedMarkdownSerializer,
-        dialect: Dialect,
-        mode: Mode,
-        theme: MarginaliaTheme,
-        transform: (String) -> String
+        env: StepEnvironment,
+        transform: (BlockSpec) -> BlockSpec
     ) -> NSRange {
         let safe = clampedRange(range, in: storage.length)
-        let ns = storage.string as NSString
-        let lineRange = ns.paragraphRange(for: safe)
-        let para = storage.attributedSubstring(from: lineRange)
-        let md = serializer.serialize(para, dialect: dialect)
-        let newMd = transform(md)
-        // Tree-sitter's markdown grammar requires a trailing newline to recognize
-        // block-level constructs. Empty input followed by a marker (e.g. "- ")
-        // would otherwise compile as literal paragraph text.
-        let normalized = newMd.isEmpty || newMd.hasSuffix("\n") ? newMd : newMd + "\n"
-        let newAttr = compiler.compile(normalized, dialect: dialect, mode: mode, theme: theme)
-        storage.beginEditing()
-        storage.replaceCharacters(in: lineRange, with: newAttr)
-        storage.endEditing()
-        // Keep the cursor on the styled line by landing it just before the
-        // trailing newline. Otherwise the user types into the *next*
-        // paragraph instead of continuing to edit what they just headed /
-        // listed / quoted.
-        let endOfLine = lineRange.location + newAttr.length
-        let cursor = max(lineRange.location, endOfLine - 1)
+        let lineRanges = paragraphRanges(in: storage, covering: safe)
+        guard !lineRanges.isEmpty else {
+            // Empty storage: apply to a zero-length range at 0.
+            let step = Step.setSpec(lineRange: NSRange(location: 0, length: 0), transform(.paragraph))
+            let applied = step.apply(to: storage, env: env)
+            let cursor = max(applied.mappedRange.location,
+                             applied.mappedRange.location + applied.mappedRange.length - 1)
+            return NSRange(location: cursor, length: 0)
+        }
+        // Iterate from last to first so prior step's range remains valid for
+        // the next iteration without re-computing offsets.
+        var lastMappedRange = NSRange(location: lineRanges.last!.location, length: 0)
+        for lineRange in lineRanges.reversed() {
+            let probe = max(0, min(lineRange.location, max(0, storage.length - 1)))
+            let currentSpec = storage.blockSpec(at: probe) ?? .paragraph
+            let newSpec = transform(currentSpec)
+            let step = Step.setSpec(lineRange: lineRange, newSpec)
+            let applied = step.apply(to: storage, env: env)
+            // Cursor lands at end of the FIRST applied line (which, since
+            // we iterate in reverse, is the last iteration of the loop).
+            lastMappedRange = applied.mappedRange
+        }
+        let cursor = max(lastMappedRange.location,
+                         lastMappedRange.location + lastMappedRange.length - 1)
         return NSRange(location: cursor, length: 0)
     }
 
-    // MARK: - markdown transforms
-
-    private static func transformHeading(_ md: String, level: Int) -> String {
-        let lines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let stripped = lines.map(stripLeadingHeadingPrefix)
-        let prefix = level == 0 ? "" : String(repeating: "#", count: max(1, min(6, level))) + " "
-        let result = stripped.map { line -> String in
-            line.isEmpty ? line : prefix + line
+    /// Enumerate each paragraph (line) range that intersects `range`.
+    private static func paragraphRanges(
+        in storage: NSTextStorage,
+        covering range: NSRange
+    ) -> [NSRange] {
+        guard storage.length > 0 else { return [] }
+        let ns = storage.string as NSString
+        var ranges: [NSRange] = []
+        var cursor = range.location
+        let end = max(range.location, range.location + range.length)
+        while cursor <= end && cursor < ns.length {
+            let line = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
+            ranges.append(line)
+            let next = line.location + line.length
+            if next == cursor { break }
+            cursor = next
+            if cursor >= end && range.length > 0 { break }
         }
-        return result.joined(separator: "\n")
+        if range.length == 0 && ranges.isEmpty {
+            ranges.append(ns.paragraphRange(for: NSRange(location: max(0, min(range.location, ns.length - 1)), length: 0)))
+        }
+        return ranges
     }
 
-    private static func stripLeadingHeadingPrefix(_ line: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#) else { return line }
-        let ns = line as NSString
-        let m = regex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length))
-        guard let m else { return line }
-        return ns.substring(from: m.range.upperBound)
-    }
-
-    private enum ListMarkerKind { case bullet, ordered, task }
-
-    private static func transformList(_ md: String, kind: ListMarkerKind) -> String {
-        let rawLines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        // Treat an empty input as "the user wants a list line right here" —
-        // otherwise clicking the bullet button on an empty editor does
-        // nothing.
-        let lines = rawLines.isEmpty ? [""] : rawLines
-        let allEmpty = lines.allSatisfy { $0.isEmpty }
-        let allMatch = lines.allSatisfy { line in
-            line.isEmpty || lineHasListMarker(line, kind: kind)
-        }
-        if allMatch && !allEmpty {
-            return lines.map(stripListMarker).joined(separator: "\n")
-        }
-        let prefix: (Int) -> String = { idx in
-            switch kind {
-            case .bullet: return "- "
-            case .ordered: return "\(idx). "
-            case .task: return "- [ ] "
-            }
-        }
-        var counter = 1
-        let stripped = lines.map(stripListMarker)
-        let result = stripped.enumerated().map { idx, line -> String in
-            // Empty paragraph: still inject a marker on the first blank
-            // line so the toolbar action visibly creates a list item.
-            if line.isEmpty {
-                if allEmpty && idx == 0 {
-                    defer { if kind == .ordered { counter += 1 } }
-                    return prefix(counter)
-                }
-                return line
-            }
-            defer { if kind == .ordered { counter += 1 } }
-            return prefix(counter) + line
-        }
-        return result.joined(separator: "\n")
-    }
-
-    private static func lineHasListMarker(_ line: String, kind: ListMarkerKind) -> Bool {
-        let pattern: String
-        switch kind {
-        case .bullet: pattern = #"^\s*[-*+]\s+"#
-        case .ordered: pattern = #"^\s*\d+[.)]\s+"#
-        case .task: pattern = #"^\s*[-*+]\s+\[[ xX]\]\s+"#
-        }
-        return line.range(of: pattern, options: .regularExpression) != nil
-    }
-
-    private static func stripListMarker(_ line: String) -> String {
-        let patterns = [#"^\s*[-*+]\s+\[[ xX]\]\s+"#, #"^\s*[-*+]\s+"#, #"^\s*\d+[.)]\s+"#]
-        for p in patterns {
-            if let r = line.range(of: p, options: .regularExpression) {
-                return String(line[r.upperBound...])
-            }
-        }
-        return line
-    }
-
-    private static func transformBlockquote(_ md: String) -> String {
-        let lines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let allQuoted = lines.allSatisfy { $0.isEmpty || $0.hasPrefix("> ") || $0 == ">" }
-        if allQuoted && !lines.allSatisfy({ $0.isEmpty }) {
-            return lines.map { line -> String in
-                if line.hasPrefix("> ") { return String(line.dropFirst(2)) }
-                if line == ">" { return "" }
-                return line
-            }.joined(separator: "\n")
-        }
-        return lines.map { line -> String in
-            line.isEmpty ? ">" : "> " + line
-        }.joined(separator: "\n")
-    }
-
-    private static func transformIndent(_ md: String) -> String {
-        md.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line -> String in
-                line.isEmpty ? String(line) : "  " + String(line)
-            }
-            .joined(separator: "\n")
-    }
-
-    private static func transformOutdent(_ md: String) -> String {
-        md.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line -> String in
-                let s = String(line)
-                if s.hasPrefix("  ") { return String(s.dropFirst(2)) }
-                if s.hasPrefix("\t") { return String(s.dropFirst()) }
-                return s
-            }
-            .joined(separator: "\n")
-    }
-
-    private static func wrapInCodeFence(_ md: String) -> String {
-        var trimmed = md
-        while trimmed.hasSuffix("\n") { trimmed.removeLast() }
-        if trimmed.isEmpty { trimmed = "code" }
-        return "```\n" + trimmed + "\n```"
+    private static func env(
+        _ compiler: MarkdownAttributedCompiler,
+        _ serializer: AttributedMarkdownSerializer,
+        _ theme: MarginaliaTheme,
+        _ dialect: Dialect,
+        _ mode: Mode
+    ) -> StepEnvironment {
+        StepEnvironment(compiler: compiler, serializer: serializer, theme: theme, dialect: dialect, mode: mode)
     }
 
     // MARK: - inline format toggles

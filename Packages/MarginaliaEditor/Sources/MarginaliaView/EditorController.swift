@@ -281,6 +281,55 @@ public final class EditorController {
         return result
     }
 
+    public func makeStepEnvironment() -> StepEnvironment {
+        StepEnvironment(
+            compiler: compiler,
+            serializer: serializer,
+            theme: theme,
+            dialect: dialect,
+            mode: mode
+        )
+    }
+
+    /// Apply a transaction. Wraps each step in the controller's undo
+    /// machinery so an arbitrary spec mutation is reversible from the
+    /// menu/keyboard. Returns the mapped range of the last applied step
+    /// (the host text view's selection lands there).
+    @discardableResult
+    public func apply(_ transaction: Transaction) -> NSRange {
+        guard !transaction.steps.isEmpty else { return currentSelection }
+        let env = makeStepEnvironment()
+        var lastRange = currentSelection
+        let mutationRange = mutationRange(for: transaction)
+        withCharacterMutation(range: mutationRange) {
+            applyingMarkdown = true
+            let applied = transaction.apply(to: textStorage, env: env)
+            lastRange = applied.mappedRange
+            applyingMarkdown = false
+            resegment()
+            intrinsicSizeInvalidator?()
+        }
+        let cursor = max(lastRange.location, lastRange.location + lastRange.length - 1)
+        let cursorRange = NSRange(location: cursor, length: 0)
+        setHostSelection(cursorRange)
+        refreshTypingAttributes(at: cursor)
+        return cursorRange
+    }
+
+    private func mutationRange(for transaction: Transaction) -> NSRange {
+        var lo = textStorage.length
+        var hi = 0
+        for step in transaction.steps {
+            switch step {
+            case .replaceText(let range, _), .setSpec(let range, _):
+                lo = min(lo, range.location)
+                hi = max(hi, range.location + range.length)
+            }
+        }
+        guard hi > lo else { return NSRange(location: 0, length: 0) }
+        return NSRange(location: lo, length: hi - lo)
+    }
+
     /// Apply an editor action against the host text view's current
     /// selection. The text view owns the selection; this is the path the
     /// `@objc` action methods call from the responder chain.
