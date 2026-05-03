@@ -116,7 +116,6 @@ import MarginaliaView
         // NOT `##*F*red` (which is what it produced when selection was
         // misinterpreted as display coords).
         let c = try EditorController(initialText: "## Fred")
-        c.mode = .wysiwyg
         c.refreshNow()
         c.selection = NSRange(location: 3, length: 1)
         let textBox = Box(c.text)

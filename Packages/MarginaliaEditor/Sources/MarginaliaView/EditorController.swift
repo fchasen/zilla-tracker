@@ -34,9 +34,6 @@ public final class EditorController {
     public var dialect: Highlighter.Dialect {
         didSet { rebuildHighlighter(); refresh() }
     }
-    public var mode: MarginaliaMode = .wysiwyg {
-        didSet { refresh() }
-    }
 
     /// Most recent block-level classification, computed alongside highlights.
     public private(set) var blockRegions: [BlockRegion] = []
@@ -57,8 +54,8 @@ public final class EditorController {
     public private(set) var inlineRegions: [InlineRegion] = []
 
     /// Translation between the markdown source and the rendered display
-    /// string. Identity in `.source` mode; elides markup syntax in
-    /// `.wysiwyg` mode.
+    /// string. Elides markup syntax everywhere except the active line, where
+    /// the source markdown stays visible so the caret can edit it directly.
     public private(set) var displayMapping: SourceDisplayMapping = .identity(for: "")
 
     /// The platform text view backed by `textContainer`. Held weakly so the
@@ -371,17 +368,7 @@ public final class EditorController {
     }
 
     private func computeMapping(for source: String) -> SourceDisplayMapping {
-        let subs: [DisplaySubstitution]
-        switch mode {
-        case .source:
-            // Source mode: only checkbox glyph substitution applies; markup
-            // is left visible.
-            subs = checkboxSubstitutions(in: source).map { match in
-                DisplaySubstitution(sourceRange: match.bracketRange, displayString: "\u{FFFC}")
-            }
-        case .wysiwyg:
-            subs = wysiwygSubstitutions(for: source)
-        }
+        let subs = wysiwygSubstitutions(for: source)
         return DisplayTransform.transform(source: source, substitutions: subs)
     }
 
@@ -660,14 +647,10 @@ public final class EditorController {
         }
     }
 
-    /// Selection moves don't usually need a re-parse, but in WYSIWYG mode
-    /// the transform reveals the active line's markdown — so a line change
-    /// has to rebuild the mapping.
+    /// Selection moves don't usually need a re-parse, but the transform
+    /// reveals the active line's markdown — so a line change has to rebuild
+    /// the mapping.
     private func onSelectionChanged(from oldSelection: NSRange) {
-        guard mode == .wysiwyg else {
-            recomputeHidden()
-            return
-        }
         let ns = sourceStorage.string as NSString
         let oldLine = ns.lineRange(for: oldSelection.clamped(to: ns.length))
         let newLine = ns.lineRange(for: selection.clamped(to: ns.length))

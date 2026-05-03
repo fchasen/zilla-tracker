@@ -55,18 +55,21 @@ import MarginaliaSyntax
 
     // MARK: - source/display split
 
-    @Test func sourceMatchesDisplayAfterInit() throws {
+    @Test func sourceAndDisplayMatchOnPlainText() throws {
+        // Plain text (no markup) — display always matches source.
         let c = try EditorController(initialText: "hello world")
-        c.mode = .source
         c.refreshNow()
         #expect(c.sourceStorage.string == "hello world")
         #expect(c.textStorage.string == "hello world")
     }
 
     @Test func setTextUpdatesBothStorages() throws {
+        // Caret on the heading line keeps markdown visible — display matches
+        // source for the active line.
         let c = try EditorController(initialText: "old")
-        c.mode = .source
         c.setText("# new heading")
+        c.selection = NSRange(location: 0, length: 0)
+        c.refreshNow()
         #expect(c.sourceStorage.string == "# new heading")
         #expect(c.textStorage.string == "# new heading")
         #expect(c.text == "# new heading")
@@ -74,7 +77,6 @@ import MarginaliaSyntax
 
     @Test func displayEditMirrorsToSource() throws {
         let c = try EditorController(initialText: "hello")
-        c.mode = .source
         c.refreshNow()
         c.textStorage.replaceCharacters(in: NSRange(location: 5, length: 0), with: " world")
         #expect(c.sourceStorage.string == "hello world")
@@ -83,80 +85,58 @@ import MarginaliaSyntax
 
     @Test func applyEditUpdatesSource() throws {
         let c = try EditorController(initialText: "Hello\n")
-        c.mode = .source
         c.applyEdit(replacing: NSRange(location: 0, length: 0), with: "# ")
+        c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
         #expect(c.sourceStorage.string == "# Hello\n")
+        // Caret on the heading line — markdown stays visible.
         #expect(c.textStorage.string == "# Hello\n")
     }
 
-    // MARK: - mode
+    // MARK: - active-line focus
 
-    @Test func sourceModeKeepsDisplayMatchingSource() throws {
-        let c = try EditorController(initialText: "# Heading")
-        c.mode = .source
-        c.refreshNow()
-        #expect(c.textStorage.string == "# Heading")
-        #expect(c.hiddenRanges.isEmpty)
-    }
-
-    @Test func wysiwygModeElidesHeadingMarkerWhenCaretIsOffLine() throws {
+    @Test func headingMarkerElidesWhenCaretIsOffLine() throws {
         // Cursor on line 1 (the body) — line 0's heading marker collapses.
         let c = try EditorController(initialText: "# Heading\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 12, length: 0)
         c.refreshNow()
         #expect(c.textStorage.string == "Heading\nbody")
     }
 
-    @Test func wysiwygModeKeepsActiveLineMarkdownVisible() throws {
+    @Test func activeLineKeepsMarkdownVisible() throws {
         // Cursor on line 0 — markdown for that line stays visible so the
         // user can edit the markup directly.
         let c = try EditorController(initialText: "# Heading\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
         #expect(c.textStorage.string == "# Heading\nbody")
     }
 
-    @Test func wysiwygModeElidesEmphasisDelimitersOffLine() throws {
+    @Test func emphasisDelimitersElideOffActiveLine() throws {
         let c = try EditorController(initialText: "**bold**\nsecond")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 9, length: 0)
         c.refreshNow()
         #expect(c.textStorage.string == "bold\nsecond")
     }
 
-    @Test func wysiwygModeElidesInlineLinkSyntaxOffLine() throws {
+    @Test func inlineLinkSyntaxElidesOffActiveLine() throws {
         let c = try EditorController(initialText: "see [docs](https://example.com)\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 32, length: 0)
         c.refreshNow()
         #expect(c.textStorage.string == "see docs\nbody")
     }
 
-    @Test func wysiwygModeKeepsListMarkerVisible() throws {
-        let c = try EditorController(initialText: "- foo")
-        c.mode = .wysiwyg
+    @Test func listMarkerStaysVisible() throws {
+        // Cursor on the body line — line 0's `- ` bullet stays in display
+        // so the bullet glyph substitution can render.
+        let c = try EditorController(initialText: "- foo\nbar")
+        c.selection = NSRange(location: 6, length: 0)
         c.refreshNow()
-        // The dash itself stays in display so the bullet glyph substitution
-        // has something to render.
-        #expect(c.textStorage.string == "- foo")
+        #expect(c.textStorage.string == "- foo\nbar")
     }
 
-    @Test func switchingToSourceRestoresFullMarkdown() throws {
+    @Test func selectionMoveAcrossLinesRebuildsDisplay() throws {
         let c = try EditorController(initialText: "# Heading\nbody")
-        c.mode = .wysiwyg
-        c.selection = NSRange(location: 12, length: 0)
-        c.refreshNow()
-        #expect(c.textStorage.string == "Heading\nbody")
-        c.mode = .source
-        #expect(c.textStorage.string == "# Heading\nbody")
-    }
-
-    @Test func wysiwygSelectionMoveAcrossLinesRebuildsDisplay() throws {
-        let c = try EditorController(initialText: "# Heading\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
         // Active line is line 0 — heading markdown visible.
@@ -168,32 +148,30 @@ import MarginaliaSyntax
 
     // MARK: - checkbox + image substitutions
 
-    @Test func uncheckedTaskUsesCheckboxAttachmentInSourceMode() throws {
-        let c = try EditorController(initialText: "- [ ] task")
-        c.mode = .source
+    @Test func uncheckedTaskShowsCheckboxAttachmentOffActiveLine() throws {
+        // Caret off the task line so the bullet elides and the checkbox
+        // substitution kicks in.
+        let c = try EditorController(initialText: "- [ ] task\nbody")
+        c.selection = NSRange(location: 12, length: 0)
         c.refreshNow()
-        // Display keeps the bullet visible (source mode shows markdown);
-        // only the bracket substitutes to a `￼` with a CheckboxAttachment.
-        #expect(c.textStorage.string == "- \u{FFFC} task")
-        let attrs = c.textStorage.attributes(at: 2, effectiveRange: nil)
+        // Display starts with the `￼` placeholder (no bullet).
+        #expect(c.textStorage.string == "\u{FFFC} task\nbody")
+        let attrs = c.textStorage.attributes(at: 0, effectiveRange: nil)
         let attachment = try #require(attrs[.attachment] as? CheckboxAttachment)
         #expect(attachment.isChecked == false)
     }
 
     @Test func checkedTaskCheckboxIsChecked() throws {
-        let c = try EditorController(initialText: "- [x] done")
-        c.mode = .source
+        let c = try EditorController(initialText: "- [x] done\nbody")
+        c.selection = NSRange(location: 12, length: 0)
         c.refreshNow()
-        let attrs = c.textStorage.attributes(at: 2, effectiveRange: nil)
+        let attrs = c.textStorage.attributes(at: 0, effectiveRange: nil)
         let attachment = try #require(attrs[.attachment] as? CheckboxAttachment)
         #expect(attachment.isChecked == true)
     }
 
-    @Test func wysiwygTaskLineHidesBulletAndShowsCheckbox() throws {
-        // Off-active-line task line in wysiwyg mode: bullet `- ` elides,
-        // bracket substitutes to checkbox attachment.
+    @Test func taskLineHidesBulletAndShowsCheckbox() throws {
         let c = try EditorController(initialText: "- [ ] task\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 12, length: 0)
         c.refreshNow()
         // Display is "￼ task\nbody" — no bullet, just the checkbox.
@@ -255,7 +233,6 @@ import MarginaliaSyntax
 
     @Test func imageRangeIsSubstitutedToObjectReplacement() throws {
         let c = try EditorController(initialText: "see ![alt](https://example.com/x.png) here\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 44, length: 0)
         c.refreshNow()
         #expect(c.textStorage.string == "see \u{FFFC} here\nbody")
@@ -263,7 +240,6 @@ import MarginaliaSyntax
 
     @Test func imageObjectReplacementGetsChipAttachment() throws {
         let c = try EditorController(initialText: "![alt text](https://example.com/x.png)\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 39, length: 0)
         c.refreshNow()
         let attrs = c.textStorage.attributes(at: 0, effectiveRange: nil)
@@ -274,7 +250,6 @@ import MarginaliaSyntax
 
     @Test func emptyImageAltFallsBackToPlaceholderLabel() throws {
         let c = try EditorController(initialText: "![](https://example.com/x.png)\nbody")
-        c.mode = .wysiwyg
         c.selection = NSRange(location: 31, length: 0)
         c.refreshNow()
         let attrs = c.textStorage.attributes(at: 0, effectiveRange: nil)
@@ -352,11 +327,11 @@ import MarginaliaSyntax
     }
 
     @Test func multipleTasksAllGetCheckboxSubstitution() throws {
-        let source = "- [ ] one\n- [ ] two\n- [ ] three"
+        // Caret on a non-task fourth line so all three task lines elide.
+        let source = "- [ ] one\n- [ ] two\n- [ ] three\nbody"
         let c = try EditorController(initialText: source)
-        c.mode = .source
+        c.selection = NSRange(location: (source as NSString).length, length: 0)
         c.refreshNow()
-        // One `￼` per task line.
         let count = c.textStorage.string.filter { $0 == "\u{FFFC}" }.count
         #expect(count == 3, "expected 3 checkboxes in: \(c.textStorage.string)")
     }
@@ -365,11 +340,26 @@ import MarginaliaSyntax
         // Reproduces the "hit return → new task line missing checkbox" path:
         // ListContinuation produces "- [ ] " as the new line; we need that
         // trailing-space-only marker to still substitute its `[ ]`.
-        let source = "- [ ] one\n- [ ] "
+        let source = "- [ ] one\n- [ ] \nbody"
         let c = try EditorController(initialText: source)
-        c.mode = .source
+        c.selection = NSRange(location: (source as NSString).length, length: 0)
         c.refreshNow()
         let count = c.textStorage.string.filter { $0 == "\u{FFFC}" }.count
         #expect(count == 2, "expected 2 checkboxes in: \(c.textStorage.string)")
+    }
+
+    @Test func threeTaskLinesActiveLastShowsTwoCheckboxes() throws {
+        let source = "* [ ] gt\n* [ ] this\n* [ ] "
+        let c = try EditorController(initialText: source)
+        c.selection = NSRange(location: (source as NSString).length, length: 0)
+        c.refreshNow()
+        #expect(c.textStorage.string == "\u{FFFC} gt\n\u{FFFC} this\n* [ ] ")
+        let firstAttrs = c.textStorage.attributes(at: 0, effectiveRange: nil)
+        let firstAttachment = try #require(firstAttrs[.attachment] as? CheckboxAttachment)
+        #expect(firstAttachment.isChecked == false)
+        let secondCheckboxIndex = ("\u{FFFC} gt\n" as NSString).length
+        let secondAttrs = c.textStorage.attributes(at: secondCheckboxIndex, effectiveRange: nil)
+        let secondAttachment = try #require(secondAttrs[.attachment] as? CheckboxAttachment)
+        #expect(secondAttachment.isChecked == false)
     }
 }

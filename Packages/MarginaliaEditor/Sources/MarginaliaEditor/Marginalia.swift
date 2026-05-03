@@ -36,12 +36,7 @@ public struct Marginalia: View {
     @Environment(\.marginaliaInlineContentProvider) private var inlineProvider
 
     @AppStorage("marginalia.toolbarVisible") private var toolbarVisible = true
-    @AppStorage("marginalia.mode") private var modeRawValue: String = MarginaliaMode.wysiwyg.rawValue
     @StateObject private var hosting = MarginaliaHosting()
-
-    private var mode: MarginaliaMode {
-        MarginaliaMode(rawValue: modeRawValue) ?? .wysiwyg
-    }
 
     public init(text: Binding<String>, selection: Binding<NSRange> = .constant(NSRange(location: 0, length: 0))) {
         self._text = text
@@ -54,7 +49,7 @@ public struct Marginalia: View {
                 HStack(spacing: 12) {
                     if !configuration.toolbar.isEmpty {
                         MarginaliaToolbar(
-                            items: configuration.toolbar + [.spacer, modeToggleItem],
+                            items: configuration.toolbar,
                             perform: { action in
                                 guard let controller = hosting.controller else { return }
                                 MarginaliaToolbarActions.perform(
@@ -79,10 +74,9 @@ public struct Marginalia: View {
             editorBody
         }
         .onAppear {
-            hosting.ensureController(initialText: text, dialect: dialect, theme: theme, mode: mode)
-            if let controller = hosting.controller {
-                if controller.text != text { controller.setText(text) }
-                controller.mode = mode
+            hosting.ensureController(initialText: text, dialect: dialect, theme: theme)
+            if let controller = hosting.controller, controller.text != text {
+                controller.setText(text)
             }
         }
         .onChange(of: dialect) { _, newDialect in
@@ -91,25 +85,6 @@ public struct Marginalia: View {
         .onChange(of: theme) { _, newTheme in
             hosting.controller?.theme = newTheme
         }
-        .onChange(of: modeRawValue) { _, _ in
-            hosting.controller?.mode = mode
-        }
-    }
-
-    private var modeToggleItem: Marginalia.ToolbarItem {
-        let label = mode == .source ? "Show rendered" : "Show source"
-        let symbol = mode == .source ? "eye" : "doc.plaintext"
-        return .custom(
-            id: "marginaliaModeToggle",
-            label: label,
-            systemImage: symbol,
-            shortcut: nil,
-            topLevel: true,
-            action: {
-                let next: MarginaliaMode = (mode == .source) ? .wysiwyg : .source
-                modeRawValue = next.rawValue
-            }
-        )
     }
 
     @ViewBuilder
@@ -288,13 +263,10 @@ final class MarginaliaHosting: ObservableObject {
     func ensureController(
         initialText: String,
         dialect: Highlighter.Dialect,
-        theme: MarginaliaTheme,
-        mode: MarginaliaMode
+        theme: MarginaliaTheme
     ) {
         if controller == nil {
-            let c = try? EditorController(initialText: initialText, theme: theme, dialect: dialect)
-            c?.mode = mode
-            controller = c
+            controller = try? EditorController(initialText: initialText, theme: theme, dialect: dialect)
         }
     }
 }

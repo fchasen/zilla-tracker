@@ -10,9 +10,11 @@ import UIKit
 
 @Suite(.serialized) struct LayoutFragmentTests {
 
-    @Test func fencedCodeBlockDispatchesFencedFragmentInSourceMode() throws {
+    @Test func fencedCodeBlockDispatchesFencedFragment() throws {
+        // Caret on the first line so the active-line reveal keeps its
+        // markdown verbatim — that's where the layout fragment paints chrome.
         let c = try EditorController(initialText: "```\nlet x = 1\n```\n")
-        c.mode = .source
+        c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
@@ -22,19 +24,9 @@ import UIKit
         #expect(fenced.contains { $0.isLastLine })
     }
 
-    @Test func fencedCodeBlockDispatchesFencedFragmentInWysiwygMode() throws {
-        let c = try EditorController(initialText: "```\nlet x = 1\n```\n")
-        c.mode = .wysiwyg
-        c.refreshNow()
-
-        let fragments = collectFragments(in: c)
-        let fenced = fragments.compactMap { $0 as? FencedCodeBlockLayoutFragment }
-        #expect(fenced.count >= 1, "expected FencedCodeBlockLayoutFragment in wysiwyg too")
-    }
-
     @Test func fencedCodeBlockExposesLanguage() throws {
         let c = try EditorController(initialText: "```swift\nlet x = 1\n```\n")
-        c.mode = .source
+        c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
@@ -44,7 +36,7 @@ import UIKit
 
     @Test func indentedCodeBlockDispatchesIndentedFragment() throws {
         let c = try EditorController(initialText: "    let x = 1\n    let y = 2\n")
-        c.mode = .source
+        c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
@@ -55,7 +47,7 @@ import UIKit
     @Test func pipeTableDispatchesPipeTableFragment() throws {
         let source = "| a | b |\n|---|---|\n| 1 | 2 |\n"
         let c = try EditorController(initialText: source)
-        c.mode = .source
+        c.selection = NSRange(location: 0, length: 0)
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
