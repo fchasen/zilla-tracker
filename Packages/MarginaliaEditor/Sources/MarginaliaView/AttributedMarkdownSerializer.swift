@@ -160,15 +160,14 @@ public final class AttributedMarkdownSerializer {
         var prefix = ""
         var suffix = ""
 
-        // Link
+        // Link — always emit CommonMark `[label](url)`. Phabricator surfaces
+        // run the output through `Markdown.toRemarkup` which rewrites this
+        // to `[[url | label]]`. Centralising dialect translation in the
+        // converter keeps the editor's output single-format and easier to
+        // reason about.
         if let url = (attrs[.marginaliaLink] as? String) ?? linkURLString(from: attrs[.link]) {
             let label = stripTrailingNewline(content)
-            switch dialect {
-            case .commonMark:
-                return "[\(label)](\(url))"
-            case .remarkup:
-                return "[[\(url) | \(label)]]"
-            }
+            return "[\(label)](\(url))"
         }
 
         // Code span — detected via the inline tag the compiler sets so we
@@ -183,7 +182,9 @@ public final class AttributedMarkdownSerializer {
         }
 
         // Bold / italic via font traits. Heading-paragraph bold is implied
-        // by the block style and must not be re-emitted as `**…**`.
+        // by the block style and must not be re-emitted as `**…**`. Italic
+        // always uses CommonMark `*…*`; the post-time `Markdown.toRemarkup`
+        // converter turns it into `//…//` for Phabricator.
         if let font = attrs[.font] as? PlatformFont {
             let traits = symbolicTraits(of: font)
             let bold = isBold(traits) && !paragraphImpliedBold(for: block)
@@ -193,10 +194,7 @@ public final class AttributedMarkdownSerializer {
             } else if bold {
                 prefix = "**"; suffix = "**"
             } else if italic {
-                switch dialect {
-                case .commonMark: prefix = "*"; suffix = "*"
-                case .remarkup: prefix = "//"; suffix = "//"
-                }
+                prefix = "*"; suffix = "*"
             }
         }
 

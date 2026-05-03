@@ -36,7 +36,8 @@ struct RevisionCommentSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     dialect: .remarkup,
-                    bordered: false
+                    bordered: false,
+                    autoFocus: true
                 )
                 Spacer(minLength: 0)
             }
@@ -68,7 +69,7 @@ struct RevisionCommentSheet: View {
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
-            transactions: [.comment(trimmed)],
+            transactions: [.comment(Markdown.toRemarkup(trimmed))],
             using: phab.client
         ) {
             workspace.lastUpdateError = error.localizedDescription

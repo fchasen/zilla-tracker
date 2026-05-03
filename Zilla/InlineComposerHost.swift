@@ -99,7 +99,7 @@ struct InlineComposerHost: View {
     private func post() async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let body = trimmed
+        let body = Markdown.toRemarkup(trimmed)
         isPosting = true
         defer { isPosting = false }
         let error: Error?
