@@ -21,7 +21,7 @@ public final class AttributedMarkdownSerializer {
         var cursor = 0
 
         while cursor < total {
-            let blockAttr = attributed.attribute(.marginaliaBlock, at: cursor, effectiveRange: nil) as? BlockAttribute
+            let blockAttr = attributed.safeAttribute(.marginaliaBlock, at: cursor) as? BlockAttribute
             // Compute the contiguous range with the same identity (matched
             // BlockAttribute pointer or equal struct). enumerateAttribute is
             // simpler — build the range by scanning forward.
@@ -76,18 +76,18 @@ public final class AttributedMarkdownSerializer {
         case .blockquote:
             return prefixLines(trimmed, with: blockquotePrefix)
         case .unorderedListItem:
-            let listAttr = attributed.attribute(.marginaliaListItem, at: range.location, effectiveRange: nil) as? ListItemAttribute
+            let listAttr = attributed.safeAttribute(.marginaliaListItem, at: range.location) as? ListItemAttribute
             let level = listAttr?.level ?? 0
             let indent = String(repeating: "  ", count: max(0, level))
             return blockquotePrefix + indent + "- " + trimmed
         case .orderedListItem:
-            let listAttr = attributed.attribute(.marginaliaListItem, at: range.location, effectiveRange: nil) as? ListItemAttribute
+            let listAttr = attributed.safeAttribute(.marginaliaListItem, at: range.location) as? ListItemAttribute
             let level = listAttr?.level ?? 0
             let index = listAttr?.orderedIndex ?? 1
             let indent = String(repeating: "  ", count: max(0, level))
             return blockquotePrefix + indent + "\(index). " + trimmed
         case .taskListItem:
-            let listAttr = attributed.attribute(.marginaliaListItem, at: range.location, effectiveRange: nil) as? ListItemAttribute
+            let listAttr = attributed.safeAttribute(.marginaliaListItem, at: range.location) as? ListItemAttribute
             let level = listAttr?.level ?? 0
             let checked = listAttr?.isChecked ?? false
             let indent = String(repeating: "  ", count: max(0, level))
@@ -119,10 +119,12 @@ public final class AttributedMarkdownSerializer {
         let end = range.location + range.length
         while cursor < end {
             var runRange = NSRange(location: cursor, length: 0)
-            let attrs = attributed.attributes(at: cursor, longestEffectiveRange: &runRange, in: NSRange(location: cursor, length: end - cursor))
-            let runText = (attributed.string as NSString).substring(with: runRange)
+            let attrs = attributed.safeAttributes(at: cursor, longestEffectiveRange: &runRange, in: NSRange(location: cursor, length: end - cursor))
+            let runLen = runRange.length > 0 ? runRange.length : 1
+            let actualRange = NSRange(location: cursor, length: min(runLen, end - cursor))
+            let runText = (attributed.string as NSString).substring(with: actualRange)
             out.append(emitInlineRun(text: runText, attrs: attrs, dialect: dialect, in: block))
-            cursor = runRange.location + runRange.length
+            cursor += actualRange.length
         }
         return out
     }
