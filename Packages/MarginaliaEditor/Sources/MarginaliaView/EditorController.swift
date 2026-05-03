@@ -76,11 +76,37 @@ public final class EditorController {
         ) { [weak self] _ in
             guard let self, !self.applyingMarkdown else { return }
             if self.textStorage.editedMask.contains(.editedCharacters) {
+                self.scrubTypedAttributes()
                 self.demoteEmptyStyledLines()
                 self.resegment()
                 self.intrinsicSizeInvalidator?()
             }
         }
+    }
+
+    /// Typing right after a compiler-inserted marker (bullet glyph,
+    /// checkbox attachment, ordered number) inherits its attributes via
+    /// NSTextView's typing-attributes machinery. Strip the
+    /// `.marginaliaListMarker` and `.marginaliaInline` flags from the
+    /// freshly inserted text so the serializer doesn't drop the typed
+    /// content thinking it's still part of the marker run.
+    private func scrubTypedAttributes() {
+        let editedRange = textStorage.editedRange
+        guard editedRange.length > 0 else { return }
+        let safe = NSRange(
+            location: max(0, min(editedRange.location, textStorage.length)),
+            length: max(0, min(editedRange.length, textStorage.length - max(0, min(editedRange.location, textStorage.length))))
+        )
+        guard safe.length > 0 else { return }
+        applyingMarkdown = true
+        textStorage.beginEditing()
+        textStorage.removeAttribute(.marginaliaListMarker, range: safe)
+        // Don't blanket-remove .marginaliaInline — code-span typing should
+        // keep its tag — but DO remove a stray .attachment that NSTextView
+        // sometimes propagates from an adjacent attachment glyph.
+        textStorage.removeAttribute(.attachment, range: safe)
+        textStorage.endEditing()
+        applyingMarkdown = false
     }
 
     /// After a character edit, scan the edited paragraphs and reset any
