@@ -168,27 +168,49 @@ import MarginaliaSyntax
 
     // MARK: - checkbox + image substitutions
 
-    @Test func uncheckedTaskShowsBallotBox() throws {
+    @Test func uncheckedTaskUsesCheckboxAttachmentInSourceMode() throws {
         let c = try EditorController(initialText: "- [ ] task")
         c.mode = .source
         c.refreshNow()
-        #expect(c.textStorage.string == "- \u{2610} task")
+        // Display keeps the bullet visible (source mode shows markdown);
+        // only the bracket substitutes to a `￼` with a CheckboxAttachment.
+        #expect(c.textStorage.string == "- \u{FFFC} task")
+        let attrs = c.textStorage.attributes(at: 2, effectiveRange: nil)
+        let attachment = try #require(attrs[.attachment] as? CheckboxAttachment)
+        #expect(attachment.isChecked == false)
     }
 
-    @Test func checkedTaskShowsCheckedBallotBox() throws {
+    @Test func checkedTaskCheckboxIsChecked() throws {
         let c = try EditorController(initialText: "- [x] done")
         c.mode = .source
         c.refreshNow()
-        #expect(c.textStorage.string == "- \u{2611} done")
+        let attrs = c.textStorage.attributes(at: 2, effectiveRange: nil)
+        let attachment = try #require(attrs[.attachment] as? CheckboxAttachment)
+        #expect(attachment.isChecked == true)
     }
 
-    @Test func taskMarkerSubstitutionAppliesInWysiwygOffActiveLine() throws {
+    @Test func wysiwygTaskLineHidesBulletAndShowsCheckbox() throws {
+        // Off-active-line task line in wysiwyg mode: bullet `- ` elides,
+        // bracket substitutes to checkbox attachment.
         let c = try EditorController(initialText: "- [ ] task\nbody")
         c.mode = .wysiwyg
         c.selection = NSRange(location: 12, length: 0)
         c.refreshNow()
-        // Cursor on line 1; line 0's `[ ]` substitutes to the checkbox glyph.
-        #expect(c.textStorage.string == "- \u{2610} task\nbody")
+        // Display is "￼ task\nbody" — no bullet, just the checkbox.
+        #expect(c.textStorage.string == "\u{FFFC} task\nbody")
+    }
+
+    @Test func toggleTaskFlipsBracket() throws {
+        let c = try EditorController(initialText: "- [ ] one\n- [x] two")
+        c.toggleTask(atSourceLocation: 2)
+        #expect(c.text == "- [x] one\n- [x] two")
+        c.toggleTask(atSourceLocation: 12)
+        #expect(c.text == "- [x] one\n- [ ] two")
+    }
+
+    @Test func taskToggleURLRoundTrips() throws {
+        let url = try #require(EditorController.taskToggleURL(forSourceLocation: 42))
+        #expect(EditorController.taskToggleSourceLocation(from: url) == 42)
     }
 
     @Test func imageRangeIsSubstitutedToObjectReplacement() throws {
@@ -294,7 +316,8 @@ import MarginaliaSyntax
         let c = try EditorController(initialText: source)
         c.mode = .source
         c.refreshNow()
-        let count = c.textStorage.string.filter { $0 == "\u{2610}" }.count
+        // One `￼` per task line.
+        let count = c.textStorage.string.filter { $0 == "\u{FFFC}" }.count
         #expect(count == 3, "expected 3 checkboxes in: \(c.textStorage.string)")
     }
 
@@ -306,7 +329,7 @@ import MarginaliaSyntax
         let c = try EditorController(initialText: source)
         c.mode = .source
         c.refreshNow()
-        let count = c.textStorage.string.filter { $0 == "\u{2610}" }.count
+        let count = c.textStorage.string.filter { $0 == "\u{FFFC}" }.count
         #expect(count == 2, "expected 2 checkboxes in: \(c.textStorage.string)")
     }
 }

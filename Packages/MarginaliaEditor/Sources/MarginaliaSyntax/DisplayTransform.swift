@@ -98,8 +98,11 @@ public enum DisplayTransform {
         let sorted = clamped.sorted { $0.sourceRange.location < $1.sourceRange.location }
         var out: [DisplaySubstitution] = []
         for sub in sorted {
+            // Strict overlap: abutting ranges (last.upper == sub.location)
+            // are NOT overlapping — they represent two distinct
+            // substitutions side by side.
             guard let last = out.last,
-                  last.sourceRange.location + last.sourceRange.length >= sub.sourceRange.location else {
+                  last.sourceRange.location + last.sourceRange.length > sub.sourceRange.location else {
                 out.append(sub)
                 continue
             }

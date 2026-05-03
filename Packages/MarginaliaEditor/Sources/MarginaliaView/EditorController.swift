@@ -260,6 +260,7 @@ public final class EditorController {
 
         applyAttributes(runs: runs, full: source)
         applyImageAttachmentChips()
+        applyTaskCheckboxAttachments(in: source)
         recomputeHidden()
     }
 
@@ -277,13 +278,68 @@ public final class EditorController {
         }
     }
 
+    private func applyTaskCheckboxAttachments(in source: String) {
+        for match in checkboxSubstitutions(in: source) {
+            let displayRange = displayMapping.displayRange(forSource: match.bracketRange)
+            // Substitution kicked in only if the active-line filter didn't
+            // veto it; otherwise the bracket is verbatim and we leave it
+            // alone (the user is editing this line directly).
+            guard displayRange.length == 1 else { continue }
+            let attachment = CheckboxAttachment()
+            attachment.isChecked = match.isChecked
+            textStorage.addAttribute(.attachment, value: attachment, range: displayRange)
+            if let url = EditorController.taskToggleURL(forSourceLocation: match.bracketRange.location) {
+                textStorage.addAttribute(.link, value: url, range: displayRange)
+            }
+        }
+    }
+
+    /// Builds the URL we attach to a checkbox glyph so a click can be routed
+    /// back to the correct source position via `toggleTask(atSourceLocation:)`.
+    public static func taskToggleURL(forSourceLocation location: Int) -> URL? {
+        URL(string: "marginalia://task?source=\(location)")
+    }
+
+    /// Parses a URL minted by `taskToggleURL` and returns the source position
+    /// of the bracket, or `nil` if the URL isn't a task-toggle URL.
+    public static func taskToggleSourceLocation(from url: URL) -> Int? {
+        guard url.scheme == "marginalia", url.host == "task" else { return nil }
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        return comps?.queryItems?.first(where: { $0.name == "source" })
+            .flatMap { $0.value.flatMap(Int.init) }
+    }
+
+    /// Toggles a `[ ]` ↔ `[x]` task marker at the given source bracket
+    /// location. The location must point at the `[` of the bracket — the
+    /// same value `taskToggleURL` was minted from.
+    public func toggleTask(atSourceLocation location: Int) {
+        let source = sourceStorage.string
+        let ns = source as NSString
+        guard location >= 0, location + 3 <= ns.length else { return }
+        let bracketRange = NSRange(location: location, length: 3)
+        let bracket = ns.substring(with: bracketRange)
+        let next: String
+        switch bracket {
+        case "[ ]": next = "[x]"
+        case "[x]", "[X]": next = "[ ]"
+        default: return
+        }
+        let result = EditResult(
+            text: ns.replacingCharacters(in: bracketRange, with: next),
+            selection: NSRange(location: location + 3, length: 0)
+        )
+        applyEdit(result)
+    }
+
     private func computeMapping(for source: String) -> SourceDisplayMapping {
         let subs: [DisplaySubstitution]
         switch mode {
         case .source:
             // Source mode: only checkbox glyph substitution applies; markup
             // is left visible.
-            subs = checkboxSubstitutions(in: source)
+            subs = checkboxSubstitutions(in: source).map { match in
+                DisplaySubstitution(sourceRange: match.bracketRange, displayString: "\u{FFFC}")
+            }
         case .wysiwyg:
             subs = wysiwygSubstitutions(for: source)
         }
@@ -295,6 +351,7 @@ public final class EditorController {
             if case .image = region.kind { return region.range }
             return nil
         }
+        let checkboxes = checkboxSubstitutions(in: source)
         var subs: [DisplaySubstitution] = []
         // Image chips first — the whole `![alt](url)` source range collapses
         // to a single `￼` placeholder; the attachment is attached after the
@@ -302,8 +359,13 @@ public final class EditorController {
         for range in imageRanges {
             subs.append(DisplaySubstitution(sourceRange: range, displayString: "\u{FFFC}"))
         }
-        // Checkbox glyphs.
-        subs.append(contentsOf: checkboxSubstitutions(in: source))
+        // Task list lines: elide the bullet marker so only the checkbox
+        // shows in display, and substitute the bracket with a `￼` that
+        // `applyTaskCheckboxAttachments` will render as a real checkbox.
+        for match in checkboxes {
+            subs.append(DisplaySubstitution.elide(match.bulletRange))
+            subs.append(DisplaySubstitution(sourceRange: match.bracketRange, displayString: "\u{FFFC}"))
+        }
         // Markup elides — skip any range that falls inside an image (the
         // image substitution covers it already).
         let elides = wysiwygElideRanges(for: source).filter { range in
@@ -330,19 +392,32 @@ public final class EditorController {
         return a.location < bEnd && b.location < aEnd
     }
 
-    private func checkboxSubstitutions(in source: String) -> [DisplaySubstitution] {
-        let pattern = #"^[ \t]*(?:[-*+]|\d+[.)])\s+(\[[ xX]\])"#
+    struct CheckboxMatch {
+        let bulletRange: NSRange
+        let bracketRange: NSRange
+        let isChecked: Bool
+    }
+
+    private func checkboxSubstitutions(in source: String) -> [CheckboxMatch] {
+        let pattern = #"^[ \t]*((?:[-*+]|\d+[.)])\s+)(\[([ xX])\])"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
             return []
         }
         let total = NSRange(location: 0, length: (source as NSString).length)
         let ns = source as NSString
         return regex.matches(in: source, options: [], range: total).compactMap { match in
-            let bracketRange = match.range(at: 1)
-            guard bracketRange.location != NSNotFound, bracketRange.length == 3 else { return nil }
-            let middle = ns.substring(with: NSRange(location: bracketRange.location + 1, length: 1))
-            let glyph = (middle == " ") ? "\u{2610}" : "\u{2611}"
-            return DisplaySubstitution(sourceRange: bracketRange, displayString: glyph)
+            let bullet = match.range(at: 1)
+            let bracket = match.range(at: 2)
+            let inside = match.range(at: 3)
+            guard bullet.location != NSNotFound,
+                  bracket.location != NSNotFound,
+                  inside.location != NSNotFound else { return nil }
+            let insideChar = ns.substring(with: inside)
+            return CheckboxMatch(
+                bulletRange: bullet,
+                bracketRange: bracket,
+                isChecked: insideChar.lowercased() == "x"
+            )
         }
     }
 

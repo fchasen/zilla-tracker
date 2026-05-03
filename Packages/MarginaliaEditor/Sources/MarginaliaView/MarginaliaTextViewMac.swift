@@ -201,6 +201,20 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             }
         }
 
+        public func textView(_ textView: NSTextView,
+                             clickedOnLink link: Any,
+                             at charIndex: Int) -> Bool {
+            guard let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)) else {
+                return false
+            }
+            if let location = EditorController.taskToggleSourceLocation(from: url) {
+                parent.controller.toggleTask(atSourceLocation: location)
+                parent.text = parent.controller.text
+                return true
+            }
+            return false
+        }
+
         public func textView(_ view: NSTextView,
                              menu: NSMenu,
                              for event: NSEvent,
