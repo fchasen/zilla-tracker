@@ -250,15 +250,15 @@ public final class EditorController {
             blockRegions = []
         }
 
-        let runs = highlighter.runs(for: source, blockRegions: blockRegions)
-        markupRanges = highlighter.markupRanges(for: source, blockRegions: blockRegions)
-        inlineRegions = highlighter.inlineRegions(for: source)
+        let analysis = highlighter.analyze(source, blockRegions: blockRegions)
+        markupRanges = analysis.markupRanges
+        inlineRegions = analysis.inlineRegions
 
         let newMapping = computeMapping(for: source)
         rebuildDisplayIfNeeded(with: newMapping)
         displayMapping = newMapping
 
-        applyAttributes(runs: runs, full: source)
+        applyAttributes(runs: analysis.runs, full: source)
         applyImageAttachmentChips()
         applyTaskCheckboxAttachments(in: source)
         recomputeHidden()

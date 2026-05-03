@@ -45,49 +45,87 @@ public final class Highlighter {
         self.applier = try HighlightApplier()
     }
 
+    /// Combined output of one block-grammar + one inline-grammar parse.
+    /// Callers that need more than one of these slices should prefer
+    /// `analyze(_:blockRegions:)` over invoking `runs`, `markupRanges`, and
+    /// `inlineRegions` separately — each of those triggers its own pair of
+    /// parses, which is wasteful per refresh.
+    public struct Analysis {
+        public let runs: [Run]
+        public let markupRanges: [NSRange]
+        public let inlineRegions: [InlineRegion]
+    }
+
+    public func analyze(_ source: String, blockRegions: [BlockRegion] = []) -> Analysis {
+        let blockSpans = parseBlockSpans(for: source)
+        let (inlineSpans, inlineRegions) = parseInlineSpansAndRegions(for: source)
+        var spans = blockSpans
+        spans.append(contentsOf: inlineSpans)
+        if dialect == .remarkup {
+            spans.append(contentsOf: RemarkupGrammar.highlights(in: source))
+        }
+
+        let runs: [Run] = spans.compactMap { span in
+            let attrs = attributes(for: span.tag, in: span.range, blockRegions: blockRegions)
+            guard !attrs.isEmpty else { return nil }
+            return Run(range: span.range, attributes: attrs)
+        }
+
+        let rawMarkup = spans.compactMap { Highlighter.isMarkupTag($0.tag) ? $0.range : nil }
+        let markup = Highlighter.extendBlockPrefixMarkup(rawMarkup, in: source)
+
+        return Analysis(runs: runs, markupRanges: markup, inlineRegions: inlineRegions)
+    }
+
     /// Compute highlight runs for the given source text.
     ///
     /// `blockRegions`, if provided, lets the highlighter look up the heading
     /// level for each `text.title` span so H1 gets a bigger font than H2,
     /// etc. When empty, the textTitle attributes fall back to the H2 scale.
     public func runs(for source: String, blockRegions: [BlockRegion] = []) -> [Run] {
-        guard let tree = parser.parse(source), let root = tree.rootNode else { return [] }
-        let mapping = parser.mapping
-        var spans = applier.highlights(rootNode: root, in: tree, mapping: mapping, grammar: .block)
-
-        // Inline parse — run inline grammar over the full source. The block
-        // grammar emits `inline` nodes whose contents the inline grammar parses;
-        // a full-source inline pass produces correct spans for emphasis, links,
-        // code spans, etc. (Mismatched matches outside `inline` regions are
-        // fine — the block grammar's spans take precedence visually.)
-        if let inlineTree = inlineParser.parse(source), let inlineRoot = inlineTree.rootNode {
-            let inlineSpans = applier.highlights(
-                rootNode: inlineRoot,
-                in: inlineTree,
-                mapping: inlineParser.mapping,
-                grammar: .inline
-            )
-            spans.append(contentsOf: inlineSpans)
-        }
-
-        if dialect == .remarkup {
-            spans.append(contentsOf: RemarkupGrammar.highlights(in: source))
-        }
-
-        return spans.compactMap { span in
-            let attrs = attributes(for: span.tag, in: span.range, blockRegions: blockRegions)
-            guard !attrs.isEmpty else { return nil }
-            return Run(range: span.range, attributes: attrs)
-        }
+        analyze(source, blockRegions: blockRegions).runs
     }
 
     /// Compute the markup-character ranges that should be hidden when the
-    /// cursor is *not* on those lines (caret-aware focus mode).
+    /// cursor is *not* on those lines (caret-aware focus mode). Markup is
+    /// determined by tag (`punctuation.special`, `punctuation.delimiter`,
+    /// `string.escape`), not by the resulting foreground color — the latter
+    /// is fragile if a theme changes its `markupColor`.
     public func markupRanges(for source: String, blockRegions: [BlockRegion] = []) -> [NSRange] {
-        let raw = runs(for: source, blockRegions: blockRegions)
-            .filter { isMarkupRun($0) }
-            .map(\.range)
-        return Highlighter.extendBlockPrefixMarkup(raw, in: source)
+        analyze(source, blockRegions: blockRegions).markupRanges
+    }
+
+    private func parseBlockSpans(for source: String) -> [HighlightSpan] {
+        guard let tree = parser.parse(source), let root = tree.rootNode else { return [] }
+        return applier.highlights(rootNode: root, in: tree, mapping: parser.mapping, grammar: .block)
+    }
+
+    /// Inline parse — run inline grammar over the full source. The block
+    /// grammar emits `inline` nodes whose contents the inline grammar parses;
+    /// a full-source inline pass produces correct spans for emphasis, links,
+    /// code spans, etc. (Mismatched matches outside `inline` regions are
+    /// fine — the block grammar's spans take precedence visually.)
+    private func parseInlineSpansAndRegions(for source: String) -> (spans: [HighlightSpan], regions: [InlineRegion]) {
+        guard let tree = inlineParser.parse(source), let root = tree.rootNode else {
+            return ([], [])
+        }
+        let spans = applier.highlights(
+            rootNode: root,
+            in: tree,
+            mapping: inlineParser.mapping,
+            grammar: .inline
+        )
+        let regions = InlineClassifier.classify(rootNode: root, mapping: inlineParser.mapping)
+        return (spans, regions)
+    }
+
+    private static func isMarkupTag(_ tag: HighlightTag) -> Bool {
+        switch tag {
+        case .punctuationSpecial, .punctuationDelimiter, .stringEscape:
+            return true
+        default:
+            return false
+        }
     }
 
     /// `#` heading and `>` blockquote markers hide along with their trailing
@@ -116,13 +154,7 @@ public final class Highlighter {
 
     /// Inline links and images, derived from the inline tree.
     public func inlineRegions(for source: String) -> [InlineRegion] {
-        guard let tree = inlineParser.parse(source), let root = tree.rootNode else { return [] }
-        return InlineClassifier.classify(rootNode: root, mapping: inlineParser.mapping)
-    }
-
-    private func isMarkupRun(_ run: Run) -> Bool {
-        guard let color = run.attributes[.foregroundColor] as? PlatformColor else { return false }
-        return color == theme.markupColor
+        parseInlineSpansAndRegions(for: source).regions
     }
 
     private func attributes(
