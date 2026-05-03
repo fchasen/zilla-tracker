@@ -9,6 +9,7 @@ import UIKit
 
 public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate {
     public weak var controller: EditorController?
+    public var decorationProvider: DecorationProvider = BlockSpecDecorationProvider()
 
     public init(controller: EditorController? = nil) {
         self.controller = controller
@@ -21,60 +22,9 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
         in textElement: NSTextElement
     ) -> NSTextLayoutFragment {
         guard let controller,
-              let placement = placement(for: textElement, in: controller) else {
+              let elementRange = textElement.elementRange else {
             return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
         }
-
-        let spec = placement.spec
-        if spec.blockquoteDepth > 0 {
-            let fragment = BlockquoteLayoutFragment(textElement: textElement, range: textElement.elementRange)
-            fragment.isFirstInRun = placement.isFirstInBlockquoteRun
-            fragment.isLastInRun = placement.isLastInBlockquoteRun
-            return fragment
-        }
-        switch spec.kind {
-        case .horizontalRule:
-            return HorizontalRuleLayoutFragment(textElement: textElement, range: textElement.elementRange)
-        case .fencedCode(let language):
-            let fragment = FencedCodeBlockLayoutFragment(
-                textElement: textElement,
-                range: textElement.elementRange
-            )
-            fragment.language = language
-            fragment.isFirstLine = placement.isFirstLine
-            fragment.isLastLine = placement.isLastLine
-            return fragment
-        case .indentedCode:
-            let fragment = IndentedCodeBlockLayoutFragment(
-                textElement: textElement,
-                range: textElement.elementRange
-            )
-            fragment.isFirstLine = placement.isFirstLine
-            fragment.isLastLine = placement.isLastLine
-            return fragment
-        case .pipeTable:
-            let fragment = PipeTableLayoutFragment(
-                textElement: textElement,
-                range: textElement.elementRange
-            )
-            fragment.isFirstLine = placement.isFirstLine
-            fragment.isLastLine = placement.isLastLine
-            return fragment
-        default:
-            return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
-        }
-    }
-
-    private struct Placement {
-        let spec: BlockSpec
-        let isFirstLine: Bool
-        let isLastLine: Bool
-        let isFirstInBlockquoteRun: Bool
-        let isLastInBlockquoteRun: Bool
-    }
-
-    private func placement(for element: NSTextElement, in controller: EditorController) -> Placement? {
-        guard let elementRange = element.elementRange else { return nil }
         let storage = controller.contentStorage
         let elementStart = storage.offset(from: storage.documentRange.location, to: elementRange.location)
         let elementEnd = storage.offset(from: storage.documentRange.location, to: elementRange.endLocation)
@@ -84,45 +34,72 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
               elementStart < total,
               elementEnd >= elementStart,
               elementEnd <= total else {
-            return nil
-        }
-        // Probe the paragraph for any character carrying a BlockSpec — typing
-        // can race with layout and leave individual characters spec-less while
-        // the rest of the line is correct.
-        guard let spec = paragraphSpec(in: controller.textStorage,
-                                       from: elementStart,
-                                       to: elementEnd) else {
-            return nil
-        }
-        var attrRange = NSRange(location: elementStart, length: elementEnd - elementStart)
-        controller.textStorage.enumerateAttribute(.marginaliaBlockSpec, in: attrRange) { value, range, _ in
-            if value is BlockSpecBox { attrRange = range }
-        }
-        let isFirst = elementStart == attrRange.location
-        let isLast = elementEnd >= attrRange.location + attrRange.length - 1
-
-        var isFirstInBlockquote = true
-        var isLastInBlockquote = true
-        if spec.blockquoteDepth > 0 {
-            if elementStart > 0,
-               let prev = controller.textStorage.blockSpec(at: elementStart - 1),
-               prev.blockquoteDepth > 0 {
-                isFirstInBlockquote = false
-            }
-            if elementEnd < total,
-               let next = controller.textStorage.blockSpec(at: elementEnd),
-               next.blockquoteDepth > 0 {
-                isLastInBlockquote = false
-            }
+            return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
         }
 
-        return Placement(
-            spec: spec,
-            isFirstLine: isFirst,
-            isLastLine: isLast,
-            isFirstInBlockquoteRun: isFirstInBlockquote,
-            isLastInBlockquoteRun: isLastInBlockquote
-        )
+        let lineRange = NSRange(location: elementStart, length: elementEnd - elementStart)
+        let decorations = decorationProvider.decorations(in: lineRange, storage: controller.textStorage)
+        if let bar = decorations.first(where: { if case .blockquoteBar = $0.kind { return true } else { return false } }) {
+            if case .blockquoteBar(_, let position) = bar.kind {
+                let fragment = BlockquoteLayoutFragment(textElement: textElement, range: textElement.elementRange)
+                fragment.isFirstInRun = position == .start || position == .single
+                fragment.isLastInRun = position == .end || position == .single
+                return fragment
+            }
+        }
+        if let codeDeco = decorations.first(where: { if case .codeBackground = $0.kind { return true } else { return false } }) {
+            if case .codeBackground(let language, let position) = codeDeco.kind {
+                if let language {
+                    let fragment = FencedCodeBlockLayoutFragment(
+                        textElement: textElement,
+                        range: textElement.elementRange
+                    )
+                    fragment.language = language
+                    fragment.isFirstLine = position == .start || position == .single
+                    fragment.isLastLine = position == .end || position == .single
+                    return fragment
+                } else if let spec = controller.textStorage.blockSpec(at: elementStart),
+                          case .indentedCode = spec.kind {
+                    let fragment = IndentedCodeBlockLayoutFragment(
+                        textElement: textElement,
+                        range: textElement.elementRange
+                    )
+                    fragment.isFirstLine = position == .start || position == .single
+                    fragment.isLastLine = position == .end || position == .single
+                    return fragment
+                } else {
+                    let fragment = FencedCodeBlockLayoutFragment(
+                        textElement: textElement,
+                        range: textElement.elementRange
+                    )
+                    fragment.language = nil
+                    fragment.isFirstLine = position == .start || position == .single
+                    fragment.isLastLine = position == .end || position == .single
+                    return fragment
+                }
+            }
+        }
+        if decorations.contains(where: { if case .horizontalRule = $0.kind { return true } else { return false } }) {
+            return HorizontalRuleLayoutFragment(textElement: textElement, range: textElement.elementRange)
+        }
+        if let spec = paragraphSpec(in: controller.textStorage, from: elementStart, to: elementEnd),
+           case .pipeTable = spec.kind {
+            let fragment = PipeTableLayoutFragment(
+                textElement: textElement,
+                range: textElement.elementRange
+            )
+            // Approximate run position by walking neighbors directly.
+            let prevPipe = (elementStart > 0
+                            ? (controller.textStorage.blockSpec(at: elementStart - 1).map { if case .pipeTable = $0.kind { return true } else { return false } } ?? false)
+                            : false)
+            let nextPipe = (elementEnd < total
+                            ? (controller.textStorage.blockSpec(at: elementEnd).map { if case .pipeTable = $0.kind { return true } else { return false } } ?? false)
+                            : false)
+            fragment.isFirstLine = !prevPipe
+            fragment.isLastLine = !nextPipe
+            return fragment
+        }
+        return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
     }
 
     private func paragraphSpec(in storage: NSAttributedString, from lo: Int, to hi: Int) -> BlockSpec? {
