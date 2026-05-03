@@ -23,7 +23,8 @@ struct BugCommentSheet: View {
                     text: $text,
                     minHeight: 240,
                     isDisabled: isPosting,
-                    bordered: false
+                    bordered: false,
+                    autoFocus: true
                 )
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle")

@@ -3,6 +3,9 @@ import BugzillaKit
 import MarginaliaEditor
 import PhabricatorKit
 import SearchfoxKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct MarkdownEditor: View {
     @Binding var text: String
@@ -11,6 +14,7 @@ struct MarkdownEditor: View {
     var dialect: Dialect = .commonMark
     var bordered: Bool = true
     var showToolbar: Bool = true
+    var autoFocus: Bool = false
 
     @Environment(\.zillaFontScale) private var fontScale
 
@@ -18,13 +22,17 @@ struct MarkdownEditor: View {
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
+    @State private var didAutoFocus = false
 
     var body: some View {
         Marginalia(text: $text)
             .dialect(dialect)
             .theme(.default(fontScale: fontScale))
             .configuration(Marginalia.Configuration(toolbar: showToolbar ? toolbar : [], minHeight: minHeight))
-            .onMarginaliaControllerReady { c in controller = c }
+            .onMarginaliaControllerReady { c in
+                controller = c
+                if autoFocus { focusHostTextView() }
+            }
             .frame(minHeight: minHeight)
             .overlay {
                 if bordered {
@@ -99,6 +107,22 @@ struct MarkdownEditor: View {
         if let nick = user.nick, !nick.isEmpty { return nick }
         let local = user.name.split(separator: "@").first.map(String.init) ?? user.name
         return local
+    }
+
+    private func focusHostTextView() {
+        #if canImport(UIKit)
+        guard !didAutoFocus else { return }
+        Task { @MainActor in
+            for _ in 0..<10 {
+                if let view = controller?.hostTextView as? UIView, view.window != nil {
+                    view.becomeFirstResponder()
+                    didAutoFocus = true
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        #endif
     }
 
     private func insertSearchfoxLink(_ hit: SearchHit, symbol: String? = nil) {

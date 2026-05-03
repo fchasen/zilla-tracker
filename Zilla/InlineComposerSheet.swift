@@ -74,7 +74,8 @@ struct InlineComposerSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     dialect: .remarkup,
-                    bordered: false
+                    bordered: false,
+                    autoFocus: true
                 )
                 Spacer(minLength: 0)
             }
