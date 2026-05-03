@@ -120,15 +120,23 @@ public enum SpecValidator {
             location: max(0, min(range.location, ns.length)),
             length: max(0, min(range.length, ns.length - max(0, min(range.location, ns.length))))
         )
+        // A zero-length range pins to the single paragraph containing the
+        // location; without this guard the loop would walk every paragraph
+        // until end-of-storage.
+        let inclusiveEnd: Int
+        if safe.length == 0 {
+            inclusiveEnd = safe.location
+        } else {
+            inclusiveEnd = safe.location + safe.length - 1
+        }
         var cursor = safe.location
-        let end = max(safe.location, safe.location + safe.length)
         while cursor < ns.length {
             let line = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
             body(line)
             let next = line.location + line.length
             if next == cursor { break }
             cursor = next
-            if cursor >= end && safe.length > 0 { break }
+            if cursor > inclusiveEnd { break }
         }
     }
 }

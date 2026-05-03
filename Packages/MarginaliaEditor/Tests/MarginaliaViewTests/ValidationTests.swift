@@ -68,19 +68,36 @@ import UIKit
         #expect(diagnostics.isEmpty, "repair should resolve inconsistency, got \(diagnostics)")
     }
 
-    @Test func transactionApplyRunsValidation() throws {
+    @Test func transactionApplyLeavesValidStorage() throws {
         let controller = try EditorController(initialMarkdown: "hello\n")
-        var captured: [SpecDiagnostic] = []
-        controller.onDiagnostic = { captured.append($0) }
-        // Manually corrupt before applying a transaction.
+        // setSpec re-renders the entire line so any pre-existing corruption
+        // in that range is wiped out — the post-state should be valid.
         controller.textStorage.removeAttribute(.marginaliaBlockSpec, range: NSRange(location: 0, length: 1))
         let lineRange = NSRange(location: 0, length: controller.textStorage.length)
         controller.apply(Transaction(steps: [
             .setSpec(lineRange: lineRange, BlockSpec(kind: .heading(level: 1)))
         ]))
-        // After transaction, storage should be re-rendered → corruption gone.
         let post = SpecValidator.validate(in: controller.textStorage, range: NSRange(location: 0, length: controller.textStorage.length))
         #expect(post.isEmpty, "transaction-applied storage should be valid")
-        _ = captured
+    }
+
+    @Test func validateOnZeroLengthRangeStaysInScope() {
+        // forEachLine must not walk the entire storage when called with
+        // a length-0 range; otherwise an unrelated paragraph's drift
+        // would surface in a transaction that didn't touch it.
+        let storage = NSMutableAttributedString(string: "alpha\nbeta\n")
+        storage.setBlockSpec(.paragraph, in: NSRange(location: 0, length: 6))
+        // Leave line 1 (chars 6..11) without any spec — that's a
+        // pre-existing condition the validator should NOT report when
+        // validating a zero-length point at line 0's start.
+        let diagnostics = SpecValidator.validate(in: storage, range: NSRange(location: 0, length: 0))
+        let touchedLine1 = diagnostics.contains { diag in
+            switch diag.issue {
+            case .missingSpec(let at): return at >= 6
+            default: return false
+            }
+        }
+        #expect(!touchedLine1,
+                "zero-length validation must not leak into other paragraphs; got \(diagnostics)")
     }
 }
