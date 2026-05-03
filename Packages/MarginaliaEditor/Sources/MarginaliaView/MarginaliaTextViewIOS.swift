@@ -105,6 +105,21 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
                              suggestedActions: [UIMenuElement]) -> UIMenu? {
             parent.editMenuBuilder?(range, suggestedActions)
         }
+
+        public func textView(_ textView: UITextView,
+                             shouldChangeTextIn range: NSRange,
+                             replacementText text: String) -> Bool {
+            if text == "\n" {
+                if parent.controller.handleNewline() {
+                    // We consumed the newline; sync the text binding.
+                    let md = parent.controller.markdown()
+                    if parent.text != md { parent.text = md }
+                    lastAppliedMarkdown = md
+                    return false
+                }
+            }
+            return true
+        }
     }
 }
 

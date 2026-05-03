@@ -214,6 +214,25 @@ public final class EditorController {
         return result
     }
 
+    /// Called from the text view when the user presses Return. Returns
+    /// `true` if the newline was consumed by list-continuation handling;
+    /// `false` if the text view should insert the newline normally.
+    @discardableResult
+    public func handleNewline() -> Bool {
+        let cursor = currentSelection.location
+        guard let result = InsertNewline.handle(
+            in: textStorage,
+            cursor: cursor,
+            compiler: compiler,
+            serializer: serializer,
+            dialect: dialect,
+            mode: mode,
+            theme: theme
+        ) else { return false }
+        setHostSelection(result)
+        return true
+    }
+
     private func setHostSelection(_ range: NSRange) {
         #if canImport(AppKit) && os(macOS)
         if let tv = hostTextView as? NSTextView { tv.setSelectedRange(range) }

@@ -143,6 +143,14 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             parent.controller.undoManager
         }
 
+        public func textView(_ textView: NSTextView,
+                             doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                if parent.controller.handleNewline() { return true }
+            }
+            return false
+        }
+
         public func textView(_ view: NSTextView,
                              menu: NSMenu,
                              for event: NSEvent,
