@@ -31,6 +31,7 @@ public final class EditorController {
     public let undoManager: UndoManager = UndoManager()
     public weak var hostTextView: AnyObject?
     public var intrinsicSizeInvalidator: (() -> Void)?
+    public var onDiagnostic: ((SpecDiagnostic) -> Void)?
 
     private(set) var compiler: MarkdownAttributedCompiler
     private(set) var serializer: AttributedMarkdownSerializer
@@ -77,7 +78,7 @@ public final class EditorController {
             guard let self, !self.applyingMarkdown else { return }
             if self.textStorage.editedMask.contains(.editedCharacters) {
                 self.scrubTypedAttributes()
-                self.normalizeEditedLineAttrs()
+                self.repairEditedLine()
                 self.demoteEmptyStyledLines()
                 self.resegment()
                 self.intrinsicSizeInvalidator?()
@@ -85,52 +86,18 @@ public final class EditorController {
         }
     }
 
-    /// NSTextView's typing-attribute auto-derivation can strip our
-    /// custom `marginaliaBlockSpec` key under some conditions, so freshly
-    /// typed characters can land in a paragraph without the surrounding
-    /// block attribution. After each character edit, find any char in the
-    /// line that DOES carry the spec and apply it uniformly so the layout
-    /// manager treats the line as one logical paragraph.
-    private func normalizeEditedLineAttrs() {
+    private func repairEditedLine() {
         let total = textStorage.length
         guard total > 0 else { return }
-        let editedRange = textStorage.editedRange
-        guard editedRange.location >= 0, editedRange.location <= total else { return }
-        let probeLoc = max(0, min(editedRange.location, total - 1))
-        let ns = textStorage.string as NSString
-        let lineRange = ns.paragraphRange(for: NSRange(location: probeLoc, length: 0))
-        guard lineRange.length > 0,
-              lineRange.location < total,
-              lineRange.location + lineRange.length <= total else { return }
-
-        var sourceSpecBox: BlockSpecBox?
-        var sourceParagraphStyle: NSParagraphStyle?
-        var i = lineRange.location
-        let end = lineRange.location + lineRange.length
-        while i < end {
-            if sourceSpecBox == nil,
-               let box = textStorage.safeAttribute(.marginaliaBlockSpec, at: i) as? BlockSpecBox {
-                sourceSpecBox = box
-            }
-            if sourceParagraphStyle == nil, let ps = textStorage.safeAttribute(.paragraphStyle, at: i) as? NSParagraphStyle {
-                sourceParagraphStyle = ps
-            }
-            if sourceSpecBox != nil && sourceParagraphStyle != nil { break }
-            i += 1
-        }
-        guard sourceSpecBox != nil || sourceParagraphStyle != nil else { return }
-
+        let edited = textStorage.editedRange
+        guard edited.location >= 0, edited.location <= total else { return }
+        let probe = max(0, min(edited.location, total - 1))
+        let lineRange = (textStorage.string as NSString).paragraphRange(for: NSRange(location: probe, length: 0))
         applyingMarkdown = true
-        textStorage.beginEditing()
-        if let box = sourceSpecBox {
-            textStorage.addAttribute(.marginaliaBlockSpec, value: box, range: lineRange)
-        }
-        if let ps = sourceParagraphStyle {
-            textStorage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
-        }
-        textStorage.endEditing()
+        SpecValidator.repair(in: textStorage, range: lineRange)
         applyingMarkdown = false
     }
+
 
     private func scrubTypedAttributes() {
         let editedRange = textStorage.editedRange
@@ -305,6 +272,7 @@ public final class EditorController {
             applyingMarkdown = true
             let applied = transaction.apply(to: textStorage, env: env)
             lastRange = applied.mappedRange
+            validateAndRepair(in: lastRange)
             applyingMarkdown = false
             resegment()
             intrinsicSizeInvalidator?()
@@ -314,6 +282,19 @@ public final class EditorController {
         setHostSelection(cursorRange)
         refreshTypingAttributes(at: cursor)
         return cursorRange
+    }
+
+    /// Validate the spec invariants in `range`, repair drift, and forward
+    /// any diagnostics. Called after every transaction so corrupted state
+    /// auto-heals before the user sees it.
+    func validateAndRepair(in range: NSRange) {
+        let diagnostics = SpecValidator.validate(in: textStorage, range: range)
+        for diagnostic in diagnostics {
+            onDiagnostic?(diagnostic)
+        }
+        if !diagnostics.isEmpty {
+            SpecValidator.repair(in: textStorage, range: range)
+        }
     }
 
     private func mutationRange(for transaction: Transaction) -> NSRange {
