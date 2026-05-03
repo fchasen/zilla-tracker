@@ -65,7 +65,10 @@ public final class BlockSpecDecorationProvider: DecorationProvider {
         in storage: NSAttributedString,
         into out: inout [Decoration]
     ) {
-        guard let spec = storage.blockSpec(at: line.location) else { return }
+        // Scan the paragraph for any character carrying a spec —
+        // trusting char 0 only would miss lines where the leading
+        // character lost its spec mid-edit.
+        guard let spec = paragraphSpec(in: storage, lineRange: line) else { return }
         if spec.blockquoteDepth > 0 {
             let position = runPosition(for: line, in: storage) { $0.blockquoteDepth > 0 }
             out.append(Decoration(range: line, kind: .blockquoteBar(depth: spec.blockquoteDepth, position: position)))
@@ -86,6 +89,16 @@ public final class BlockSpecDecorationProvider: DecorationProvider {
         default:
             break
         }
+    }
+
+    private func paragraphSpec(in storage: NSAttributedString, lineRange: NSRange) -> BlockSpec? {
+        var i = lineRange.location
+        let end = lineRange.location + lineRange.length
+        while i < end {
+            if let spec = storage.blockSpec(at: i) { return spec }
+            i += 1
+        }
+        return nil
     }
 
     private func runPosition(
