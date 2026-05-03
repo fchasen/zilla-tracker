@@ -86,9 +86,23 @@ public final class EditorController {
     /// After a character edit, scan the edited paragraphs and reset any
     /// non-paragraph block attribution on lines whose content text is now
     /// empty. Without this, deleting all of a heading's text leaves the
-    /// heading block attribute on the trailing newline so the next
-    /// keystroke continues to render in heading style.
+    /// heading block attribute on the trailing newline (or on the text
+    /// view's `typingAttributes`) so the next keystroke continues to
+    /// render in heading style.
     private func demoteEmptyStyledLines() {
+        let plainAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        // Storage cleared entirely: nothing to mutate, but the typing
+        // attributes on the host text view still carry the prior heading /
+        // list style. Reset them.
+        if textStorage.length == 0 {
+            applyTypingAttributes(plainAttrs)
+            return
+        }
         let editedRange = textStorage.editedRange
         let ns = textStorage.string as NSString
         guard editedRange.length >= 0, editedRange.location >= 0 else { return }
@@ -118,25 +132,24 @@ public final class EditorController {
             return
         }
 
-        let plainAttrs: [NSAttributedString.Key: Any] = [
-            .font: theme.bodyFont,
-            .foregroundColor: theme.foregroundColor,
-            .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
-        ]
         textStorage.beginEditing()
         textStorage.addAttributes(plainAttrs, range: lineRange)
         textStorage.endEditing()
-        // NSTextView caches typing-attributes separately from storage; reset
-        // them to match so the user's next keystroke isn't still typing in
-        // heading-sized bold.
+        applyTypingAttributes(plainAttrs)
+    }
+
+    /// NSTextView caches typing attributes separately from storage. After
+    /// programmatic storage edits the cache still holds whatever was at
+    /// the cursor before, so we have to push the desired attributes into
+    /// the host explicitly.
+    private func applyTypingAttributes(_ attrs: [NSAttributedString.Key: Any]) {
         #if canImport(AppKit) && os(macOS)
         if let tv = hostTextView as? NSTextView {
-            tv.typingAttributes = plainAttrs
+            tv.typingAttributes = attrs
         }
         #elseif canImport(UIKit)
         if let tv = hostTextView as? UITextView {
-            tv.typingAttributes = plainAttrs
+            tv.typingAttributes = attrs
         }
         #endif
     }
