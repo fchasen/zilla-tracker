@@ -75,4 +75,84 @@ import UIKit
         let out = serialize(storage)
         #expect(out == "# hXeading\n")
     }
+
+    // MARK: - block-level operations
+
+    private func block(in storage: NSTextStorage, action: (MarkdownAttributedCompiler, AttributedMarkdownSerializer) -> Void) throws {
+        let compiler = try MarkdownAttributedCompiler()
+        let serializer = AttributedMarkdownSerializer()
+        action(compiler, serializer)
+    }
+
+    @Test func setHeadingPromotesParagraph() throws {
+        let storage = try compile("hello\n")
+        try block(in: storage) { compiler, serializer in
+            Operations.setHeading(
+                in: storage, range: NSRange(location: 0, length: 5), level: 2,
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        #expect(serialize(storage) == "## hello\n")
+    }
+
+    @Test func setHeadingZeroStripsPrefix() throws {
+        let storage = try compile("## hello\n")
+        try block(in: storage) { compiler, serializer in
+            Operations.setHeading(
+                in: storage, range: NSRange(location: 0, length: 0), level: 0,
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        #expect(serialize(storage) == "hello\n")
+    }
+
+    @Test func toggleUnorderedListAddsMarker() throws {
+        let storage = try compile("apple\nbanana\n")
+        try block(in: storage) { compiler, serializer in
+            Operations.toggleUnorderedList(
+                in: storage, range: NSRange(location: 0, length: storage.length),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        #expect(serialize(storage) == "- apple\n- banana\n")
+    }
+
+    @Test func toggleUnorderedListStripsWhenAlreadyList() throws {
+        let storage = try compile("- one\n- two\n")
+        try block(in: storage) { compiler, serializer in
+            Operations.toggleUnorderedList(
+                in: storage, range: NSRange(location: 0, length: storage.length),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        #expect(serialize(storage) == "one\ntwo\n")
+    }
+
+    @Test func toggleBlockquoteAddsMarker() throws {
+        let storage = try compile("hello\n")
+        try block(in: storage) { compiler, serializer in
+            Operations.toggleBlockquote(
+                in: storage, range: NSRange(location: 0, length: 0),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        #expect(serialize(storage) == "> hello\n")
+    }
+
+    @Test func insertHorizontalRuleAppendsRule() throws {
+        let storage = try compile("hello\n")
+        try block(in: storage) { compiler, serializer in
+            Operations.insertHorizontalRule(
+                in: storage, range: NSRange(location: 5, length: 0),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        #expect(serialize(storage).contains("---"))
+    }
 }

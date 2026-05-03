@@ -64,6 +64,254 @@ public enum Operations {
         return NSRange(location: cursor, length: 0)
     }
 
+    // MARK: - block-level operations
+    //
+    // These transform the markdown form of the affected paragraph(s),
+    // recompile through the supplied compiler, and replace the storage
+    // range. Going through markdown keeps the styling logic in one place
+    // (the compiler) instead of duplicating font/paragraph-style updates
+    // here. The cost is a small re-parse per action — fine because the
+    // compiler operates on at most a few paragraphs of source.
+
+    @discardableResult
+    public static func setHeading(
+        in storage: NSTextStorage,
+        range: NSRange,
+        level: Int,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformHeading(md, level: level)
+        }
+    }
+
+    @discardableResult
+    public static func toggleUnorderedList(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformList(md, kind: .bullet)
+        }
+    }
+
+    @discardableResult
+    public static func toggleOrderedList(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformList(md, kind: .ordered)
+        }
+    }
+
+    @discardableResult
+    public static func toggleTaskList(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformList(md, kind: .task)
+        }
+    }
+
+    @discardableResult
+    public static func toggleBlockquote(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformBlockquote(md)
+        }
+    }
+
+    @discardableResult
+    public static func insertCodeBlock(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            wrapInCodeFence(md)
+        }
+    }
+
+    @discardableResult
+    public static func insertHorizontalRule(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            md + "\n---\n"
+        }
+    }
+
+    /// Round-trip the paragraph(s) covered by `range` through markdown,
+    /// applying `transform` to the markdown form, then replace the affected
+    /// storage with the recompiled result.
+    private static func mutateBlocks(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme,
+        transform: (String) -> String
+    ) -> NSRange {
+        let safe = clampedRange(range, in: storage.length)
+        let ns = storage.string as NSString
+        let lineRange = ns.paragraphRange(for: safe)
+        let para = storage.attributedSubstring(from: lineRange)
+        let md = serializer.serialize(para, dialect: dialect)
+        let newMd = transform(md)
+        let newAttr = compiler.compile(newMd, dialect: dialect, mode: mode, theme: theme)
+        storage.beginEditing()
+        storage.replaceCharacters(in: lineRange, with: newAttr)
+        storage.endEditing()
+        return NSRange(location: lineRange.location + newAttr.length, length: 0)
+    }
+
+    // MARK: - markdown transforms
+
+    private static func transformHeading(_ md: String, level: Int) -> String {
+        let lines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let stripped = lines.map(stripLeadingHeadingPrefix)
+        let prefix = level == 0 ? "" : String(repeating: "#", count: max(1, min(6, level))) + " "
+        let result = stripped.map { line -> String in
+            line.isEmpty ? line : prefix + line
+        }
+        return result.joined(separator: "\n")
+    }
+
+    private static func stripLeadingHeadingPrefix(_ line: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"^#{1,6}\s+"#) else { return line }
+        let ns = line as NSString
+        let m = regex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length))
+        guard let m else { return line }
+        return ns.substring(from: m.range.upperBound)
+    }
+
+    private enum ListMarkerKind { case bullet, ordered, task }
+
+    private static func transformList(_ md: String, kind: ListMarkerKind) -> String {
+        let lines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let allMatch = lines.allSatisfy { line in
+            line.isEmpty || lineHasListMarker(line, kind: kind)
+        }
+        if allMatch && !lines.allSatisfy({ $0.isEmpty }) {
+            return lines.map(stripListMarker).joined(separator: "\n")
+        }
+        var counter = 1
+        let stripped = lines.map(stripListMarker)
+        return stripped.map { line -> String in
+            guard !line.isEmpty else { return line }
+            switch kind {
+            case .bullet: return "- " + line
+            case .ordered:
+                defer { counter += 1 }
+                return "\(counter). " + line
+            case .task: return "- [ ] " + line
+            }
+        }.joined(separator: "\n")
+    }
+
+    private static func lineHasListMarker(_ line: String, kind: ListMarkerKind) -> Bool {
+        let pattern: String
+        switch kind {
+        case .bullet: pattern = #"^\s*[-*+]\s+"#
+        case .ordered: pattern = #"^\s*\d+[.)]\s+"#
+        case .task: pattern = #"^\s*[-*+]\s+\[[ xX]\]\s+"#
+        }
+        return line.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private static func stripListMarker(_ line: String) -> String {
+        let patterns = [#"^\s*[-*+]\s+\[[ xX]\]\s+"#, #"^\s*[-*+]\s+"#, #"^\s*\d+[.)]\s+"#]
+        for p in patterns {
+            if let r = line.range(of: p, options: .regularExpression) {
+                return String(line[r.upperBound...])
+            }
+        }
+        return line
+    }
+
+    private static func transformBlockquote(_ md: String) -> String {
+        let lines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let allQuoted = lines.allSatisfy { $0.isEmpty || $0.hasPrefix("> ") || $0 == ">" }
+        if allQuoted && !lines.allSatisfy({ $0.isEmpty }) {
+            return lines.map { line -> String in
+                if line.hasPrefix("> ") { return String(line.dropFirst(2)) }
+                if line == ">" { return "" }
+                return line
+            }.joined(separator: "\n")
+        }
+        return lines.map { line -> String in
+            line.isEmpty ? ">" : "> " + line
+        }.joined(separator: "\n")
+    }
+
+    private static func wrapInCodeFence(_ md: String) -> String {
+        var trimmed = md
+        while trimmed.hasSuffix("\n") { trimmed.removeLast() }
+        if trimmed.isEmpty { trimmed = "code" }
+        return "```\n" + trimmed + "\n```"
+    }
+
     // MARK: - inline format toggles
 
     @discardableResult

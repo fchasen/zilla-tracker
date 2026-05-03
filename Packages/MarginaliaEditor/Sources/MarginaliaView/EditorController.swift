@@ -32,8 +32,8 @@ public final class EditorController {
     public weak var hostTextView: AnyObject?
     public var intrinsicSizeInvalidator: (() -> Void)?
 
-    private let compiler: MarkdownAttributedCompiler
-    private let serializer: AttributedMarkdownSerializer
+    private(set) var compiler: MarkdownAttributedCompiler
+    private(set) var serializer: AttributedMarkdownSerializer
     private let layoutDelegate: LayoutManagerDelegate
     private var storageObserver: NSObjectProtocol?
     private var applyingMarkdown = false
@@ -151,10 +151,48 @@ public final class EditorController {
                 url: url ?? "url",
                 theme: theme
             )
-        case .heading, .unorderedList, .orderedList, .taskList,
-             .blockquote, .codeBlock, .horizontalRule:
-            // Phase 2c+ — block-level operations land here.
-            resulting = range
+        case .heading(let level):
+            resulting = Operations.setHeading(
+                in: textStorage, range: range, level: level,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .unorderedList:
+            resulting = Operations.toggleUnorderedList(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .orderedList:
+            resulting = Operations.toggleOrderedList(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .taskList:
+            resulting = Operations.toggleTaskList(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .blockquote:
+            resulting = Operations.toggleBlockquote(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .codeBlock:
+            resulting = Operations.insertCodeBlock(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .horizontalRule:
+            resulting = Operations.insertHorizontalRule(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
         }
         setHostSelection(resulting)
         return resulting
