@@ -29,6 +29,7 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
 
     public func makeUIView(context: Context) -> UITextView {
         let textView = MarginaliaUITextView(frame: .zero, textContainer: controller.textContainer)
+        textView.marginaliaController = controller
         textView.delegate = context.coordinator
         textView.font = controller.theme.bodyFont
         textView.smartQuotesType = .no
@@ -111,17 +112,56 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
                              replacementText text: String) -> Bool {
             if text == "\n" {
                 if parent.controller.handleNewline() {
-                    // We consumed the newline; sync the text binding.
                     let md = parent.controller.markdown()
                     if parent.text != md { parent.text = md }
                     lastAppliedMarkdown = md
                     return false
                 }
             }
+            if text == "\t", isCursorInListItem(controller: parent.controller) {
+                parent.controller.perform(.indent)
+                let md = parent.controller.markdown()
+                if parent.text != md { parent.text = md }
+                lastAppliedMarkdown = md
+                return false
+            }
             return true
         }
     }
 }
 
-final class MarginaliaUITextView: UITextView {}
+private func isCursorInListItem(controller: EditorController) -> Bool {
+    let storage = controller.textStorage
+    let total = storage.length
+    guard total > 0 else { return false }
+    let location = controller.currentSelection.location
+    let probe = max(0, min(location, total - 1))
+    return storage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute
+}
+
+final class MarginaliaUITextView: UITextView {
+    weak var marginaliaController: EditorController?
+
+    override func deleteBackward() {
+        if marginaliaController?.handleBackspace() == true { return }
+        super.deleteBackward()
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        var commands = super.keyCommands ?? []
+        commands.append(UIKeyCommand(
+            input: "\t",
+            modifierFlags: .shift,
+            action: #selector(handleShiftTab(_:))
+        ))
+        return commands
+    }
+
+    @objc private func handleShiftTab(_ sender: UIKeyCommand) {
+        guard let controller = marginaliaController else { return }
+        if isCursorInListItem(controller: controller) {
+            controller.perform(.outdent)
+        }
+    }
+}
 #endif

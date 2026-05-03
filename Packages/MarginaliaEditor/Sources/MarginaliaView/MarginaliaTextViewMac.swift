@@ -148,7 +148,31 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 if parent.controller.handleNewline() { return true }
             }
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+                if parent.controller.handleBackspace() { return true }
+            }
+            if commandSelector == #selector(NSResponder.insertTab(_:)) {
+                if isCursorInListItem() {
+                    parent.controller.perform(.indent)
+                    return true
+                }
+            }
+            if commandSelector == #selector(NSResponder.insertBacktab(_:)) {
+                if isCursorInListItem() {
+                    parent.controller.perform(.outdent)
+                    return true
+                }
+            }
             return false
+        }
+
+        private func isCursorInListItem() -> Bool {
+            let storage = parent.controller.textStorage
+            let total = storage.length
+            guard total > 0 else { return false }
+            let location = parent.controller.currentSelection.location
+            let probe = max(0, min(location, total - 1))
+            return storage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute
         }
 
         public func textView(_ view: NSTextView,
@@ -208,7 +232,7 @@ final class MarginaliaNSTextView: NSTextView {
             let point = convert(event.locationInWindow, from: nil)
             let charIndex = characterIndexForInsertion(at: point)
             for probe in [charIndex, charIndex - 1] where probe >= 0 && probe < storage.length {
-                if storage.attribute(.attachment, at: probe, effectiveRange: nil) is CheckboxAttachment {
+                if storage.safeAttribute(.attachment, at: probe) is CheckboxAttachment {
                     if marginaliaController?.toggleCheckbox(at: probe) == true { return }
                 }
             }

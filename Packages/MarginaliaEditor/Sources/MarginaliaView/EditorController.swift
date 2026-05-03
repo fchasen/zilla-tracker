@@ -77,6 +77,7 @@ public final class EditorController {
             guard let self, !self.applyingMarkdown else { return }
             if self.textStorage.editedMask.contains(.editedCharacters) {
                 self.scrubTypedAttributes()
+                self.normalizeEditedLineAttrs()
                 self.demoteEmptyStyledLines()
                 self.resegment()
                 self.intrinsicSizeInvalidator?()
@@ -84,12 +85,61 @@ public final class EditorController {
         }
     }
 
-    /// Typing right after a compiler-inserted marker (bullet glyph,
-    /// checkbox attachment, ordered number) inherits its attributes via
-    /// NSTextView's typing-attributes machinery. Strip the
-    /// `.marginaliaListMarker` and `.marginaliaInline` flags from the
-    /// freshly inserted text so the serializer doesn't drop the typed
-    /// content thinking it's still part of the marker run.
+    /// NSTextView's typing-attribute auto-derivation strips custom NSAttributedString
+    /// keys (`.marginaliaBlock`, `.marginaliaListItem`) under some conditions, so
+    /// freshly typed characters can land in a paragraph without the surrounding
+    /// block attribution. After each character edit, find any char in the line
+    /// that DOES carry the block/list attrs and apply them uniformly across the
+    /// line so the layout manager treats it as one logical paragraph.
+    private func normalizeEditedLineAttrs() {
+        let total = textStorage.length
+        guard total > 0 else { return }
+        let editedRange = textStorage.editedRange
+        guard editedRange.location >= 0, editedRange.location <= total else { return }
+        let probeLoc = max(0, min(editedRange.location, total - 1))
+        let ns = textStorage.string as NSString
+        let lineRange = ns.paragraphRange(for: NSRange(location: probeLoc, length: 0))
+        guard lineRange.length > 0,
+              lineRange.location < total,
+              lineRange.location + lineRange.length <= total else { return }
+
+        // Find a char in the line that carries .marginaliaBlock; that's the
+        // source of truth (typed chars may have lost it via typing-attr drop).
+        var sourceBlock: BlockAttribute?
+        var sourceList: ListItemAttribute?
+        var sourceParagraphStyle: NSParagraphStyle?
+        var i = lineRange.location
+        let end = lineRange.location + lineRange.length
+        while i < end {
+            if sourceBlock == nil, let block = textStorage.safeAttribute(.marginaliaBlock, at: i) as? BlockAttribute {
+                sourceBlock = block
+            }
+            if sourceList == nil, let list = textStorage.safeAttribute(.marginaliaListItem, at: i) as? ListItemAttribute {
+                sourceList = list
+            }
+            if sourceParagraphStyle == nil, let ps = textStorage.safeAttribute(.paragraphStyle, at: i) as? NSParagraphStyle {
+                sourceParagraphStyle = ps
+            }
+            if sourceBlock != nil && sourceParagraphStyle != nil { break }
+            i += 1
+        }
+        guard sourceBlock != nil || sourceList != nil || sourceParagraphStyle != nil else { return }
+
+        applyingMarkdown = true
+        textStorage.beginEditing()
+        if let block = sourceBlock {
+            textStorage.addAttribute(.marginaliaBlock, value: block, range: lineRange)
+        }
+        if let list = sourceList {
+            textStorage.addAttribute(.marginaliaListItem, value: list, range: lineRange)
+        }
+        if let ps = sourceParagraphStyle {
+            textStorage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
+        }
+        textStorage.endEditing()
+        applyingMarkdown = false
+    }
+
     private func scrubTypedAttributes() {
         let editedRange = textStorage.editedRange
         guard editedRange.length > 0 else { return }
@@ -100,11 +150,19 @@ public final class EditorController {
         guard safe.length > 0 else { return }
         applyingMarkdown = true
         textStorage.beginEditing()
-        textStorage.removeAttribute(.marginaliaListMarker, range: safe)
-        // Don't blanket-remove .marginaliaInline — code-span typing should
-        // keep its tag — but DO remove a stray .attachment that NSTextView
-        // sometimes propagates from an adjacent attachment glyph.
-        textStorage.removeAttribute(.attachment, range: safe)
+        let ns = textStorage.string as NSString
+        var i = safe.location
+        let endIdx = min(safe.location + safe.length, textStorage.length)
+        while i < endIdx {
+            let charRange = NSRange(location: i, length: 1)
+            let isAttachmentGlyph = ns.character(at: i) == 0xFFFC
+                && textStorage.safeAttribute(.attachment, at: i) != nil
+            if !isAttachmentGlyph {
+                textStorage.removeAttribute(.attachment, range: charRange)
+                textStorage.removeAttribute(.marginaliaListMarker, range: charRange)
+            }
+            i += 1
+        }
         textStorage.endEditing()
         applyingMarkdown = false
     }
@@ -145,16 +203,15 @@ public final class EditorController {
         let lineText = ns.substring(with: lineRange)
         let stripped = lineText
             .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\t", with: "")
             .replacingOccurrences(of: "\n", with: "")
         guard stripped.isEmpty else { return }
 
         let probe = lineRange.location
         guard probe < textStorage.length,
-              let block = textStorage.attribute(.marginaliaBlock, at: probe, effectiveRange: nil) as? BlockAttribute,
+              let block = textStorage.safeAttribute(.marginaliaBlock, at: probe) as? BlockAttribute,
               block.tag != .paragraph else { return }
-        // Avoid resetting list items if there's still a checkbox attachment
-        // — the user may want to preserve the empty task slot.
-        if textStorage.attribute(.marginaliaListItem, at: probe, effectiveRange: nil) != nil {
+        if textStorage.safeAttribute(.marginaliaListItem, at: probe) != nil {
             return
         }
 
@@ -164,20 +221,30 @@ public final class EditorController {
         applyTypingAttributes(plainAttrs)
     }
 
-    /// NSTextView caches typing attributes separately from storage. After
-    /// programmatic storage edits the cache still holds whatever was at
-    /// the cursor before, so we have to push the desired attributes into
-    /// the host explicitly.
+    /// Push our desired typing attributes into the host text view's cache.
+    ///
+    /// Deferred to the next main-runloop tick because callers can fire from
+    /// inside `NSTextStorage.didProcessEditingNotification` (e.g. when the
+    /// user deletes the last character). At that moment the storage edit
+    /// transaction is still in flight: the storage length has shrunk but
+    /// the text view's `selectedRange` has not yet been clamped. AppKit's
+    /// `setTypingAttributes:` synchronously calls `updateFontPanel` →
+    /// `fallbackFontInfoForSelectedRange:` → `enumerateAttribute:inRange:`,
+    /// which then raises `NSRangeException` against the stale selection.
+    /// Deferring lets AppKit settle the selection first.
     private func applyTypingAttributes(_ attrs: [NSAttributedString.Key: Any]) {
-        #if canImport(AppKit) && os(macOS)
-        if let tv = hostTextView as? NSTextView {
-            tv.typingAttributes = attrs
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            #if canImport(AppKit) && os(macOS)
+            if let tv = self.hostTextView as? NSTextView {
+                tv.typingAttributes = attrs
+            }
+            #elseif canImport(UIKit)
+            if let tv = self.hostTextView as? UITextView {
+                tv.typingAttributes = attrs
+            }
+            #endif
         }
-        #elseif canImport(UIKit)
-        if let tv = hostTextView as? UITextView {
-            tv.typingAttributes = attrs
-        }
-        #endif
     }
 
     deinit {
@@ -205,9 +272,10 @@ public final class EditorController {
         setMarkdown(md)
     }
 
-    /// Storage-coord cursor position inferred from the host text view, or 0
-    /// if no host is attached.
+    var testSelection: NSRange?
+
     public var currentSelection: NSRange {
+        if let testSelection { return testSelection }
         #if canImport(AppKit) && os(macOS)
         if let tv = hostTextView as? NSTextView { return tv.selectedRange() }
         #elseif canImport(UIKit)
@@ -220,8 +288,11 @@ public final class EditorController {
     /// selection). Cursor lands after the inserted text.
     @discardableResult
     public func insert(text: String) -> NSRange {
-        snapshotForUndo()
-        let result = Operations.insertText(in: textStorage, replacing: currentSelection, with: text)
+        let selection = currentSelection
+        var result = NSRange(location: 0, length: 0)
+        withCharacterMutation(range: selection) {
+            result = Operations.insertText(in: textStorage, replacing: selection, with: text)
+        }
         setHostSelection(result)
         return result
     }
@@ -231,84 +302,183 @@ public final class EditorController {
     /// `@objc` action methods call from the responder chain.
     @discardableResult
     public func perform(_ action: EditorAction) -> NSRange {
-        snapshotForUndo()
         let range = currentSelection
         defer { refreshTypingAttributes(at: currentSelection.location) }
         let resulting: NSRange
         switch action {
         case .bold:
-            resulting = Operations.toggleBold(in: textStorage, range: range, theme: theme)
+            resulting = wrappedToggleBold(range: range)
         case .italic:
-            resulting = Operations.toggleItalic(in: textStorage, range: range, theme: theme)
+            resulting = wrappedToggleItalic(range: range)
         case .strikethrough:
-            resulting = Operations.toggleStrikethrough(in: textStorage, range: range, theme: theme)
+            resulting = wrappedToggleStrikethrough(range: range)
         case .codeSpan:
-            resulting = Operations.toggleCodeSpan(in: textStorage, range: range, theme: theme)
+            resulting = wrappedToggleCodeSpan(range: range)
         case .link(let url, let label):
-            resulting = Operations.insertLink(
-                in: textStorage,
-                replacing: range,
-                label: label ?? "label",
-                url: url ?? "url",
-                theme: theme
-            )
+            var out = NSRange(location: range.location, length: 0)
+            withCharacterMutation(range: range) {
+                out = Operations.insertLink(
+                    in: textStorage,
+                    replacing: range,
+                    label: label ?? "label",
+                    url: url ?? "url",
+                    theme: theme
+                )
+            }
+            resulting = out
         case .heading(let level):
-            resulting = Operations.setHeading(
-                in: textStorage, range: range, level: level,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.setHeading(
+                    in: textStorage, range: range, level: level,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .unorderedList:
-            resulting = Operations.toggleUnorderedList(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.toggleUnorderedList(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .orderedList:
-            resulting = Operations.toggleOrderedList(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.toggleOrderedList(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .taskList:
-            resulting = Operations.toggleTaskList(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.toggleTaskList(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .blockquote:
-            resulting = Operations.toggleBlockquote(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.toggleBlockquote(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .codeBlock:
-            resulting = Operations.insertCodeBlock(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.insertCodeBlock(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .horizontalRule:
-            resulting = Operations.insertHorizontalRule(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.insertHorizontalRule(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .indent:
-            resulting = Operations.indent(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.indent(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         case .outdent:
-            resulting = Operations.outdent(
-                in: textStorage, range: range,
-                compiler: compiler, serializer: serializer,
-                dialect: dialect, mode: mode, theme: theme
-            )
+            resulting = wrappedBlockOp(range: range) {
+                Operations.outdent(
+                    in: textStorage, range: range,
+                    compiler: compiler, serializer: serializer,
+                    dialect: dialect, mode: mode, theme: theme
+                )
+            }
         }
         setHostSelection(resulting)
         return resulting
+    }
+
+    private func wrappedBlockOp(range: NSRange, _ body: () -> NSRange) -> NSRange {
+        let safe = clamp(range, in: textStorage.length)
+        let lineRange = (textStorage.string as NSString).paragraphRange(for: safe)
+        var out = NSRange(location: lineRange.location, length: 0)
+        withCharacterMutation(range: lineRange) {
+            applyingMarkdown = true
+            out = body()
+            applyingMarkdown = false
+            resegment()
+            intrinsicSizeInvalidator?()
+        }
+        return out
+    }
+
+    private func wrappedToggleBold(range: NSRange) -> NSRange {
+        if range.length == 0 {
+            var out = NSRange(location: range.location, length: 0)
+            withCharacterMutation(range: NSRange(location: range.location, length: 0)) {
+                out = Operations.toggleBold(in: textStorage, range: range, theme: theme)
+            }
+            return out
+        }
+        let safe = clamp(range, in: textStorage.length)
+        var out = safe
+        withAttributeMutation(range: safe) {
+            out = Operations.toggleBold(in: textStorage, range: range, theme: theme)
+        }
+        return out
+    }
+
+    private func wrappedToggleItalic(range: NSRange) -> NSRange {
+        if range.length == 0 {
+            var out = NSRange(location: range.location, length: 0)
+            withCharacterMutation(range: NSRange(location: range.location, length: 0)) {
+                out = Operations.toggleItalic(in: textStorage, range: range, theme: theme)
+            }
+            return out
+        }
+        let safe = clamp(range, in: textStorage.length)
+        var out = safe
+        withAttributeMutation(range: safe) {
+            out = Operations.toggleItalic(in: textStorage, range: range, theme: theme)
+        }
+        return out
+    }
+
+    private func wrappedToggleStrikethrough(range: NSRange) -> NSRange {
+        if range.length == 0 {
+            var out = NSRange(location: range.location, length: 0)
+            withCharacterMutation(range: NSRange(location: range.location, length: 0)) {
+                out = Operations.toggleStrikethrough(in: textStorage, range: range, theme: theme)
+            }
+            return out
+        }
+        let safe = clamp(range, in: textStorage.length)
+        var out = safe
+        withAttributeMutation(range: safe) {
+            out = Operations.toggleStrikethrough(in: textStorage, range: range, theme: theme)
+        }
+        return out
+    }
+
+    private func wrappedToggleCodeSpan(range: NSRange) -> NSRange {
+        if range.length == 0 {
+            var out = NSRange(location: range.location, length: 0)
+            withCharacterMutation(range: NSRange(location: range.location, length: 0)) {
+                out = Operations.toggleCodeSpan(in: textStorage, range: range, theme: theme)
+            }
+            return out
+        }
+        let safe = clamp(range, in: textStorage.length)
+        var out = safe
+        withAttributeMutation(range: safe) {
+            out = Operations.toggleCodeSpan(in: textStorage, range: range, theme: theme)
+        }
+        return out
     }
 
     /// Insert a link at the host text view's cursor. If the user has a
@@ -317,7 +487,6 @@ public final class EditorController {
     /// rides on a `.link` attribute and round-trips as `[label](url)`.
     @discardableResult
     public func insertLink(label: String, url: String) -> NSRange {
-        snapshotForUndo()
         let selection = currentSelection
         var actualLabel = label
         if selection.length > 0,
@@ -327,47 +496,113 @@ public final class EditorController {
                 actualLabel = selected
             }
         }
-        let result = Operations.insertLink(
-            in: textStorage,
-            replacing: selection,
-            label: actualLabel,
-            url: url,
-            theme: theme
-        )
+        var result = NSRange(location: selection.location, length: 0)
+        withCharacterMutation(range: selection) {
+            result = Operations.insertLink(
+                in: textStorage,
+                replacing: selection,
+                label: actualLabel,
+                url: url,
+                theme: theme
+            )
+        }
         setHostSelection(result)
+        refreshTypingAttributes(at: result.location)
         return result
     }
 
-    /// Capture the storage + selection so Cmd-Z reverts the upcoming
-    /// operation. Operations mutate `textStorage` directly, which bypasses
-    /// NSTextView's auto-undo path; without manual registration, Cmd-Z
-    /// would skip them entirely.
-    ///
-    /// The closure replaces the full storage with the captured snapshot —
-    /// simple, correct, no boundary edge cases. The cost is that an undo
-    /// of an early operation may also revert later edits the user expected
-    /// to keep, but that's preferable to crashing on out-of-range diff
-    /// math when the storage state has drifted.
-    private func snapshotForUndo() {
-        let preStorage = NSAttributedString(attributedString: textStorage)
-        let preSelection = currentSelection
+    // MARK: - undo plumbing
 
-        undoManager.registerUndo(withTarget: self) { [weak self] target in
-            guard let self else { _ = target; return }
-            self.snapshotForUndo()
+    func withCharacterMutation(range: NSRange, _ body: () -> Void) {
+        let preLength = textStorage.length
+        let preRange = clamp(range, in: preLength)
+        let pre = textStorage.attributedSubstring(from: preRange)
+        let preSelection = currentSelection
+        body()
+        let delta = textStorage.length - preLength
+        let postRange = NSRange(location: preRange.location, length: preRange.length + delta)
+        undoManager.beginUndoGrouping()
+        registerCharacterInverse(at: postRange, with: pre, selection: preSelection)
+        undoManager.endUndoGrouping()
+    }
+
+    func withAttributeMutation(range: NSRange, _ body: () -> Void) {
+        let safe = clamp(range, in: textStorage.length)
+        let runs = captureAttributeRuns(in: safe)
+        let preSelection = currentSelection
+        body()
+        undoManager.beginUndoGrouping()
+        registerAttributeInverse(at: safe, runs: runs, selection: preSelection)
+        undoManager.endUndoGrouping()
+    }
+
+    private func registerCharacterInverse(
+        at range: NSRange,
+        with content: NSAttributedString,
+        selection: NSRange
+    ) {
+        undoManager.registerUndo(withTarget: self) { [weak self] _ in
+            guard let self else { return }
+            let safe = self.clamp(range, in: self.textStorage.length)
+            let redoContent = self.textStorage.attributedSubstring(from: safe)
+            let redoSelection = self.currentSelection
             self.applyingMarkdown = true
             self.textStorage.beginEditing()
-            let total = self.textStorage.length
-            self.textStorage.replaceCharacters(
-                in: NSRange(location: 0, length: total),
-                with: preStorage
-            )
+            self.textStorage.replaceCharacters(in: safe, with: content)
             self.textStorage.endEditing()
             self.applyingMarkdown = false
-            self.setHostSelection(preSelection)
-            self.refreshTypingAttributes(at: preSelection.location)
+            self.setHostSelection(selection)
+            self.refreshTypingAttributes(at: selection.location)
             self.resegment()
+            let redoRange = NSRange(location: safe.location, length: content.length)
+            self.registerCharacterInverse(at: redoRange, with: redoContent, selection: redoSelection)
         }
+    }
+
+    private func registerAttributeInverse(
+        at range: NSRange,
+        runs: [AttributeRun],
+        selection: NSRange
+    ) {
+        undoManager.registerUndo(withTarget: self) { [weak self] _ in
+            guard let self else { return }
+            let safe = self.clamp(range, in: self.textStorage.length)
+            let redoRuns = self.captureAttributeRuns(in: safe)
+            let redoSelection = self.currentSelection
+            self.applyingMarkdown = true
+            self.textStorage.beginEditing()
+            for run in runs {
+                let runSafe = self.clamp(run.range, in: self.textStorage.length)
+                if runSafe.length > 0 {
+                    self.textStorage.setAttributes(run.attrs, range: runSafe)
+                }
+            }
+            self.textStorage.endEditing()
+            self.applyingMarkdown = false
+            self.setHostSelection(selection)
+            self.refreshTypingAttributes(at: selection.location)
+            self.resegment()
+            self.registerAttributeInverse(at: safe, runs: redoRuns, selection: redoSelection)
+        }
+    }
+
+    private struct AttributeRun {
+        let range: NSRange
+        let attrs: [NSAttributedString.Key: Any]
+    }
+
+    private func captureAttributeRuns(in range: NSRange) -> [AttributeRun] {
+        var runs: [AttributeRun] = []
+        textStorage.enumerateAttributes(in: range, options: []) { attrs, subRange, _ in
+            runs.append(AttributeRun(range: subRange, attrs: attrs))
+        }
+        return runs
+    }
+
+    private func clamp(_ range: NSRange, in length: Int) -> NSRange {
+        let location = max(0, min(range.location, length))
+        let remaining = max(0, length - location)
+        return NSRange(location: location, length: max(0, min(range.length, remaining)))
     }
 
     /// After programmatic storage edits, NSTextView's `typingAttributes`
@@ -385,7 +620,7 @@ public final class EditorController {
         ]
         if total > 0 {
             let probe = max(0, min(location, total - 1))
-            let raw = textStorage.attributes(at: probe, effectiveRange: nil)
+            let raw = textStorage.safeAttributes(at: probe)
             for key: NSAttributedString.Key in [
                 .font,
                 .foregroundColor,
@@ -408,11 +643,10 @@ public final class EditorController {
 
     @discardableResult
     public func toggleCheckbox(at location: Int) -> Bool {
-        snapshotForUndo()
         let total = textStorage.length
         guard location >= 0, location < total else { return false }
-        guard let existing = textStorage.attribute(.attachment, at: location, effectiveRange: nil) as? CheckboxAttachment,
-              let listAttr = textStorage.attribute(.marginaliaListItem, at: location, effectiveRange: nil) as? ListItemAttribute,
+        guard let existing = textStorage.safeAttribute(.attachment, at: location) as? CheckboxAttachment,
+              let listAttr = textStorage.safeAttribute(.marginaliaListItem, at: location) as? ListItemAttribute,
               listAttr.kind == .task else { return false }
         let newChecked = !existing.isChecked
         let newAttachment = CheckboxAttachment()
@@ -425,40 +659,206 @@ public final class EditorController {
         )
         let ns = textStorage.string as NSString
         let lineRange = ns.paragraphRange(for: NSRange(location: location, length: 0))
-        textStorage.beginEditing()
-        textStorage.addAttribute(.attachment, value: newAttachment, range: NSRange(location: location, length: 1))
-        textStorage.addAttribute(.marginaliaListItem, value: newListAttr, range: lineRange)
-        textStorage.endEditing()
+        withAttributeMutation(range: lineRange) {
+            textStorage.beginEditing()
+            textStorage.addAttribute(.attachment, value: newAttachment, range: NSRange(location: location, length: 1))
+            textStorage.addAttribute(.marginaliaListItem, value: newListAttr, range: lineRange)
+            textStorage.endEditing()
+        }
         return true
     }
 
-    /// Called from the text view when the user presses Return. Returns
-    /// `true` if the newline was consumed by list-continuation handling;
-    /// `false` if the text view should insert the newline normally.
     @discardableResult
     public func handleNewline() -> Bool {
-        snapshotForUndo()
         let cursor = currentSelection.location
-        if let result = InsertNewline.handle(
-            in: textStorage,
-            cursor: cursor,
-            compiler: compiler,
-            serializer: serializer,
-            dialect: dialect,
-            mode: mode,
-            theme: theme
-        ) {
-            setHostSelection(result)
-            return true
+        let ns = textStorage.string as NSString
+        if textStorage.length > 0 {
+            let probe = max(0, min(cursor, ns.length - 1))
+            let lineRange = ns.paragraphRange(for: NSRange(location: probe, length: 0))
+            let isListItem = textStorage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute
+            let blockAttr = textStorage.safeAttribute(.marginaliaBlock, at: probe) as? BlockAttribute
+            let isBlockquote = !isListItem && (blockAttr?.blockquoteDepth ?? 0) > 0
+            let orphanEmpty = !isListItem && !isBlockquote && isOrphanedEmptyMarkerLine(lineRange: lineRange)
+
+            if isListItem {
+                var resulting: NSRange?
+                withCharacterMutation(range: lineRange) {
+                    applyingMarkdown = true
+                    resulting = InsertNewline.handle(
+                        in: textStorage,
+                        cursor: cursor,
+                        compiler: compiler,
+                        serializer: serializer,
+                        dialect: dialect,
+                        mode: mode,
+                        theme: theme
+                    )
+                    applyingMarkdown = false
+                    resegment()
+                    intrinsicSizeInvalidator?()
+                }
+                if let result = resulting {
+                    setHostSelection(result)
+                    refreshTypingAttributes(at: result.location)
+                    return true
+                }
+            } else if isBlockquote {
+                let result = handleBlockquoteNewline(lineRange: lineRange, depth: blockAttr?.blockquoteDepth ?? 1)
+                setHostSelection(result)
+                refreshTypingAttributes(at: result.location)
+                return true
+            } else if orphanEmpty {
+                let result = demoteOrphanLineToPlain(lineRange: lineRange)
+                setHostSelection(result)
+                refreshTypingAttributes(at: result.location)
+                return true
+            }
         }
-        // Heading lines: a Return ends the heading. The new paragraph (and
-        // the trailing portion of the original line, if the user pressed
-        // Return mid-heading) drops back to plain paragraph styling so
-        // their typing isn't stuck in a giant bold font.
         if isHeadingAt(location: cursor) {
             return splitHeadingIntoParagraph(at: cursor)
         }
         return false
+    }
+
+    private func handleBlockquoteNewline(lineRange: NSRange, depth: Int) -> NSRange {
+        let ns = textStorage.string as NSString
+        let lineText = lineRange.length > 0 ? ns.substring(with: lineRange) : ""
+        let stripped = lineText
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        if stripped.isEmpty {
+            // Empty blockquote line — exit to plain paragraph at this line.
+            let plainAttrs: [NSAttributedString.Key: Any] = [
+                .font: theme.bodyFont,
+                .foregroundColor: theme.foregroundColor,
+                .paragraphStyle: NSParagraphStyle(),
+                .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            ]
+            let blank = NSAttributedString(string: "\n", attributes: plainAttrs)
+            withCharacterMutation(range: lineRange) {
+                applyingMarkdown = true
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: lineRange, with: blank)
+                textStorage.endEditing()
+                applyingMarkdown = false
+                resegment()
+                intrinsicSizeInvalidator?()
+            }
+            applyTypingAttributes(plainAttrs)
+            return NSRange(location: lineRange.location, length: 0)
+        }
+        // Continuation: append a fresh empty blockquote line after this one.
+        let nextLine = compiler.makeBlockquoteLine(depth: depth, theme: theme)
+        let insertLocation = lineRange.location + lineRange.length
+        withCharacterMutation(range: NSRange(location: insertLocation, length: 0)) {
+            applyingMarkdown = true
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: NSRange(location: insertLocation, length: 0), with: nextLine)
+            textStorage.endEditing()
+            applyingMarkdown = false
+            resegment()
+            intrinsicSizeInvalidator?()
+        }
+        let cursor = insertLocation + nextLine.length - 1
+        return NSRange(location: max(insertLocation, cursor), length: 0)
+    }
+
+    private func isOrphanedEmptyMarkerLine(lineRange: NSRange) -> Bool {
+        let total = textStorage.length
+        guard total > 0,
+              lineRange.location > 0,
+              lineRange.location <= total,
+              lineRange.location + lineRange.length <= total else {
+            return false
+        }
+        let prev = lineRange.location - 1
+        guard prev < total,
+              textStorage.safeAttribute(.marginaliaListItem, at: prev) is ListItemAttribute else {
+            return false
+        }
+        let ns = textStorage.string as NSString
+        let stripped = ns.substring(with: lineRange)
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+        // Require a literal marker character (-, *, +, digit+. , a-z+. , roman+. )
+        // to be present. Otherwise a plain paragraph following a list would be
+        // misclassified as orphaned and consume Returns.
+        let pattern = "^\\s*([-*+]|\\d+[.)]|[a-z]+[.)]|[ivxlcdm]+[.)])\\s*(\\[[ xX]\\]\\s*)?\\s*$"
+        return stripped.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private func demoteOrphanLineToPlain(lineRange: NSRange) -> NSRange {
+        let plainAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        let blank = NSAttributedString(string: "\n", attributes: plainAttrs)
+        withCharacterMutation(range: lineRange) {
+            applyingMarkdown = true
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: lineRange, with: blank)
+            textStorage.endEditing()
+            applyingMarkdown = false
+            resegment()
+            intrinsicSizeInvalidator?()
+        }
+        applyTypingAttributes(plainAttrs)
+        return NSRange(location: lineRange.location, length: 0)
+    }
+
+    @discardableResult
+    public func handleBackspace() -> Bool {
+        let selection = currentSelection
+        guard selection.length == 0 else { return false }
+        let cursor = selection.location
+        let total = textStorage.length
+        guard total > 0, cursor > 0, cursor <= total else { return false }
+        let ns = textStorage.string as NSString
+        let lineRange = ns.paragraphRange(for: NSRange(location: max(0, cursor - 1), length: 0))
+        guard lineRange.length > 0,
+              lineRange.location + lineRange.length <= total,
+              lineRange.location < total else {
+            return false
+        }
+        let probe = max(lineRange.location, min(cursor - 1, total - 1))
+        guard probe < total,
+              textStorage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute else {
+            return false
+        }
+        var markerRange = NSRange(location: lineRange.location, length: 0)
+        _ = textStorage.safeAttribute(.marginaliaListMarker, at: lineRange.location, longestEffectiveRange: &markerRange, in: lineRange)
+        guard let flag = textStorage.safeAttribute(.marginaliaListMarker, at: lineRange.location) as? Bool, flag else {
+            return false
+        }
+        let bodyStart = markerRange.location + markerRange.length
+        guard cursor == bodyStart else { return false }
+
+        let plainAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        let bodyRange = NSRange(location: bodyStart, length: lineRange.length - markerRange.length)
+        withCharacterMutation(range: lineRange) {
+            applyingMarkdown = true
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: markerRange, with: "")
+            let demoteRange = NSRange(location: lineRange.location, length: bodyRange.length)
+            if demoteRange.length > 0 {
+                textStorage.setAttributes(plainAttrs, range: demoteRange)
+                textStorage.removeAttribute(.marginaliaListItem, range: demoteRange)
+            }
+            textStorage.endEditing()
+            applyingMarkdown = false
+            resegment()
+        }
+        setHostSelection(NSRange(location: lineRange.location, length: 0))
+        applyTypingAttributes(plainAttrs)
+        return true
     }
 
     private func isHeadingAt(location: Int) -> Bool {
@@ -484,13 +884,15 @@ public final class EditorController {
         ]
         let inserted = NSAttributedString(string: "\n", attributes: plainAttrs)
 
-        textStorage.beginEditing()
-        textStorage.replaceCharacters(in: NSRange(location: cursor, length: 0), with: inserted)
-        if trailingLength > 0 {
-            let trailingRange = NSRange(location: cursor + 1, length: trailingLength)
-            textStorage.addAttributes(plainAttrs, range: trailingRange)
+        withCharacterMutation(range: lineRange) {
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: NSRange(location: cursor, length: 0), with: inserted)
+            if trailingLength > 0 {
+                let trailingRange = NSRange(location: cursor + 1, length: trailingLength)
+                textStorage.addAttributes(plainAttrs, range: trailingRange)
+            }
+            textStorage.endEditing()
         }
-        textStorage.endEditing()
         setHostSelection(NSRange(location: cursor + 1, length: 0))
         return true
     }
@@ -533,7 +935,7 @@ public final class EditorController {
         var cursor = 0
         while cursor < total {
             var range = NSRange(location: cursor, length: 0)
-            let attr = textStorage.attribute(
+            let attr = textStorage.safeAttribute(
                 .marginaliaBlock,
                 at: cursor,
                 longestEffectiveRange: &range,
