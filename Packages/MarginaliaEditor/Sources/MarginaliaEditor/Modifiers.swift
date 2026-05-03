@@ -21,6 +21,10 @@ private struct InlineContentProviderKey: EnvironmentKey {
     static let defaultValue: ((MarginaliaInlineContent) -> NSTextAttachment?)? = nil
 }
 
+private struct ControllerReadyKey: EnvironmentKey {
+    static let defaultValue: ((EditorController) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     public var marginaliaDialect: Dialect {
         get { self[DialectKey.self] }
@@ -40,6 +44,11 @@ extension EnvironmentValues {
     public var marginaliaInlineContentProvider: ((MarginaliaInlineContent) -> NSTextAttachment?)? {
         get { self[InlineContentProviderKey.self] }
         set { self[InlineContentProviderKey.self] = newValue }
+    }
+
+    public var marginaliaControllerReady: ((EditorController) -> Void)? {
+        get { self[ControllerReadyKey.self] }
+        set { self[ControllerReadyKey.self] = newValue }
     }
 }
 
@@ -62,5 +71,15 @@ extension View {
         _ provider: @escaping (MarginaliaInlineContent) -> NSTextAttachment?
     ) -> some View {
         environment(\.marginaliaInlineContentProvider, provider)
+    }
+
+    /// Receive the live `EditorController` once the editor finishes setup.
+    /// Invoked from `onAppear`, so callers can capture the controller in
+    /// `@State` and route cursor-aware insertions (link, image, mention)
+    /// through it.
+    public func onMarginaliaControllerReady(
+        _ callback: @escaping (EditorController) -> Void
+    ) -> some View {
+        environment(\.marginaliaControllerReady, callback)
     }
 }

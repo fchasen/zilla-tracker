@@ -17,6 +17,7 @@ public struct Marginalia: View {
     @Environment(\.marginaliaDialect) private var dialect
     @Environment(\.marginaliaTheme) private var theme
     @Environment(\.marginaliaInlineContentProvider) private var inlineProvider
+    @Environment(\.marginaliaControllerReady) private var onControllerReady
 
     @AppStorage("marginalia.toolbarVisible") private var toolbarVisible = true
     @AppStorage("marginalia.mode") private var modeRawValue: String = Mode.rich.rawValue
@@ -65,6 +66,7 @@ public struct Marginalia: View {
             if let controller = hosting.controller {
                 if controller.markdown() != text { controller.setMarkdown(text) }
                 controller.mode = mode
+                onControllerReady?(controller)
             }
         }
         .onChange(of: dialect) { _, newDialect in

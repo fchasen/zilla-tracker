@@ -107,6 +107,50 @@ public final class EditorController {
         setMarkdown(md)
     }
 
+    /// Storage-coord cursor position inferred from the host text view, or 0
+    /// if no host is attached.
+    public var currentSelection: NSRange {
+        #if canImport(AppKit) && os(macOS)
+        if let tv = hostTextView as? NSTextView { return tv.selectedRange() }
+        #elseif canImport(UIKit)
+        if let tv = hostTextView as? UITextView { return tv.selectedRange }
+        #endif
+        return NSRange(location: 0, length: 0)
+    }
+
+    /// Insert plain text at the host text view's cursor (or replace its
+    /// selection). Cursor lands after the inserted text.
+    @discardableResult
+    public func insert(text: String) -> NSRange {
+        let result = Operations.insertText(in: textStorage, replacing: currentSelection, with: text)
+        setHostSelection(result)
+        return result
+    }
+
+    /// Insert a link at the host text view's cursor (or replace its
+    /// selection). The link's display text is `label`; the URL rides on a
+    /// `.link` attribute and round-trips as `[label](url)` markdown.
+    @discardableResult
+    public func insertLink(label: String, url: String) -> NSRange {
+        let result = Operations.insertLink(
+            in: textStorage,
+            replacing: currentSelection,
+            label: label,
+            url: url,
+            theme: theme
+        )
+        setHostSelection(result)
+        return result
+    }
+
+    private func setHostSelection(_ range: NSRange) {
+        #if canImport(AppKit) && os(macOS)
+        if let tv = hostTextView as? NSTextView { tv.setSelectedRange(range) }
+        #elseif canImport(UIKit)
+        if let tv = hostTextView as? UITextView { tv.selectedRange = range }
+        #endif
+    }
+
     // MARK: - private
 
     private func compileFor(_ markdown: String) -> NSAttributedString {

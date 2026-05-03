@@ -14,7 +14,7 @@ struct MarkdownEditor: View {
 
     @Environment(\.zillaFontScale) private var fontScale
 
-    @State private var selection: NSRange = NSRange(location: 0, length: 0)
+    @State private var controller: EditorController?
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
@@ -24,6 +24,7 @@ struct MarkdownEditor: View {
             .dialect(dialect)
             .theme(.default(fontScale: fontScale))
             .configuration(Marginalia.Configuration(toolbar: showToolbar ? toolbar : [], minHeight: minHeight))
+            .onMarginaliaControllerReady { c in controller = c }
             .frame(minHeight: minHeight)
             .overlay {
                 if bordered {
@@ -83,15 +84,15 @@ struct MarkdownEditor: View {
 
     private func insertBugLink(_ bugID: Bug.ID) {
         let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)"
-        insertLink(defaultLabel: "bug \(bugID)", url: url)
+        controller?.insertLink(label: "bug \(bugID)", url: url)
     }
 
     private func insertMarkdownLink(label: String, url: String) {
-        insertLink(defaultLabel: label, url: url)
+        controller?.insertLink(label: label, url: url)
     }
 
     private func insertUserMention(_ user: User) {
-        insertAtCursor(":\(mentionHandle(for: user))")
+        controller?.insert(text: ":\(mentionHandle(for: user))")
     }
 
     private func mentionHandle(for user: User) -> String {
@@ -109,31 +110,6 @@ struct MarkdownEditor: View {
         } else {
             label = hit.path
         }
-        insertLink(defaultLabel: label, url: hit.url)
-    }
-
-    private func insertLink(defaultLabel: String, url: String) {
-        let safe = MarkdownEditor.safeRange(selection, in: text)
-        let ns = text as NSString
-        let label = safe.length > 0 ? ns.substring(with: safe) : defaultLabel
-        let inserted = "[\(label)](\(url))"
-        text = ns.replacingCharacters(in: safe, with: inserted)
-        let cursorAfter = safe.location + (inserted as NSString).length
-        selection = NSRange(location: cursorAfter, length: 0)
-    }
-
-    private func insertAtCursor(_ string: String) {
-        let safe = MarkdownEditor.safeRange(selection, in: text)
-        let ns = text as NSString
-        text = ns.replacingCharacters(in: safe, with: string)
-        let cursorAfter = safe.location + (string as NSString).length
-        selection = NSRange(location: cursorAfter, length: 0)
-    }
-
-    static func safeRange(_ range: NSRange, in text: String) -> NSRange {
-        let length = (text as NSString).length
-        let location = max(0, min(range.location, length))
-        let remaining = max(0, length - location)
-        return NSRange(location: location, length: max(0, min(range.length, remaining)))
+        controller?.insertLink(label: label, url: hit.url)
     }
 }
