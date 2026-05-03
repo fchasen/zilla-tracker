@@ -47,6 +47,9 @@ public final class MarkdownAttributedCompiler {
                 .foregroundColor: theme.foregroundColor
             ]
         )
+        if result.length > 0 {
+            result.setBlockSpec(.paragraph, in: NSRange(location: 0, length: result.length))
+        }
         let highlights = parseAndHighlight(markdown)
         for span in highlights {
             switch span.tag {
@@ -75,6 +78,7 @@ public final class MarkdownAttributedCompiler {
         guard !markdown.isEmpty else {
             return NSAttributedString(string: "", attributes: baseAttributes(theme: theme))
         }
+        // No-op marker — appendStyled at each segment site applies BlockSpec.
 
         guard let blockTree = blockParser.parse(markdown),
               let blockRoot = blockTree.rootNode else {
@@ -360,7 +364,7 @@ public final class MarkdownAttributedCompiler {
             }
         }
 
-        out.append(attributed)
+        appendStyled(attributed, spec: BlockSpec(blockSegment: segment), into: out)
     }
 
     private func appendCodeBlock(
@@ -388,7 +392,11 @@ public final class MarkdownAttributedCompiler {
         ]
         var content = raw
         if !content.hasSuffix("\n") { content.append("\n") }
-        out.append(NSAttributedString(string: content, attributes: paragraphAttrs))
+        appendStyled(
+            NSAttributedString(string: content, attributes: paragraphAttrs),
+            spec: BlockSpec(blockSegment: segment),
+            into: out
+        )
     }
 
     private func appendHorizontalRule(
@@ -405,7 +413,11 @@ public final class MarkdownAttributedCompiler {
         let nsSource = source as NSString
         var content = nsSource.substring(with: segment.range)
         if !content.hasSuffix("\n") { content.append("\n") }
-        out.append(NSAttributedString(string: content, attributes: attrs))
+        appendStyled(
+            NSAttributedString(string: content, attributes: attrs),
+            spec: BlockSpec(blockSegment: segment),
+            into: out
+        )
     }
 
     private func appendOpaqueBlock(
@@ -422,7 +434,11 @@ public final class MarkdownAttributedCompiler {
         ]
         var content = nsSource.substring(with: segment.range)
         if !content.hasSuffix("\n") { content.append("\n") }
-        out.append(NSAttributedString(string: content, attributes: attrs))
+        appendStyled(
+            NSAttributedString(string: content, attributes: attrs),
+            spec: BlockSpec(blockSegment: segment),
+            into: out
+        )
     }
 
     private func appendVerbatim(
@@ -434,7 +450,23 @@ public final class MarkdownAttributedCompiler {
         guard range.length > 0 else { return }
         let nsSource = source as NSString
         let s = nsSource.substring(with: range)
-        out.append(NSAttributedString(string: s, attributes: baseAttributes(theme: theme)))
+        appendStyled(
+            NSAttributedString(string: s, attributes: baseAttributes(theme: theme)),
+            spec: .paragraph,
+            into: out
+        )
+    }
+
+    private func appendStyled(
+        _ attributed: NSAttributedString,
+        spec: BlockSpec,
+        into out: NSMutableAttributedString
+    ) {
+        let startIdx = out.length
+        out.append(attributed)
+        let endIdx = out.length
+        guard endIdx > startIdx else { return }
+        out.setBlockSpec(spec, in: NSRange(location: startIdx, length: endIdx - startIdx))
     }
 
     // MARK: - paragraph styles
@@ -495,6 +527,8 @@ public final class MarkdownAttributedCompiler {
             result.append(NSAttributedString(string: "\u{FFFC} ", attributes: markerAttrs))
         }
         result.append(NSAttributedString(string: content + "\n", attributes: baseAttrs))
+        let spec = BlockSpec(blockAttribute: blockAttr, listItem: listAttr)
+        result.setBlockSpec(spec, in: NSRange(location: 0, length: result.length))
         return result
     }
 
@@ -521,7 +555,10 @@ public final class MarkdownAttributedCompiler {
             .paragraphStyle: paragraphStyle,
             .marginaliaBlock: blockAttr
         ]
-        return NSAttributedString(string: content + "\n", attributes: attrs)
+        let result = NSMutableAttributedString(string: content + "\n", attributes: attrs)
+        let spec = BlockSpec(kind: .paragraph, blockquoteDepth: max(1, depth))
+        result.setBlockSpec(spec, in: NSRange(location: 0, length: result.length))
+        return result
     }
 
     private func paragraphStyleFor(
