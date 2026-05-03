@@ -277,6 +277,29 @@ public final class MarkdownAttributedCompiler {
 
         let attributed = NSMutableAttributedString(string: content, attributes: paragraphAttrs)
 
+        // Apply inline style runs FIRST — their ranges are computed in
+        // stripped-body coordinates, so prepending the marker before
+        // these run would slide every range to the left by the marker
+        // length and bold "**bold**" would land on the marker glyph
+        // instead of the word.
+        for (range, attrs) in styleRuns {
+            let safe = clampedRange(range, in: attributed.length)
+            guard safe.length > 0 else { continue }
+            for (k, v) in attrs {
+                if k == .font {
+                    if let baseRun = attributed.safeAttribute(.font, at: safe.location) as? PlatformFont,
+                       let trait = (v as? PlatformFont).flatMap({ traitsOf($0) }) {
+                        let merged = themedFont(baseRun, traits: trait)
+                        attributed.addAttribute(.font, value: merged, range: safe)
+                    } else {
+                        attributed.addAttribute(.font, value: v, range: safe)
+                    }
+                } else {
+                    attributed.addAttribute(k, value: v, range: safe)
+                }
+            }
+        }
+
         switch segment.tag {
         case .taskListItem:
             let attachment = CheckboxAttachment()
@@ -310,25 +333,6 @@ public final class MarkdownAttributedCompiler {
             )
         default:
             break
-        }
-
-        // Layer style runs on top.
-        for (range, attrs) in styleRuns {
-            let safe = clampedRange(range, in: attributed.length)
-            guard safe.length > 0 else { continue }
-            for (k, v) in attrs {
-                if k == .font {
-                    if let baseRun = attributed.safeAttribute(.font, at: safe.location) as? PlatformFont,
-                       let trait = (v as? PlatformFont).flatMap({ traitsOf($0) }) {
-                        let merged = themedFont(baseRun, traits: trait)
-                        attributed.addAttribute(.font, value: merged, range: safe)
-                    } else {
-                        attributed.addAttribute(.font, value: v, range: safe)
-                    }
-                } else {
-                    attributed.addAttribute(k, value: v, range: safe)
-                }
-            }
         }
 
         appendStyled(attributed, spec: BlockSpec(blockSegment: segment), into: out)
