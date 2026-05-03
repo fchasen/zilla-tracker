@@ -90,9 +90,18 @@ public final class EditorController {
         let total = textStorage.length
         guard total > 0 else { return }
         let edited = textStorage.editedRange
-        guard edited.location >= 0, edited.location <= total else { return }
-        let probe = max(0, min(edited.location, total - 1))
-        let lineRange = (textStorage.string as NSString).paragraphRange(for: NSRange(location: probe, length: 0))
+        guard edited.location >= 0,
+              edited.location <= total,
+              edited.location + edited.length <= total else { return }
+        // paragraphRange(for:) on the full edit range gives the union of
+        // every paragraph the edit overlaps. Repairing only the line at
+        // editedRange.location would miss multi-line pastes.
+        let ns = textStorage.string as NSString
+        let probe = NSRange(
+            location: max(0, min(edited.location, max(0, total - 1))),
+            length: min(edited.length, total - min(edited.location, total))
+        )
+        let lineRange = ns.paragraphRange(for: probe)
         applyingMarkdown = true
         SpecValidator.repair(in: textStorage, range: lineRange)
         applyingMarkdown = false
@@ -267,12 +276,23 @@ public final class EditorController {
         guard !transaction.steps.isEmpty else { return currentSelection }
         let env = makeStepEnvironment()
         var lastRange = currentSelection
-        let mutationRange = mutationRange(for: transaction)
-        withCharacterMutation(range: mutationRange) {
+        let preMutationRange = mutationRange(for: transaction)
+        withCharacterMutation(range: preMutationRange) {
             applyingMarkdown = true
+            let preLength = textStorage.length
             let applied = transaction.apply(to: textStorage, env: env)
             lastRange = applied.mappedRange
-            validateAndRepair(in: lastRange)
+            // Validate the union of every range the transaction touched —
+            // not just the last step's range. Approximate the post-mutation
+            // union as `[preMutationRange.location, preMutationRange.location + length + delta]`
+            // which is a superset of every step's mappedRange.
+            let delta = textStorage.length - preLength
+            let unionLength = max(0, preMutationRange.length + max(0, delta))
+            let validationRange = NSRange(
+                location: min(preMutationRange.location, max(0, textStorage.length)),
+                length: min(unionLength, textStorage.length - min(preMutationRange.location, max(0, textStorage.length)))
+            )
+            validateAndRepair(in: validationRange)
             applyingMarkdown = false
             resegment()
             intrinsicSizeInvalidator?()
