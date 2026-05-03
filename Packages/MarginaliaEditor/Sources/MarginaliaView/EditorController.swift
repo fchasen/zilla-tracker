@@ -169,6 +169,7 @@ public final class EditorController {
     /// selection). Cursor lands after the inserted text.
     @discardableResult
     public func insert(text: String) -> NSRange {
+        snapshotForUndo()
         let result = Operations.insertText(in: textStorage, replacing: currentSelection, with: text)
         setHostSelection(result)
         return result
@@ -179,6 +180,7 @@ public final class EditorController {
     /// `@objc` action methods call from the responder chain.
     @discardableResult
     public func perform(_ action: EditorAction) -> NSRange {
+        snapshotForUndo()
         let range = currentSelection
         let resulting: NSRange
         switch action {
@@ -245,15 +247,26 @@ public final class EditorController {
         return resulting
     }
 
-    /// Insert a link at the host text view's cursor (or replace its
-    /// selection). The link's display text is `label`; the URL rides on a
-    /// `.link` attribute and round-trips as `[label](url)` markdown.
+    /// Insert a link at the host text view's cursor. If the user has a
+    /// non-empty selection, that text becomes the link's display label;
+    /// otherwise the supplied `label` (e.g. `"bug 12345"`) is used. The URL
+    /// rides on a `.link` attribute and round-trips as `[label](url)`.
     @discardableResult
     public func insertLink(label: String, url: String) -> NSRange {
+        snapshotForUndo()
+        let selection = currentSelection
+        var actualLabel = label
+        if selection.length > 0,
+           selection.location + selection.length <= textStorage.length {
+            let selected = (textStorage.string as NSString).substring(with: selection)
+            if !selected.isEmpty {
+                actualLabel = selected
+            }
+        }
         let result = Operations.insertLink(
             in: textStorage,
-            replacing: currentSelection,
-            label: label,
+            replacing: selection,
+            label: actualLabel,
             url: url,
             theme: theme
         )
@@ -261,13 +274,33 @@ public final class EditorController {
         return result
     }
 
-    /// Toggle the task-list checkbox at the given storage offset. Returns
-    /// true when a checkbox was found and toggled. The attachment instance
-    /// is replaced (so its rendered image refreshes) and the paragraph's
-    /// `.marginaliaListItem` is updated so the serializer round-trips the
-    /// new state.
+    /// Capture the storage + selection so a single Cmd-Z reverts the
+    /// upcoming operation atomically. Operations otherwise mutate
+    /// `textStorage` directly, bypassing NSTextView's auto-undo path.
+    /// The captured closure registers its own inverse during replay so
+    /// undo/redo cycles work.
+    private func snapshotForUndo() {
+        let snapshot = NSAttributedString(attributedString: textStorage)
+        let cursor = currentSelection
+        undoManager.registerUndo(withTarget: self) { [weak self] target in
+            guard let self else { _ = target; return }
+            self.snapshotForUndo()
+            self.applyingMarkdown = true
+            self.textStorage.beginEditing()
+            self.textStorage.replaceCharacters(
+                in: NSRange(location: 0, length: self.textStorage.length),
+                with: snapshot
+            )
+            self.textStorage.endEditing()
+            self.applyingMarkdown = false
+            self.setHostSelection(cursor)
+            self.resegment()
+        }
+    }
+
     @discardableResult
     public func toggleCheckbox(at location: Int) -> Bool {
+        snapshotForUndo()
         let total = textStorage.length
         guard location >= 0, location < total else { return false }
         guard let existing = textStorage.attribute(.attachment, at: location, effectiveRange: nil) as? CheckboxAttachment,
@@ -296,6 +329,7 @@ public final class EditorController {
     /// `false` if the text view should insert the newline normally.
     @discardableResult
     public func handleNewline() -> Bool {
+        snapshotForUndo()
         let cursor = currentSelection.location
         if let result = InsertNewline.handle(
             in: textStorage,
