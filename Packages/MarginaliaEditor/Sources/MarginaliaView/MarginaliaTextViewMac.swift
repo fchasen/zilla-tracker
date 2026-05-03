@@ -60,6 +60,12 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
 
         context.coordinator.textView = textView
         controller.hostTextView = textView
+        textView.onMarginaliaLinkClick = { [weak controller] url in
+            guard let controller else { return }
+            if let location = EditorController.taskToggleSourceLocation(from: url) {
+                controller.toggleTask(atSourceLocation: location)
+            }
+        }
 
         switch sizing {
         case .fitsContent:
@@ -331,6 +337,39 @@ final class MarginaliaNSTextView: NSTextView {
     /// exceeds it.
     var minimumIntrinsicHeight: CGFloat = 0 {
         didSet { invalidateIntrinsicContentSize() }
+    }
+    /// Closure called when the user single-clicks on a `marginalia://…`
+    /// `.link` attribute — the standard editable-text-view link handler
+    /// reserves single-click for cursor placement and only fires
+    /// `clickedOnLink:` on cmd-click, so we intercept here for in-editor
+    /// affordances like toggling task checkboxes.
+    var onMarginaliaLinkClick: ((URL) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+           let storage = textStorage {
+            let pt = convert(event.locationInWindow, from: nil)
+            let charIndex = characterIndexForInsertion(at: pt)
+            if let url = nearestMarginaliaLink(at: charIndex, in: storage) {
+                onMarginaliaLinkClick?(url)
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func nearestMarginaliaLink(at index: Int, in storage: NSTextStorage) -> URL? {
+        // `characterIndexForInsertion` returns an INSERTION POINT — for a
+        // click on a 1-char attachment glyph that's either the index of the
+        // glyph or one past it, depending on which half was clicked. Probe
+        // both sides for a `marginalia://` link.
+        for probe in [index, index - 1] where probe >= 0 && probe < storage.length {
+            let attrs = storage.attributes(at: probe, effectiveRange: nil)
+            if let url = attrs[.link] as? URL, url.scheme == "marginalia" {
+                return url
+            }
+        }
+        return nil
     }
 
     override var intrinsicContentSize: NSSize {
