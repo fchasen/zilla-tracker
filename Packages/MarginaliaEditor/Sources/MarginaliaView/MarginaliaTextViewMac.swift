@@ -158,12 +158,16 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             }
 
             if selection != lastAppliedSelection {
+                // The binding's selection is in source coordinates (the
+                // canonical text the host owns). Translate to display before
+                // pushing onto the text view, which lives in display coords.
+                let displayRange = parent.controller.displayMapping.displayRange(forSource: selection)
                 let length = parent.controller.textStorage.length
-                let location = max(0, min(selection.location, length))
+                let location = max(0, min(displayRange.location, length))
                 let remaining = max(0, length - location)
                 let clamped = NSRange(
                     location: location,
-                    length: max(0, min(selection.length, remaining))
+                    length: max(0, min(displayRange.length, remaining))
                 )
                 if textView.selectedRange() != clamped {
                     textView.setSelectedRange(clamped)
@@ -187,10 +191,13 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
         public func textViewDidChangeSelection(_ notification: Notification) {
             guard !isApplyingFromBinding else { return }
             guard let tv = notification.object as? NSTextView else { return }
-            let r = tv.selectedRange()
-            parent.controller.selection = r
-            if parent.selection != r {
-                parent.selection = r
+            // Translate the text view's display-coord selection back to
+            // source so the host's binding stays in source coordinates.
+            let sourceRange = parent.controller.displayMapping
+                .sourceRange(forDisplay: tv.selectedRange())
+            parent.controller.selection = sourceRange
+            if parent.selection != sourceRange {
+                parent.selection = sourceRange
             }
         }
 
@@ -223,26 +230,40 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
 
         public func textView(_ textView: NSTextView,
                              doCommandBy commandSelector: Selector) -> Bool {
+            // ListContinuation / EditingOps operate on the canonical source
+            // string and source-coord positions; translate the text view's
+            // display-coord selection through the mapping before calling them.
+            let mapping = parent.controller.displayMapping
+            let sourceText = parent.controller.text
+            let displayRange = textView.selectedRange()
+            let sourceRange = mapping.sourceRange(forDisplay: displayRange)
+
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-                let range = textView.selectedRange()
-                if range.length == 0,
-                   let result = ListContinuation.handleReturn(in: textView.string, cursor: range.location) {
+                if displayRange.length == 0,
+                   let result = ListContinuation.handleReturn(in: sourceText, cursor: sourceRange.location) {
+                    apply(editResult: result, in: textView)
+                    return true
+                }
+            }
+            if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+                if displayRange.length == 0,
+                   let result = EditingOps.clearEmptyLineMarker(in: sourceText, cursor: sourceRange.location) {
                     apply(editResult: result, in: textView)
                     return true
                 }
             }
             if commandSelector == #selector(NSResponder.insertTab(_:)),
                let result = EditingOps.indentListLines(
-                in: textView.string,
-                selection: textView.selectedRange()
+                in: sourceText,
+                selection: sourceRange
                ) {
                 apply(editResult: result, in: textView)
                 return true
             }
             if commandSelector == #selector(NSResponder.insertBacktab(_:)),
                let result = EditingOps.outdentListLines(
-                in: textView.string,
-                selection: textView.selectedRange()
+                in: sourceText,
+                selection: sourceRange
                ) {
                 apply(editResult: result, in: textView)
                 return true

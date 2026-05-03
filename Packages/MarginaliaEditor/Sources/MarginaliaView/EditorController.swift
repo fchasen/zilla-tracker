@@ -46,7 +46,7 @@ public final class EditorController {
     public private(set) var markupRanges: [NSRange] = []
 
     public var selection: NSRange = NSRange(location: 0, length: 0) {
-        didSet { recomputeHidden() }
+        didSet { onSelectionChanged(from: oldValue) }
     }
 
     public private(set) var hiddenRanges: [NSRange] = []
@@ -168,7 +168,7 @@ public final class EditorController {
         let length = (result.text as NSString).length
         let location = max(0, min(result.selection.location, length))
         let remaining = max(0, length - location)
-        let clamped = NSRange(
+        let clampedSource = NSRange(
             location: location,
             length: max(0, min(result.selection.length, remaining))
         )
@@ -177,19 +177,29 @@ public final class EditorController {
         // (called inside `refreshNow`) reads `self.selection` and would
         // crash on `lineRange(for:)` if it's still pointing into the old,
         // longer text.
-        selection = clamped
+        selection = clampedSource
         // Apply highlights + paragraph styles synchronously so the freshly
         // inserted text doesn't render unstyled for one frame. Without this,
         // a newly continued list line is rendered without its hanging-indent
         // paragraph style until the next runloop tick.
         refreshNow()
+        // Translate to display coords for the text view — `clampedSource`
+        // is a source range, the text view lives in display.
+        let clampedDisplay = displayMapping.displayRange(forSource: clampedSource)
+        let displayLength = textStorage.length
+        let displayLocation = max(0, min(clampedDisplay.location, displayLength))
+        let displayRemaining = max(0, displayLength - displayLocation)
+        let viewRange = NSRange(
+            location: displayLocation,
+            length: max(0, min(clampedDisplay.length, displayRemaining))
+        )
         #if canImport(AppKit) && os(macOS)
         if let tv = hostTextView as? NSTextView {
-            tv.setSelectedRange(clamped)
+            tv.setSelectedRange(viewRange)
         }
         #elseif canImport(UIKit)
         if let tv = hostTextView as? UITextView {
-            tv.selectedRange = clamped
+            tv.selectedRange = viewRange
         }
         #endif
     }
@@ -300,7 +310,24 @@ public final class EditorController {
             !imageRanges.contains(where: { $0.contains(range.location) })
         }
         subs.append(contentsOf: elides.map(DisplaySubstitution.elide))
-        return subs
+
+        // Reveal the active line so the user sees the raw markdown they're
+        // editing — substitutions on lines they aren't on stay collapsed.
+        let activeLine = activeLineSourceRange(in: source)
+        return subs.filter { sub in
+            !rangesIntersect(sub.sourceRange, activeLine)
+        }
+    }
+
+    private func activeLineSourceRange(in source: String) -> NSRange {
+        let ns = source as NSString
+        return ns.lineRange(for: selection.clamped(to: ns.length))
+    }
+
+    private func rangesIntersect(_ a: NSRange, _ b: NSRange) -> Bool {
+        let aEnd = a.location + a.length
+        let bEnd = b.location + b.length
+        return a.location < bEnd && b.location < aEnd
     }
 
     private func checkboxSubstitutions(in source: String) -> [DisplaySubstitution] {
@@ -511,6 +538,24 @@ public final class EditorController {
         // markup ranges currently elided from display.
         hiddenRanges = displayMapping.runs.compactMap { run in
             run.kind == .elide ? run.sourceRange : nil
+        }
+    }
+
+    /// Selection moves don't usually need a re-parse, but in WYSIWYG mode
+    /// the transform reveals the active line's markdown — so a line change
+    /// has to rebuild the mapping.
+    private func onSelectionChanged(from oldSelection: NSRange) {
+        guard mode == .wysiwyg else {
+            recomputeHidden()
+            return
+        }
+        let ns = sourceStorage.string as NSString
+        let oldLine = ns.lineRange(for: oldSelection.clamped(to: ns.length))
+        let newLine = ns.lineRange(for: selection.clamped(to: ns.length))
+        if NSEqualRanges(oldLine, newLine) {
+            recomputeHidden()
+        } else {
+            scheduleRefresh()
         }
     }
 }

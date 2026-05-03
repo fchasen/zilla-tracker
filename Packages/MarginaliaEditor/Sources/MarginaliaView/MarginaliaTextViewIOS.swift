@@ -112,12 +112,15 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
             }
 
             if selection != lastAppliedSelection {
+                // Binding lives in source coords; the text view lives in
+                // display coords. Translate before pushing across.
+                let displayRange = parent.controller.displayMapping.displayRange(forSource: selection)
                 let length = parent.controller.textStorage.length
-                let location = max(0, min(selection.location, length))
+                let location = max(0, min(displayRange.location, length))
                 let remaining = max(0, length - location)
                 let clamped = NSRange(
                     location: location,
-                    length: max(0, min(selection.length, remaining))
+                    length: max(0, min(displayRange.length, remaining))
                 )
                 if textView.selectedRange != clamped {
                     textView.selectedRange = clamped
@@ -139,10 +142,11 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
 
         public func textViewDidChangeSelection(_ textView: UITextView) {
             guard !isApplyingFromBinding else { return }
-            let r = textView.selectedRange
-            parent.controller.selection = r
-            if parent.selection != r {
-                parent.selection = r
+            let sourceRange = parent.controller.displayMapping
+                .sourceRange(forDisplay: textView.selectedRange)
+            parent.controller.selection = sourceRange
+            if parent.selection != sourceRange {
+                parent.selection = sourceRange
             }
         }
 
@@ -155,22 +159,25 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
         public func textView(_ textView: UITextView,
                              shouldChangeTextIn range: NSRange,
                              replacementText text: String) -> Bool {
-            if text == "\n",
-               let result = ListContinuation.handleReturn(
-                in: textView.text ?? "",
-                cursor: range.location
-               ) {
-                isApplyingFromBinding = true
-                // Delegate to controller.applyEdit so the selection is
-                // clamped BEFORE the synchronous refresh reads it — same
-                // crash-prevention ordering the macOS coordinator uses.
-                parent.controller.applyEdit(result)
-                isApplyingFromBinding = false
-                parent.text = parent.controller.text
-                parent.selection = parent.controller.selection
-                lastAppliedText = parent.text
-                lastAppliedSelection = parent.selection
-                return false
+            if text == "\n" {
+                let mapping = parent.controller.displayMapping
+                let sourceRange = mapping.sourceRange(forDisplay: range)
+                if let result = ListContinuation.handleReturn(
+                    in: parent.controller.text,
+                    cursor: sourceRange.location
+                ) {
+                    isApplyingFromBinding = true
+                    // Delegate to controller.applyEdit so the selection is
+                    // clamped BEFORE the synchronous refresh reads it — same
+                    // crash-prevention ordering the macOS coordinator uses.
+                    parent.controller.applyEdit(result)
+                    isApplyingFromBinding = false
+                    parent.text = parent.controller.text
+                    parent.selection = parent.controller.selection
+                    lastAppliedText = parent.text
+                    lastAppliedSelection = parent.selection
+                    return false
+                }
             }
             return true
         }

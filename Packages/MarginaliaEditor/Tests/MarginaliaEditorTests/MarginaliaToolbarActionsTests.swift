@@ -105,5 +105,25 @@ import MarginaliaView
         #expect(!c.text.contains("lorem"), "Quote must not bring deleted text back: \(c.text)")
         #expect(c.text.hasPrefix("> "))
     }
+
+    // MARK: - selection coords through the source/display mapping
+
+    @Test func italicInsideHeadingWysiwygWrapsSourceContent() throws {
+        // Source `## Fred` displays as `Fred` in wysiwyg. The user clicks
+        // the displayed `F` (display [0, 1)) — the platform view translates
+        // that to source [3, 4) before storing in `controller.selection`.
+        // The toolbar must operate on source coords, producing `## *F*red`,
+        // NOT `##*F*red` (which is what it produced when selection was
+        // misinterpreted as display coords).
+        let c = try EditorController(initialText: "## Fred")
+        c.mode = .wysiwyg
+        c.refreshNow()
+        c.selection = NSRange(location: 3, length: 1)
+        let textBox = Box(c.text)
+
+        MarginaliaToolbarActions.perform(.italic, controller: c, text: bind(textBox))
+
+        #expect(c.text == "## *F*red")
+    }
 }
 #endif

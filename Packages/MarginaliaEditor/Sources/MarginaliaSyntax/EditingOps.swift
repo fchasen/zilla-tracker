@@ -409,6 +409,35 @@ public enum EditingOps {
         return EditResult(text: newText, selection: NSRange(location: newCursor, length: 0))
     }
 
+    /// If `cursor` sits at the end of an otherwise-empty heading or
+    /// blockquote line (e.g. `# `, `## `, `> ` with nothing after the marker),
+    /// return an `EditResult` that strips the marker so the line falls back
+    /// to a plain paragraph. Otherwise `nil`.
+    ///
+    /// Wired into `deleteBackward` so the user backspaces out of a heading
+    /// rather than having to delete each `#` and the trailing space one by
+    /// one.
+    public static func clearEmptyLineMarker(in source: String, cursor: Int) -> EditResult? {
+        let ns = source as NSString
+        guard cursor >= 0, cursor <= ns.length else { return nil }
+        let lineRange = ns.lineRange(for: NSRange(location: cursor, length: 0).clamped(to: ns.length))
+        let lineString = ns.substring(with: lineRange)
+        let trimmedNL = lineString.trimmingCharacters(in: .newlines)
+        let pattern = #"^(#{1,6}|>+) +$"#
+        guard trimmedNL.range(of: pattern, options: .regularExpression) != nil else { return nil }
+        let endOfMarker = lineRange.location + (trimmedNL as NSString).length
+        guard cursor == endOfMarker else { return nil }
+        let markerRange = NSRange(
+            location: lineRange.location,
+            length: (trimmedNL as NSString).length
+        )
+        let newText = ns.replacingCharacters(in: markerRange, with: "")
+        return EditResult(
+            text: newText,
+            selection: NSRange(location: markerRange.location, length: 0)
+        )
+    }
+
     private static func lineRangeExcludingTerminator(
         in ns: NSString,
         covering range: NSRange

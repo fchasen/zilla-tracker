@@ -95,6 +95,29 @@ import SwiftTreeSitter
         #expect(spans.contains { $0.tag == .textURI })
     }
 
+    @Test func clearEmptyLineMarkerStripsHeadingPrefix() throws {
+        // Cursor at the end of an otherwise-empty `# ` heading line — the
+        // delete handler asks `EditingOps.clearEmptyLineMarker`, which
+        // returns the markdown stripped of the marker.
+        let result = try #require(
+            EditingOps.clearEmptyLineMarker(in: "para1\n# \npara2", cursor: 8)
+        )
+        #expect(result.text == "para1\n\npara2")
+        #expect(result.selection == NSRange(location: 6, length: 0))
+    }
+
+    @Test func clearEmptyLineMarkerStripsBlockquotePrefix() throws {
+        let result = try #require(
+            EditingOps.clearEmptyLineMarker(in: "> ", cursor: 2)
+        )
+        #expect(result.text == "")
+    }
+
+    @Test func clearEmptyLineMarkerLeavesNonEmptyHeadingAlone() {
+        let result = EditingOps.clearEmptyLineMarker(in: "# Heading", cursor: 9)
+        #expect(result == nil)
+    }
+
     @Test func emphasisRangeIncludesContent() throws {
         let spans = try inline("**bold**")
         let strongSpan = spans.first { $0.tag == .textStrong }
