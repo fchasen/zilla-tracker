@@ -14,7 +14,7 @@ struct QuickSearchSheet: View {
     @Environment(AuthStore.self) private var auth
 
     @State private var query: String = ""
-    @State private var committedQuery: String = ""
+    @State private var debouncedQuery: String = ""
     @State private var bugResults: [Bug] = []
     @State private var userResults: [User] = []
     @State private var pinnedUser: User?
@@ -22,9 +22,7 @@ struct QuickSearchSheet: View {
     @State private var loadError: String?
     @State private var selectedRowID: String?
 
-    @FocusState private var focused: Field?
-
-    private enum Field: Hashable { case search, list }
+    @FocusState private var searchFocused: Bool
 
     private enum Mode: Equatable {
         case empty
@@ -36,7 +34,7 @@ struct QuickSearchSheet: View {
 
     private var mode: Mode {
         if let user = pinnedUser { return .userBugs(user) }
-        let trimmed = committedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty }
         if trimmed.hasPrefix("#") {
             let rest = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
@@ -73,10 +71,19 @@ struct QuickSearchSheet: View {
         #if os(macOS)
         .frame(minWidth: 760, idealWidth: 820, minHeight: 560, idealHeight: 620)
         #endif
+        .task(id: query) { await debounce() }
         .task(id: searchKey) { await runSearch() }
-        .onAppear { focused = .search }
+        .onAppear { searchFocused = true }
         .onChange(of: bugResults) { _, _ in syncSelection() }
         .onChange(of: userResults) { _, _ in syncSelection() }
+    }
+
+    private func debounce() async {
+        do {
+            try await Task.sleep(nanoseconds: 450_000_000)
+            debouncedQuery = query
+        } catch {
+        }
     }
 
     @ViewBuilder
@@ -93,13 +100,14 @@ struct QuickSearchSheet: View {
                 .textFieldStyle(.plain)
                 .scaledFont(.title3)
                 .submitLabel(.search)
-                .focused($focused, equals: .search)
-                .onSubmit { commitQuery() }
-                .onKeyPress(.tab) { focusList() ? .handled : .ignored }
+                .focused($searchFocused)
+                .onSubmit { commitSelection() }
+                .onKeyPress(.return) { commitSelection() ? .handled : .ignored }
+                .onKeyPress(.upArrow) { moveSelection(-1) ? .handled : .ignored }
+                .onKeyPress(.downArrow) { moveSelection(1) ? .handled : .ignored }
                 .onKeyPress(.delete) {
                     if pinnedUser != nil && query.isEmpty {
                         pinnedUser = nil
-                        committedQuery = ""
                         return .handled
                     }
                     return .ignored
@@ -138,9 +146,9 @@ struct QuickSearchSheet: View {
 
     private var placeholderText: String {
         if pinnedUser != nil {
-            return "Filter this user's bugs (↩ to search)"
+            return "Filter this user's bugs"
         }
-        return "#bug · @user · text — ↩ to search"
+        return "#bug · @user · text"
     }
 
     @ViewBuilder
@@ -228,41 +236,60 @@ struct QuickSearchSheet: View {
     }
 
     private var bugList: some View {
-        List(bugResults, id: \.id, selection: $selectedRowID) { bug in
-            QuickSearchBugRow(bug: bug)
-                .tag("bug:\(bug.id)")
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onPickBug(bug.id)
-                    dismiss()
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(bugResults, id: \.id) { bug in
+                        let id = "bug:\(bug.id)"
+                        QuickSearchBugRow(bug: bug)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(rowHighlight(for: id))
+                            .contentShape(Rectangle())
+                            .id(id)
+                            .onTapGesture {
+                                onPickBug(bug.id)
+                                dismiss()
+                            }
+                    }
                 }
-        }
-        .focused($focused, equals: .list)
-        .onKeyPress(.return) { commitSelection() ? .handled : .ignored }
-        .onKeyPress(keys: [.tab]) { press in
-            if press.modifiers.contains(.shift) {
-                focused = .search
-                return .handled
             }
-            return .ignored
+            .onChange(of: selectedRowID) { _, new in
+                if let new { withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) } }
+            }
         }
     }
 
     private var userList: some View {
-        List(userResults, id: \.id, selection: $selectedRowID) { user in
-            QuickSearchUserRow(user: user)
-                .tag("user:\(user.id)")
-                .contentShape(Rectangle())
-                .onTapGesture { pickUser(user) }
-        }
-        .focused($focused, equals: .list)
-        .onKeyPress(.return) { commitSelection() ? .handled : .ignored }
-        .onKeyPress(keys: [.tab]) { press in
-            if press.modifiers.contains(.shift) {
-                focused = .search
-                return .handled
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(userResults, id: \.id) { user in
+                        let id = "user:\(user.id)"
+                        QuickSearchUserRow(user: user)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(rowHighlight(for: id))
+                            .contentShape(Rectangle())
+                            .id(id)
+                            .onTapGesture { pickUser(user) }
+                    }
+                }
             }
-            return .ignored
+            .onChange(of: selectedRowID) { _, new in
+                if let new { withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rowHighlight(for id: String) -> some View {
+        if selectedRowID == id {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(0.18))
+                .padding(.horizontal, 8)
         }
     }
 
@@ -279,12 +306,8 @@ struct QuickSearchSheet: View {
         case .bug(let id): return SearchKey(mode: "bug", bugID: id, text: "", userName: nil)
         case .freetext(let text): return SearchKey(mode: "freetext", bugID: nil, text: text, userName: nil)
         case .users(let text): return SearchKey(mode: "users", bugID: nil, text: text, userName: nil)
-        case .userBugs(let user): return SearchKey(mode: "userBugs", bugID: nil, text: committedQuery, userName: user.name)
+        case .userBugs(let user): return SearchKey(mode: "userBugs", bugID: nil, text: debouncedQuery, userName: user.name)
         }
-    }
-
-    private func commitQuery() {
-        committedQuery = query
     }
 
     private func runSearch() async {
@@ -368,7 +391,7 @@ struct QuickSearchSheet: View {
         query.limit = 30
         query.order = "changeddate DESC"
         query.includeFields = Self.bugIncludeFields
-        let trimmed = committedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             query.quicksearch = trimmed
         }
@@ -392,32 +415,34 @@ struct QuickSearchSheet: View {
         }
         pinnedUser = user
         query = ""
-        committedQuery = ""
+        debouncedQuery = ""
         userResults = []
         bugResults = []
-        focused = .search
+        searchFocused = true
+    }
+
+    private var orderedRowIDs: [String] {
+        bugResults.map { "bug:\($0.id)" } + userResults.map { "user:\($0.id)" }
     }
 
     @discardableResult
-    private func focusList() -> Bool {
-        if !bugResults.isEmpty {
-            if selectedRowID == nil { selectedRowID = "bug:\(bugResults[0].id)" }
-            focused = .list
-            return true
+    private func moveSelection(_ delta: Int) -> Bool {
+        let ids = orderedRowIDs
+        guard !ids.isEmpty else { return false }
+        let currentIdx = ids.firstIndex(of: selectedRowID ?? "") ?? -1
+        let target: Int
+        if currentIdx < 0 {
+            target = delta > 0 ? 0 : ids.count - 1
+        } else {
+            target = max(0, min(ids.count - 1, currentIdx + delta))
         }
-        if !userResults.isEmpty {
-            if selectedRowID == nil { selectedRowID = "user:\(userResults[0].id)" }
-            focused = .list
-            return true
-        }
-        return false
+        selectedRowID = ids[target]
+        return true
     }
 
     @discardableResult
     private func commitSelection() -> Bool {
-        let id = selectedRowID
-            ?? bugResults.first.map { "bug:\($0.id)" }
-            ?? userResults.first.map { "user:\($0.id)" }
+        let id = selectedRowID ?? orderedRowIDs.first
         guard let id else { return false }
         if id.hasPrefix("bug:"), let bugID = Int(id.dropFirst(4)) {
             onPickBug(bugID)
@@ -433,12 +458,9 @@ struct QuickSearchSheet: View {
     }
 
     private func syncSelection() {
-        let valid: Set<String> = Set(
-            bugResults.map { "bug:\($0.id)" } + userResults.map { "user:\($0.id)" }
-        )
-        if let current = selectedRowID, valid.contains(current) { return }
-        selectedRowID = valid.sorted().first(where: { $0.hasPrefix("bug:") })
-            ?? valid.sorted().first(where: { $0.hasPrefix("user:") })
+        let ids = orderedRowIDs
+        if let current = selectedRowID, ids.contains(current) { return }
+        selectedRowID = ids.first
     }
 
     private static let bugIncludeFields = [

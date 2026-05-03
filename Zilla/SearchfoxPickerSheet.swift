@@ -19,30 +19,21 @@ struct SearchfoxPickerSheet: View {
     @State private var loadError: String?
     @State private var selectedURL: String?
 
-    @FocusState private var focused: Field?
-
-    private enum Field: Hashable {
-        case search, list
-    }
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                TextField("Files by path · @symbol for identifiers", text: $query)
-                    .textFieldStyle(.roundedBorder)
+                searchField
                     .padding(.horizontal)
-                    .padding(.top)
-                    .submitLabel(.search)
-                    .focused($focused, equals: .search)
-                    .onSubmit { focusList() }
-                    .onKeyPress(.tab) {
-                        focusList() ? .handled : .ignored
-                    }
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+
+                Divider()
 
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .navigationTitle("Insert Searchfox link")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -55,7 +46,7 @@ struct SearchfoxPickerSheet: View {
         #endif
         .task(id: query) { await debounce() }
         .task(id: debouncedQuery) { await runSearch() }
-        .onAppear { focused = .search }
+        .onAppear { searchFocused = true }
         .onChange(of: results) { _, new in
             if new.isEmpty {
                 selectedURL = nil
@@ -63,6 +54,31 @@ struct SearchfoxPickerSheet: View {
                 selectedURL = new.first?.url
             }
         }
+    }
+
+    @ViewBuilder
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Files by path · @symbol for identifiers", text: $query)
+                .textFieldStyle(.plain)
+                .scaledFont(.title3)
+                .submitLabel(.search)
+                .focused($searchFocused)
+                .onSubmit { commitSelection() }
+                .onKeyPress(.return) { commitSelection() ? .handled : .ignored }
+                .onKeyPress(.upArrow) { moveSelection(-1) ? .handled : .ignored }
+                .onKeyPress(.downArrow) { moveSelection(1) ? .handled : .ignored }
+                .onKeyPress(.escape) {
+                    dismiss()
+                    return .handled
+                }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -89,58 +105,136 @@ struct SearchfoxPickerSheet: View {
                 description: Text("Nothing matched \(debouncedQuery).")
             )
         } else {
-            List(results, id: \.url, selection: $selectedURL) { hit in
-                row(for: hit)
-                    .tag(hit.url)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onPick(hit, resultSymbol)
-                        dismiss()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(results, id: \.url) { hit in
+                            row(for: hit)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(rowHighlight(for: hit.url))
+                                .contentShape(Rectangle())
+                                .id(hit.url)
+                                .onTapGesture {
+                                    onPick(hit, resultSymbol)
+                                    dismiss()
+                                }
+                        }
                     }
-            }
-            .focused($focused, equals: .list)
-            .onKeyPress(.return) {
-                commitSelection() ? .handled : .ignored
-            }
-            .onKeyPress(keys: [.tab]) { press in
-                if press.modifiers.contains(.shift) {
-                    focused = .search
-                    return .handled
+                    .padding(.vertical, 4)
                 }
-                return .ignored
+                .onChange(of: selectedURL) { _, new in
+                    if let new { withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) } }
+                }
             }
         }
     }
 
+    @ViewBuilder
+    private func rowHighlight(for url: String) -> some View {
+        if selectedURL == url {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(0.18))
+                .padding(.horizontal, 8)
+        }
+    }
+
     private func row(for hit: SearchHit) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text(hit.path)
-                    .scaledFont(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                Spacer()
-                if hit.lineNumber > 0 {
-                    Text("L\(hit.lineNumber)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: fileIcon(for: hit.path))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(hit.path)
+                        .scaledFont(.callout)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Spacer(minLength: 8)
+                    if hit.lineNumber > 0 {
+                        Text("L\(hit.lineNumber)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
-            if !hit.line.isEmpty {
-                Text(hit.line)
-                    .scaledFont(.footnote, design: .monospaced)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                if !hit.line.isEmpty {
+                    Text(hit.line)
+                        .scaledFont(.footnote, design: .monospaced)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func fileIcon(for path: String) -> String {
+        let name = (path as NSString).lastPathComponent.lowercased()
+
+        if name == "moz.build" || name == "makefile" || name.hasSuffix(".mozbuild") {
+            return "hammer"
+        }
+
+        let ext: String = {
+            if let dot = name.lastIndex(of: ".") {
+                return String(name[name.index(after: dot)...])
+            }
+            return ""
+        }()
+
+        switch ext {
+        case "h", "hpp", "hh", "hxx":
+            return "chevron.left.forwardslash.chevron.right"
+        case "c", "cc", "cpp", "cxx", "m", "mm":
+            return "chevron.left.forwardslash.chevron.right"
+        case "swift", "rs", "go", "java", "kt", "scala":
+            return "chevron.left.forwardslash.chevron.right"
+        case "js", "mjs", "cjs", "jsm", "ts", "tsx", "jsx":
+            return "chevron.left.forwardslash.chevron.right"
+        case "py", "rb", "pl", "lua":
+            return "chevron.left.forwardslash.chevron.right"
+        case "sh", "bash", "zsh", "fish":
+            return "terminal"
+        case "html", "htm", "xhtml", "xml", "xul", "xbl", "svg":
+            return "globe"
+        case "css", "scss", "sass", "less":
+            return "paintbrush"
+        case "json", "yaml", "yml", "toml", "ini", "cfg", "conf", "plist":
+            return "gearshape"
+        case "md", "markdown", "rst", "txt":
+            return "doc.text"
+        case "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tiff":
+            return "photo"
+        case "mp4", "mov", "webm", "mkv", "avi":
+            return "film"
+        case "mp3", "wav", "ogg", "flac", "aac":
+            return "speaker.wave.2"
+        case "zip", "tar", "gz", "bz2", "xz", "7z", "rar":
+            return "doc.zipper"
+        case "pdf":
+            return "doc.richtext"
+        case "patch", "diff":
+            return "arrow.triangle.branch"
+        default:
+            return ext.isEmpty ? "doc" : "doc.text"
+        }
+    }
+
     @discardableResult
-    private func focusList() -> Bool {
+    private func moveSelection(_ delta: Int) -> Bool {
         guard !results.isEmpty else { return false }
-        if selectedURL == nil { selectedURL = results.first?.url }
-        focused = .list
+        let urls = results.map { $0.url }
+        let currentIdx = urls.firstIndex(of: selectedURL ?? "") ?? -1
+        let target: Int
+        if currentIdx < 0 {
+            target = delta > 0 ? 0 : urls.count - 1
+        } else {
+            target = max(0, min(urls.count - 1, currentIdx + delta))
+        }
+        selectedURL = urls[target]
         return true
     }
 
