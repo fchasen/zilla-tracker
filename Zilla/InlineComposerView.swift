@@ -10,6 +10,7 @@ struct InlineComposerView: View {
     let postLabel: String
     let chromed: Bool
     let bordered: Bool
+    let showToolbar: Bool
     let onCancel: () -> Void
     let onPost: () -> Void
 
@@ -20,6 +21,7 @@ struct InlineComposerView: View {
         postLabel: String = "Post",
         chromed: Bool = true,
         bordered: Bool = false,
+        showToolbar: Bool = true,
         onCancel: @escaping () -> Void,
         onPost: @escaping () -> Void
     ) {
@@ -29,6 +31,7 @@ struct InlineComposerView: View {
         self.postLabel = postLabel
         self.chromed = chromed
         self.bordered = bordered
+        self.showToolbar = showToolbar
         self.onCancel = onCancel
         self.onPost = onPost
     }
@@ -45,10 +48,11 @@ struct InlineComposerView: View {
         let inner = VStack(alignment: .leading, spacing: 8) {
             MarkdownEditor(
                 text: $text,
-                minHeight: 80,
+                minHeight: 36,
                 isDisabled: isPosting,
                 dialect: .remarkup,
-                bordered: bordered
+                bordered: bordered,
+                showToolbar: showToolbar
             )
 
             HStack {

@@ -6,26 +6,32 @@ struct InlineThreadView: View {
     let thread: [InlineComment]
     let userDirectory: [String: PhabricatorUser]
     let currentUserPHID: String?
+    let isDone: Bool?
     let onReply: () -> Void
     let onEditDraft: (InlineComment) -> Void
     let onDeleteDraft: (InlineComment) -> Void
+    let onToggleDone: (() -> Void)?
     let composerContent: (() -> AnyView)?
 
     init(
         thread: [InlineComment],
         userDirectory: [String: PhabricatorUser],
         currentUserPHID: String?,
+        isDone: Bool? = nil,
         onReply: @escaping () -> Void,
         onEditDraft: @escaping (InlineComment) -> Void,
         onDeleteDraft: @escaping (InlineComment) -> Void,
+        onToggleDone: (() -> Void)? = nil,
         composerContent: (() -> AnyView)? = nil
     ) {
         self.thread = thread
         self.userDirectory = userDirectory
         self.currentUserPHID = currentUserPHID
+        self.isDone = isDone
         self.onReply = onReply
         self.onEditDraft = onEditDraft
         self.onDeleteDraft = onDeleteDraft
+        self.onToggleDone = onToggleDone
         self.composerContent = composerContent
     }
 
@@ -50,8 +56,22 @@ struct InlineThreadView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             } else {
-                HStack {
+                HStack(spacing: 12) {
                     Spacer()
+                    if let onToggleDone, let isDone {
+                        Button {
+                            onToggleDone()
+                        } label: {
+                            Label(
+                                isDone ? "Marked done" : "Mark done",
+                                systemImage: isDone ? "checkmark.circle.fill" : "checkmark.circle"
+                            )
+                            .scaledFont(.caption)
+                            .foregroundStyle(isDone ? Color.green : Color.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(isDone ? "Mark as not done" : "Mark as done")
+                    }
                     Button {
                         onReply()
                     } label: {

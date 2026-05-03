@@ -71,7 +71,6 @@ struct ActivityRow: View {
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(\.colorScheme) private var colorScheme
     let transaction: RevisionTransaction
-    @State private var doneInFlight = false
     @State private var rowWidth: CGFloat = 800
 
     private static let narrowThreshold: CGFloat = 560
@@ -113,9 +112,6 @@ struct ActivityRow: View {
                 bodyView(narrow: false)
             }
             Spacer(minLength: 0)
-            if showDoneToggle {
-                doneToggle
-            }
         }
     }
 
@@ -129,9 +125,6 @@ struct ActivityRow: View {
                 inlineCaptionView
             }
             Spacer(minLength: 0)
-            if showDoneToggle {
-                doneToggle
-            }
         }
     }
 
@@ -141,9 +134,6 @@ struct ActivityRow: View {
                 avatar(size: 22)
                 headerLine
                 Spacer(minLength: 0)
-                if showDoneToggle {
-                    doneToggle
-                }
             }
             .padding(.horizontal, 12)
             bodyView(narrow: true)
@@ -275,61 +265,6 @@ struct ActivityRow: View {
 
     private var isInline: Bool {
         transaction.fields.path != nil && transaction.fields.line != nil
-    }
-
-    private var showDoneToggle: Bool {
-        // Phabricator tracks `isDone` per inline-comment thread head, so only
-        // expose the toggle on the parent row of an inline thread.
-        isInline && transaction.fields.replyToCommentPHID == nil && doneCommentPHID != nil
-    }
-
-    private var doneCommentPHID: String? {
-        transaction.comments.last(where: { ($0.removed ?? false) == false })?.phid
-    }
-
-    private var isCurrentUserRevisionAuthor: Bool {
-        guard let me = phab.currentUser?.phid,
-              let author = workspace.loadedRevision?.fields.authorPHID else { return false }
-        return me == author
-    }
-
-    @ViewBuilder
-    private var doneToggle: some View {
-        let isDone = transaction.fields.isDone ?? false
-        if isCurrentUserRevisionAuthor {
-            Button {
-                markDone(!isDone)
-            } label: {
-                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                    .scaledFont(.title3)
-                    .foregroundStyle(isDone ? Color.green : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(doneInFlight)
-            .help(isDone ? "Mark as not done" : "Mark as done")
-            .accessibilityLabel(isDone ? "Mark as not done" : "Mark as done")
-        } else if isDone {
-            Image(systemName: "checkmark.seal.fill")
-                .scaledFont(.title3)
-                .foregroundStyle(Color.green)
-                .help("Marked as done")
-                .accessibilityLabel("Marked as done")
-        }
-    }
-
-    private func markDone(_ newValue: Bool) {
-        guard let phid = doneCommentPHID else { return }
-        doneInFlight = true
-        Task { @MainActor in
-            defer { doneInFlight = false }
-            if let error = await workspace.setInlineDone(
-                commentPHID: phid,
-                isDone: newValue,
-                using: phab.client
-            ) {
-                workspace.lastUpdateError = error.localizedDescription
-            }
-        }
     }
 
     private struct InlineDescriptor {

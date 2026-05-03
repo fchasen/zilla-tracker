@@ -87,12 +87,24 @@ struct ChangesetView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
 
-            ChangesetHeader(changeset: changeset)
+            ChangesetHeader(changeset: changeset, doneSummary: doneSummary)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     toggleExpanded()
                 }
         }
+    }
+
+    private var doneSummary: ThreadDoneSummary? {
+        let inlines = visibleInlineComments()
+        let threadsByRoot = threads(in: inlines)
+        let rootPHIDs = Set(threadsByRoot.keys)
+        guard !rootPHIDs.isEmpty else { return nil }
+        let states = workspace.inlineDoneStates
+        let resolvable = rootPHIDs.filter { states[$0] != nil }
+        guard !resolvable.isEmpty else { return nil }
+        let done = resolvable.filter { states[$0] == true }.count
+        return ThreadDoneSummary(done: done, total: resolvable.count)
     }
 
     @ViewBuilder
@@ -250,19 +262,44 @@ struct ChangesetView: View {
             #else
             let composerContent: (() -> AnyView)? = nil
             #endif
+            let doneStates = workspace.inlineDoneStates
+            let isDone = doneStates[mark.id]
+            let canToggleDone = isDone != nil && isCurrentUserRevisionAuthor
             return AnyView(
                 InlineThreadView(
                     thread: thread,
                     userDirectory: workspace.revisionUserDirectory,
                     currentUserPHID: phab.currentUser?.phid,
+                    isDone: isDone,
                     onReply: { handleReply(mark: mark) },
                     onEditDraft: handleEditDraft,
                     onDeleteDraft: handleDeleteDraft,
+                    onToggleDone: canToggleDone ? { handleToggleDone(commentPHID: mark.id, current: isDone ?? false) } : nil,
                     composerContent: composerContent
                 )
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             )
+        }
+    }
+
+    private var isCurrentUserRevisionAuthor: Bool {
+        guard let me = phab.currentUser?.phid,
+              let author = workspace.loadedRevision?.fields.authorPHID else { return false }
+        return me == author
+    }
+
+    private func handleToggleDone(commentPHID: String, current: Bool) {
+        let next = !current
+        let client = phab.client
+        Task { @MainActor in
+            if let error = await workspace.setInlineDone(
+                commentPHID: commentPHID,
+                isDone: next,
+                using: client
+            ) {
+                workspace.lastUpdateError = error.localizedDescription
+            }
         }
     }
 
@@ -287,7 +324,8 @@ struct ChangesetView: View {
             isNewFile: active.isNewFile,
             replyTo: active.replyTo,
             editingPHID: active.editingPHID,
-            chromed: chromed
+            chromed: chromed,
+            showToolbar: false
         )
     }
 
@@ -439,8 +477,20 @@ struct ChangesetView: View {
 
 }
 
+struct ThreadDoneSummary: Equatable {
+    let done: Int
+    let total: Int
+    var isAllDone: Bool { total > 0 && done == total }
+}
+
 struct ChangesetHeader: View {
     let changeset: Changeset
+    let doneSummary: ThreadDoneSummary?
+
+    init(changeset: Changeset, doneSummary: ThreadDoneSummary? = nil) {
+        self.changeset = changeset
+        self.doneSummary = doneSummary
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -452,6 +502,9 @@ struct ChangesetHeader: View {
                 .lineLimit(2)
                 .truncationMode(.head)
             Spacer(minLength: 8)
+            if let doneSummary {
+                doneBadge(doneSummary)
+            }
             if changeset.addLines > 0 {
                 pill(text: "+\(changeset.addLines)", color: .green)
             }
@@ -463,6 +516,20 @@ struct ChangesetHeader: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    private func doneBadge(_ summary: ThreadDoneSummary) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: summary.isAllDone ? "checkmark.circle.fill" : "checkmark.circle")
+                .scaledFont(.caption, weight: .semibold)
+            Text("\(summary.done)/\(summary.total)")
+                .scaledFont(.caption, weight: .semibold)
+        }
+        .foregroundStyle(summary.isAllDone ? Color.green : Color.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background((summary.isAllDone ? Color.green : Color.secondary).opacity(0.15), in: Capsule())
+        .help(summary.isAllDone ? "All comments resolved" : "\(summary.done) of \(summary.total) comments resolved")
     }
 
     private var pathText: Text {
