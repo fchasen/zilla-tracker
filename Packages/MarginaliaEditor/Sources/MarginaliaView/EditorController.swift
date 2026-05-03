@@ -85,12 +85,12 @@ public final class EditorController {
         }
     }
 
-    /// NSTextView's typing-attribute auto-derivation strips custom NSAttributedString
-    /// keys (`.marginaliaBlock`, `.marginaliaListItem`) under some conditions, so
-    /// freshly typed characters can land in a paragraph without the surrounding
-    /// block attribution. After each character edit, find any char in the line
-    /// that DOES carry the block/list attrs and apply them uniformly across the
-    /// line so the layout manager treats it as one logical paragraph.
+    /// NSTextView's typing-attribute auto-derivation can strip our
+    /// custom `marginaliaBlockSpec` key under some conditions, so freshly
+    /// typed characters can land in a paragraph without the surrounding
+    /// block attribution. After each character edit, find any char in the
+    /// line that DOES carry the spec and apply it uniformly so the layout
+    /// manager treats the line as one logical paragraph.
     private func normalizeEditedLineAttrs() {
         let total = textStorage.length
         guard total > 0 else { return }
@@ -103,35 +103,27 @@ public final class EditorController {
               lineRange.location < total,
               lineRange.location + lineRange.length <= total else { return }
 
-        // Find a char in the line that carries .marginaliaBlock; that's the
-        // source of truth (typed chars may have lost it via typing-attr drop).
-        var sourceBlock: BlockAttribute?
-        var sourceList: ListItemAttribute?
+        var sourceSpecBox: BlockSpecBox?
         var sourceParagraphStyle: NSParagraphStyle?
         var i = lineRange.location
         let end = lineRange.location + lineRange.length
         while i < end {
-            if sourceBlock == nil, let block = textStorage.safeAttribute(.marginaliaBlock, at: i) as? BlockAttribute {
-                sourceBlock = block
-            }
-            if sourceList == nil, let list = textStorage.safeAttribute(.marginaliaListItem, at: i) as? ListItemAttribute {
-                sourceList = list
+            if sourceSpecBox == nil,
+               let box = textStorage.safeAttribute(.marginaliaBlockSpec, at: i) as? BlockSpecBox {
+                sourceSpecBox = box
             }
             if sourceParagraphStyle == nil, let ps = textStorage.safeAttribute(.paragraphStyle, at: i) as? NSParagraphStyle {
                 sourceParagraphStyle = ps
             }
-            if sourceBlock != nil && sourceParagraphStyle != nil { break }
+            if sourceSpecBox != nil && sourceParagraphStyle != nil { break }
             i += 1
         }
-        guard sourceBlock != nil || sourceList != nil || sourceParagraphStyle != nil else { return }
+        guard sourceSpecBox != nil || sourceParagraphStyle != nil else { return }
 
         applyingMarkdown = true
         textStorage.beginEditing()
-        if let block = sourceBlock {
-            textStorage.addAttribute(.marginaliaBlock, value: block, range: lineRange)
-        }
-        if let list = sourceList {
-            textStorage.addAttribute(.marginaliaListItem, value: list, range: lineRange)
+        if let box = sourceSpecBox {
+            textStorage.addAttribute(.marginaliaBlockSpec, value: box, range: lineRange)
         }
         if let ps = sourceParagraphStyle {
             textStorage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
@@ -178,11 +170,8 @@ public final class EditorController {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .marginaliaBlockSpec: BlockSpecBox(.paragraph)
         ]
-        // Storage cleared entirely: nothing to mutate, but the typing
-        // attributes on the host text view still carry the prior heading /
-        // list style. Reset them.
         if textStorage.length == 0 {
             applyTypingAttributes(plainAttrs)
             return
@@ -197,9 +186,6 @@ public final class EditorController {
         let lineRange = ns.paragraphRange(for: probeRange)
         guard lineRange.length > 0 else { return }
 
-        // "Empty" means: the paragraph contains no characters other than the
-        // trailing newline (and any leading attachment glyph for a task-list
-        // item, which the user may have inserted intentionally).
         let lineText = ns.substring(with: lineRange)
         let stripped = lineText
             .replacingOccurrences(of: "\u{FFFC}", with: "")
@@ -209,11 +195,9 @@ public final class EditorController {
 
         let probe = lineRange.location
         guard probe < textStorage.length,
-              let block = textStorage.safeAttribute(.marginaliaBlock, at: probe) as? BlockAttribute,
-              block.tag != .paragraph else { return }
-        if textStorage.safeAttribute(.marginaliaListItem, at: probe) != nil {
-            return
-        }
+              let spec = textStorage.blockSpec(at: probe),
+              spec.kind != .paragraph,
+              !spec.isListItem else { return }
 
         textStorage.beginEditing()
         textStorage.addAttributes(plainAttrs, range: lineRange)
@@ -616,7 +600,7 @@ public final class EditorController {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .marginaliaBlockSpec: BlockSpecBox(.paragraph)
         ]
         if total > 0 {
             let probe = max(0, min(location, total - 1))
@@ -625,8 +609,7 @@ public final class EditorController {
                 .font,
                 .foregroundColor,
                 .paragraphStyle,
-                .marginaliaBlock,
-                .marginaliaListItem
+                .marginaliaBlockSpec
             ] {
                 if let v = raw[key] { attrs[key] = v }
             }
@@ -646,23 +629,23 @@ public final class EditorController {
         let total = textStorage.length
         guard location >= 0, location < total else { return false }
         guard let existing = textStorage.safeAttribute(.attachment, at: location) as? CheckboxAttachment,
-              let listAttr = textStorage.safeAttribute(.marginaliaListItem, at: location) as? ListItemAttribute,
-              listAttr.kind == .task else { return false }
+              let spec = textStorage.blockSpec(at: location) else { return false }
+        guard case .taskListItem = spec.kind else { return false }
         let newChecked = !existing.isChecked
         let newAttachment = CheckboxAttachment()
         newAttachment.isChecked = newChecked
-        let newListAttr = ListItemAttribute(
-            level: listAttr.level,
-            kind: .task,
-            orderedIndex: listAttr.orderedIndex,
-            isChecked: newChecked
+        let newSpec = BlockSpec(
+            kind: .taskListItem(checked: newChecked),
+            blockquoteDepth: spec.blockquoteDepth,
+            listLevel: spec.listLevel
         )
+        let newSpecBox = BlockSpecBox(newSpec)
         let ns = textStorage.string as NSString
         let lineRange = ns.paragraphRange(for: NSRange(location: location, length: 0))
         withAttributeMutation(range: lineRange) {
             textStorage.beginEditing()
             textStorage.addAttribute(.attachment, value: newAttachment, range: NSRange(location: location, length: 1))
-            textStorage.addAttribute(.marginaliaListItem, value: newListAttr, range: lineRange)
+            textStorage.addAttribute(.marginaliaBlockSpec, value: newSpecBox, range: lineRange)
             textStorage.endEditing()
         }
         return true
@@ -675,9 +658,9 @@ public final class EditorController {
         if textStorage.length > 0 {
             let probe = max(0, min(cursor, ns.length - 1))
             let lineRange = ns.paragraphRange(for: NSRange(location: probe, length: 0))
-            let isListItem = textStorage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute
-            let blockAttr = textStorage.safeAttribute(.marginaliaBlock, at: probe) as? BlockAttribute
-            let isBlockquote = !isListItem && (blockAttr?.blockquoteDepth ?? 0) > 0
+            let spec = textStorage.blockSpec(at: probe)
+            let isListItem = spec?.isListItem ?? false
+            let isBlockquote = !isListItem && (spec?.blockquoteDepth ?? 0) > 0
             let orphanEmpty = !isListItem && !isBlockquote && isOrphanedEmptyMarkerLine(lineRange: lineRange)
 
             if isListItem {
@@ -703,7 +686,7 @@ public final class EditorController {
                     return true
                 }
             } else if isBlockquote {
-                let result = handleBlockquoteNewline(lineRange: lineRange, depth: blockAttr?.blockquoteDepth ?? 1)
+                let result = handleBlockquoteNewline(lineRange: lineRange, depth: spec?.blockquoteDepth ?? 1)
                 setHostSelection(result)
                 refreshTypingAttributes(at: result.location)
                 return true
@@ -733,7 +716,7 @@ public final class EditorController {
                 .font: theme.bodyFont,
                 .foregroundColor: theme.foregroundColor,
                 .paragraphStyle: NSParagraphStyle(),
-                .marginaliaBlock: BlockAttribute(tag: .paragraph)
+                .marginaliaBlockSpec: BlockSpecBox(.paragraph)
             ]
             let blank = NSAttributedString(string: "\n", attributes: plainAttrs)
             withCharacterMutation(range: lineRange) {
@@ -774,7 +757,8 @@ public final class EditorController {
         }
         let prev = lineRange.location - 1
         guard prev < total,
-              textStorage.safeAttribute(.marginaliaListItem, at: prev) is ListItemAttribute else {
+              let prevSpec = textStorage.blockSpec(at: prev),
+              prevSpec.isListItem else {
             return false
         }
         let ns = textStorage.string as NSString
@@ -793,7 +777,7 @@ public final class EditorController {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .marginaliaBlockSpec: BlockSpecBox(.paragraph)
         ]
         let blank = NSAttributedString(string: "\n", attributes: plainAttrs)
         withCharacterMutation(range: lineRange) {
@@ -825,7 +809,8 @@ public final class EditorController {
         }
         let probe = max(lineRange.location, min(cursor - 1, total - 1))
         guard probe < total,
-              textStorage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute else {
+              let probeSpec = textStorage.blockSpec(at: probe),
+              probeSpec.isListItem else {
             return false
         }
         var markerRange = NSRange(location: lineRange.location, length: 0)
@@ -840,7 +825,7 @@ public final class EditorController {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .marginaliaBlockSpec: BlockSpecBox(.paragraph)
         ]
         let bodyRange = NSRange(location: bodyStart, length: lineRange.length - markerRange.length)
         withCharacterMutation(range: lineRange) {
@@ -850,7 +835,6 @@ public final class EditorController {
             let demoteRange = NSRange(location: lineRange.location, length: bodyRange.length)
             if demoteRange.length > 0 {
                 textStorage.setAttributes(plainAttrs, range: demoteRange)
-                textStorage.removeAttribute(.marginaliaListItem, range: demoteRange)
             }
             textStorage.endEditing()
             applyingMarkdown = false
@@ -865,10 +849,9 @@ public final class EditorController {
         let total = textStorage.length
         guard total > 0 else { return false }
         let probe = max(0, min(location, total - 1))
-        guard let block = textStorage.attribute(
-            .marginaliaBlock, at: probe, effectiveRange: nil
-        ) as? BlockAttribute else { return false }
-        return block.tag == .heading
+        guard let spec = textStorage.blockSpec(at: probe) else { return false }
+        if case .heading = spec.kind { return true }
+        return false
     }
 
     private func splitHeadingIntoParagraph(at cursor: Int) -> Bool {
@@ -880,7 +863,7 @@ public final class EditorController {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .marginaliaBlockSpec: BlockSpecBox(.paragraph)
         ]
         let inserted = NSAttributedString(string: "\n", attributes: plainAttrs)
 
@@ -932,34 +915,55 @@ public final class EditorController {
         var segs: [BlockSegment] = []
         let total = textStorage.length
         guard total > 0 else { self.blocks = []; return }
-        var cursor = 0
-        while cursor < total {
-            var range = NSRange(location: cursor, length: 0)
-            let attr = textStorage.safeAttribute(
-                .marginaliaBlock,
-                at: cursor,
-                longestEffectiveRange: &range,
-                in: NSRange(location: cursor, length: total - cursor)
-            )
-            if let block = attr as? BlockAttribute {
-                let listAttr = textStorage.attribute(
-                    .marginaliaListItem, at: cursor, effectiveRange: nil
-                ) as? ListItemAttribute
-                segs.append(BlockSegment(
-                    range: range,
-                    tag: block.tag,
-                    level: block.level,
-                    blockquoteDepth: block.blockquoteDepth,
-                    language: block.language,
-                    listLevel: listAttr?.level ?? 0,
-                    orderedIndex: listAttr?.orderedIndex,
-                    isChecked: listAttr?.isChecked,
-                    firstInListItem: false
-                ))
-            }
-            if range.length == 0 { break }
-            cursor = range.location + range.length
+        textStorage.enumerateBlockSpecs { range, spec in
+            segs.append(BlockSegment(
+                range: range,
+                tag: tagFor(spec: spec),
+                level: levelFor(spec: spec),
+                blockquoteDepth: spec.blockquoteDepth,
+                language: languageFor(spec: spec),
+                listLevel: spec.listLevel,
+                orderedIndex: orderedIndexFor(spec: spec),
+                isChecked: isCheckedFor(spec: spec),
+                firstInListItem: false
+            ))
         }
         self.blocks = segs
+    }
+
+    private func tagFor(spec: BlockSpec) -> BlockTag {
+        switch spec.kind {
+        case .paragraph: return .paragraph
+        case .heading: return .heading
+        case .unorderedListItem: return .unorderedListItem
+        case .orderedListItem: return .orderedListItem
+        case .taskListItem: return .taskListItem
+        case .fencedCode: return .fencedCode
+        case .indentedCode: return .indentedCode
+        case .horizontalRule: return .horizontalRule
+        case .htmlBlock: return .htmlBlock
+        case .linkReferenceDefinition: return .linkReferenceDefinition
+        case .pipeTable: return .pipeTable
+        }
+    }
+
+    private func levelFor(spec: BlockSpec) -> Int {
+        if case .heading(let level) = spec.kind { return level }
+        return spec.listLevel
+    }
+
+    private func languageFor(spec: BlockSpec) -> String? {
+        if case .fencedCode(let language) = spec.kind { return language }
+        return nil
+    }
+
+    private func orderedIndexFor(spec: BlockSpec) -> Int? {
+        if case .orderedListItem(let index) = spec.kind { return index }
+        return nil
+    }
+
+    private func isCheckedFor(spec: BlockSpec) -> Bool? {
+        if case .taskListItem(let checked) = spec.kind { return checked }
+        return nil
     }
 }

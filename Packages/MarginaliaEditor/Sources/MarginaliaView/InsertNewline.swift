@@ -22,7 +22,20 @@ public enum InsertNewline {
         let ns = storage.string as NSString
         guard cursor >= 0, cursor <= ns.length, ns.length > 0 else { return nil }
         let probe = max(0, min(cursor, ns.length - 1))
-        guard let listAttr = storage.safeAttribute(.marginaliaListItem, at: probe) as? ListItemAttribute else {
+        guard let spec = storage.blockSpec(at: probe), spec.isListItem else {
+            return nil
+        }
+        let kind: ListItemKind
+        let nextOrderedIndex: Int?
+        let nextChecked: Bool?
+        switch spec.kind {
+        case .unorderedListItem:
+            kind = .bullet; nextOrderedIndex = nil; nextChecked = nil
+        case .orderedListItem(let i):
+            kind = .ordered; nextOrderedIndex = i + 1; nextChecked = nil
+        case .taskListItem:
+            kind = .task; nextOrderedIndex = nil; nextChecked = false
+        default:
             return nil
         }
         let lineRange = ns.paragraphRange(for: NSRange(location: probe, length: 0))
@@ -32,7 +45,7 @@ public enum InsertNewline {
                 .font: theme.bodyFont,
                 .foregroundColor: theme.foregroundColor,
                 .paragraphStyle: NSParagraphStyle(),
-                .marginaliaBlock: BlockAttribute(tag: .paragraph)
+                .marginaliaBlockSpec: BlockSpecBox(.paragraph)
             ]
             let replacement = NSAttributedString(string: "\n", attributes: plainAttrs)
             storage.beginEditing()
@@ -41,11 +54,9 @@ public enum InsertNewline {
             return NSRange(location: lineRange.location, length: 0)
         }
 
-        let nextOrderedIndex: Int? = listAttr.kind == .ordered ? (listAttr.orderedIndex ?? 0) + 1 : nil
-        let nextChecked: Bool? = listAttr.kind == .task ? false : nil
         let nextItem = compiler.makeListItem(
-            kind: listAttr.kind,
-            level: listAttr.level,
+            kind: kind,
+            level: spec.listLevel,
             orderedIndex: nextOrderedIndex,
             isChecked: nextChecked,
             theme: theme

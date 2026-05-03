@@ -47,45 +47,6 @@ public struct BlockSpec: Equatable, Hashable, Sendable {
 }
 
 public extension BlockSpec {
-    init(blockAttribute: BlockAttribute, listItem: ListItemAttribute? = nil) {
-        let depth = blockAttribute.blockquoteDepth
-        let level = listItem?.level ?? blockAttribute.level
-        switch blockAttribute.tag {
-        case .paragraph:
-            self.init(kind: .paragraph, blockquoteDepth: depth, listLevel: 0)
-        case .heading:
-            self.init(kind: .heading(level: blockAttribute.level), blockquoteDepth: depth)
-        case .blockquote:
-            self.init(kind: .paragraph, blockquoteDepth: max(1, depth))
-        case .unorderedListItem:
-            self.init(kind: .unorderedListItem, blockquoteDepth: depth, listLevel: level)
-        case .orderedListItem:
-            self.init(
-                kind: .orderedListItem(index: listItem?.orderedIndex ?? 1),
-                blockquoteDepth: depth,
-                listLevel: level
-            )
-        case .taskListItem:
-            self.init(
-                kind: .taskListItem(checked: listItem?.isChecked ?? false),
-                blockquoteDepth: depth,
-                listLevel: level
-            )
-        case .fencedCode:
-            self.init(kind: .fencedCode(language: blockAttribute.language), blockquoteDepth: depth)
-        case .indentedCode:
-            self.init(kind: .indentedCode, blockquoteDepth: depth)
-        case .horizontalRule:
-            self.init(kind: .horizontalRule)
-        case .htmlBlock:
-            self.init(kind: .htmlBlock, blockquoteDepth: depth)
-        case .linkReferenceDefinition:
-            self.init(kind: .linkReferenceDefinition, blockquoteDepth: depth)
-        case .pipeTable:
-            self.init(kind: .pipeTable, blockquoteDepth: depth)
-        }
-    }
-
     init(blockSegment: BlockSegment) {
         let depth = blockSegment.blockquoteDepth
         switch blockSegment.tag {
@@ -93,8 +54,6 @@ public extension BlockSpec {
             self.init(kind: .paragraph, blockquoteDepth: depth)
         case .heading:
             self.init(kind: .heading(level: blockSegment.level), blockquoteDepth: depth)
-        case .blockquote:
-            self.init(kind: .paragraph, blockquoteDepth: max(1, depth))
         case .unorderedListItem:
             self.init(kind: .unorderedListItem, blockquoteDepth: depth, listLevel: blockSegment.listLevel)
         case .orderedListItem:
@@ -125,23 +84,20 @@ public extension BlockSpec {
     }
 }
 
+/// Reference-typed wrapper for storing `BlockSpec` in `NSAttributedString`.
+///
+/// Why: `enumerateAttribute(.marginaliaBlockSpec, in:)` walks runs by
+/// `isEqual:`. We deliberately keep NSObject's default reference equality
+/// here so each compiler emit produces a distinct run — two consecutive
+/// list items with value-equal specs stay separate and the serializer can
+/// emit a marker for each. Use `BlockSpec` value equality for diagnostics
+/// and tests; never compare boxes directly.
 public final class BlockSpecBox: NSObject, @unchecked Sendable {
     public let spec: BlockSpec
 
     public init(_ spec: BlockSpec) {
         self.spec = spec
         super.init()
-    }
-
-    public override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? BlockSpecBox else { return false }
-        return spec == other.spec
-    }
-
-    public override var hash: Int {
-        var hasher = Hasher()
-        hasher.combine(spec)
-        return hasher.finalize()
     }
 }
 

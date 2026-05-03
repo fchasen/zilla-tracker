@@ -25,22 +25,22 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
             return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
         }
 
-        let block = placement.attribute
-        if block.blockquoteDepth > 0 {
+        let spec = placement.spec
+        if spec.blockquoteDepth > 0 {
             let fragment = BlockquoteLayoutFragment(textElement: textElement, range: textElement.elementRange)
             fragment.isFirstInRun = placement.isFirstInBlockquoteRun
             fragment.isLastInRun = placement.isLastInBlockquoteRun
             return fragment
         }
-        switch block.tag {
+        switch spec.kind {
         case .horizontalRule:
             return HorizontalRuleLayoutFragment(textElement: textElement, range: textElement.elementRange)
-        case .fencedCode:
+        case .fencedCode(let language):
             let fragment = FencedCodeBlockLayoutFragment(
                 textElement: textElement,
                 range: textElement.elementRange
             )
-            fragment.language = block.language
+            fragment.language = language
             fragment.isFirstLine = placement.isFirstLine
             fragment.isLastLine = placement.isLastLine
             return fragment
@@ -66,7 +66,7 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
     }
 
     private struct Placement {
-        let attribute: BlockAttribute
+        let spec: BlockSpec
         let isFirstLine: Bool
         let isLastLine: Bool
         let isFirstInBlockquoteRun: Bool
@@ -86,42 +86,51 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
               elementEnd <= total else {
             return nil
         }
-        var attrRange = NSRange(location: 0, length: 0)
-        let raw = controller.textStorage.safeAttribute(
-            .marginaliaBlock,
-            at: elementStart,
-            longestEffectiveRange: &attrRange,
-            in: NSRange(location: 0, length: total)
-        )
-        guard let block = raw as? BlockAttribute else { return nil }
+        // Probe the paragraph for any character carrying a BlockSpec — typing
+        // can race with layout and leave individual characters spec-less while
+        // the rest of the line is correct.
+        guard let spec = paragraphSpec(in: controller.textStorage,
+                                       from: elementStart,
+                                       to: elementEnd) else {
+            return nil
+        }
+        var attrRange = NSRange(location: elementStart, length: elementEnd - elementStart)
+        controller.textStorage.enumerateAttribute(.marginaliaBlockSpec, in: attrRange) { value, range, _ in
+            if value is BlockSpecBox { attrRange = range }
+        }
         let isFirst = elementStart == attrRange.location
         let isLast = elementEnd >= attrRange.location + attrRange.length - 1
 
-        // Each blockquote paragraph is its own NSTextElement with its own
-        // BlockAttribute instance, so the longestEffectiveRange above won't
-        // cross paragraph boundaries. Probe neighboring characters directly
-        // to find the run extent for the bar drawing.
         var isFirstInBlockquote = true
         var isLastInBlockquote = true
-        if block.blockquoteDepth > 0 {
+        if spec.blockquoteDepth > 0 {
             if elementStart > 0,
-               let prev = controller.textStorage.safeAttribute(.marginaliaBlock, at: elementStart - 1) as? BlockAttribute,
+               let prev = controller.textStorage.blockSpec(at: elementStart - 1),
                prev.blockquoteDepth > 0 {
                 isFirstInBlockquote = false
             }
             if elementEnd < total,
-               let next = controller.textStorage.safeAttribute(.marginaliaBlock, at: elementEnd) as? BlockAttribute,
+               let next = controller.textStorage.blockSpec(at: elementEnd),
                next.blockquoteDepth > 0 {
                 isLastInBlockquote = false
             }
         }
 
         return Placement(
-            attribute: block,
+            spec: spec,
             isFirstLine: isFirst,
             isLastLine: isLast,
             isFirstInBlockquoteRun: isFirstInBlockquote,
             isLastInBlockquoteRun: isLastInBlockquote
         )
+    }
+
+    private func paragraphSpec(in storage: NSAttributedString, from lo: Int, to hi: Int) -> BlockSpec? {
+        var i = lo
+        while i < hi {
+            if let spec = storage.blockSpec(at: i) { return spec }
+            i += 1
+        }
+        return nil
     }
 }

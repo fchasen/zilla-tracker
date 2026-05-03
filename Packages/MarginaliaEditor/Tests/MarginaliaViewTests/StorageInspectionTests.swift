@@ -45,7 +45,7 @@ import UIKit
         for i in 0..<attr.length {
             let char = String((attr.string as NSString).character(at: i), radix: 16)
             let attach = attr.attribute(.attachment, at: i, effectiveRange: nil) != nil
-            let listItem = attr.attribute(.marginaliaListItem, at: i, effectiveRange: nil) != nil
+            let listItem = attr.blockSpec(at: i)?.isListItem ?? false
             print("  [\(i)] char=0x\(char) attach=\(attach) listItem=\(listItem)")
         }
     }
@@ -64,11 +64,10 @@ import UIKit
         for i in 0..<storage.length {
             let attrs = storage.attributes(at: i, effectiveRange: nil)
             let attachKey = attrs[.attachment].map { String(describing: type(of: $0)) } ?? "nil"
-            let listItemKey = attrs[.marginaliaListItem].map { String(describing: type(of: $0)) } ?? "nil"
             let listMarkerKey = (attrs[.marginaliaListMarker] as? Bool).map { String($0) } ?? "nil"
-            let blockKey = (attrs[.marginaliaBlock] as? BlockAttribute).map { "\($0.tag)" } ?? "nil"
+            let specKey = storage.blockSpec(at: i).map { "kind=\($0.kind)" } ?? "nil"
             let charHex = String((raw as NSString).character(at: i), radix: 16)
-            print("  [\(i)] char=0x\(charHex) attachment=\(attachKey) listItem=\(listItemKey) marker=\(listMarkerKey) block=\(blockKey)")
+            print("  [\(i)] char=0x\(charHex) attachment=\(attachKey) marker=\(listMarkerKey) spec=\(specKey)")
         }
         guard storage.length > 0 else {
             Issue.record("storage is empty after toggle")

@@ -47,9 +47,6 @@ public final class MarkdownAttributedCompiler {
                 .foregroundColor: theme.foregroundColor
             ]
         )
-        if result.length > 0 {
-            result.setBlockSpec(.paragraph, in: NSRange(location: 0, length: result.length))
-        }
         let highlights = parseAndHighlight(markdown)
         for span in highlights {
             switch span.tag {
@@ -162,7 +159,6 @@ public final class MarkdownAttributedCompiler {
         switch segment.tag {
         case .paragraph,
              .heading,
-             .blockquote,
              .unorderedListItem,
              .orderedListItem,
              .taskListItem:
@@ -258,32 +254,13 @@ public final class MarkdownAttributedCompiler {
             }
         }
 
-        // Determine the paragraph-level styling.
         let baseFont: PlatformFont
-        let blockAttribute: BlockAttribute
         switch segment.tag {
         case .heading:
             let scale = theme.headingScale[segment.level] ?? 1.0
             baseFont = themedFont(theme.bodyFont, scale: scale, traits: [.bold])
-            blockAttribute = BlockAttribute(
-                tag: .heading,
-                level: segment.level,
-                blockquoteDepth: segment.blockquoteDepth
-            )
-        case .unorderedListItem, .orderedListItem, .taskListItem:
-            baseFont = theme.bodyFont
-            blockAttribute = BlockAttribute(
-                tag: segment.tag,
-                level: segment.listLevel,
-                blockquoteDepth: segment.blockquoteDepth
-            )
         default:
             baseFont = theme.bodyFont
-            blockAttribute = BlockAttribute(
-                tag: .paragraph,
-                level: 0,
-                blockquoteDepth: segment.blockquoteDepth
-            )
         }
 
         let paragraphStyle = paragraphStyleFor(tag: segment.tag,
@@ -292,21 +269,11 @@ public final class MarkdownAttributedCompiler {
                                                 listLevel: segment.listLevel,
                                                 theme: theme)
 
-        var paragraphAttrs: [NSAttributedString.Key: Any] = [
+        let paragraphAttrs: [NSAttributedString.Key: Any] = [
             .font: baseFont,
             .foregroundColor: theme.foregroundColor,
-            .paragraphStyle: paragraphStyle,
-            .marginaliaBlock: blockAttribute
+            .paragraphStyle: paragraphStyle
         ]
-        if isListItemTag(segment.tag) {
-            let listAttr = ListItemAttribute(
-                level: segment.listLevel,
-                kind: listKind(forTag: segment.tag),
-                orderedIndex: segment.orderedIndex,
-                isChecked: segment.isChecked
-            )
-            paragraphAttrs[.marginaliaListItem] = listAttr
-        }
 
         let attributed = NSMutableAttributedString(string: content, attributes: paragraphAttrs)
 
@@ -382,13 +349,7 @@ public final class MarkdownAttributedCompiler {
                                                 level: 0,
                                                 blockquoteDepth: segment.blockquoteDepth,
                                                 listLevel: segment.listLevel,
-                                                theme: theme),
-            .marginaliaBlock: BlockAttribute(
-                tag: segment.tag,
-                level: 0,
-                blockquoteDepth: segment.blockquoteDepth,
-                language: segment.language
-            )
+                                                theme: theme)
         ]
         var content = raw
         if !content.hasSuffix("\n") { content.append("\n") }
@@ -407,8 +368,7 @@ public final class MarkdownAttributedCompiler {
     ) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: theme.bodyFont,
-            .foregroundColor: theme.markupColor,
-            .marginaliaBlock: BlockAttribute(tag: .horizontalRule)
+            .foregroundColor: theme.markupColor
         ]
         let nsSource = source as NSString
         var content = nsSource.substring(with: segment.range)
@@ -429,8 +389,7 @@ public final class MarkdownAttributedCompiler {
         let nsSource = source as NSString
         let attrs: [NSAttributedString.Key: Any] = [
             .font: segment.tag == .pipeTable ? theme.monospaceFont : theme.bodyFont,
-            .foregroundColor: theme.foregroundColor,
-            .marginaliaBlock: BlockAttribute(tag: segment.tag)
+            .foregroundColor: theme.foregroundColor
         ]
         var content = nsSource.substring(with: segment.range)
         if !content.hasSuffix("\n") { content.append("\n") }
@@ -479,19 +438,12 @@ public final class MarkdownAttributedCompiler {
         content: String = "",
         theme: MarginaliaTheme
     ) -> NSAttributedString {
-        let listAttr = ListItemAttribute(
-            level: level,
-            kind: kind,
-            orderedIndex: orderedIndex,
-            isChecked: isChecked
-        )
         let blockTag: BlockTag
         switch kind {
         case .bullet: blockTag = .unorderedListItem
         case .ordered: blockTag = .orderedListItem
         case .task: blockTag = .taskListItem
         }
-        let blockAttr = BlockAttribute(tag: blockTag, level: level, blockquoteDepth: 0)
         let paragraphStyle = paragraphStyleFor(
             tag: blockTag,
             level: 0,
@@ -502,9 +454,7 @@ public final class MarkdownAttributedCompiler {
         let baseAttrs: [NSAttributedString.Key: Any] = [
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
-            .paragraphStyle: paragraphStyle,
-            .marginaliaBlock: blockAttr,
-            .marginaliaListItem: listAttr
+            .paragraphStyle: paragraphStyle
         ]
         let result = NSMutableAttributedString()
         var markerAttrs = baseAttrs
@@ -527,7 +477,13 @@ public final class MarkdownAttributedCompiler {
             result.append(NSAttributedString(string: "\u{FFFC} ", attributes: markerAttrs))
         }
         result.append(NSAttributedString(string: content + "\n", attributes: baseAttrs))
-        let spec = BlockSpec(blockAttribute: blockAttr, listItem: listAttr)
+        let kindSpec: BlockSpec.Kind
+        switch kind {
+        case .bullet: kindSpec = .unorderedListItem
+        case .ordered: kindSpec = .orderedListItem(index: orderedIndex ?? 1)
+        case .task: kindSpec = .taskListItem(checked: isChecked ?? false)
+        }
+        let spec = BlockSpec(kind: kindSpec, listLevel: level)
         result.setBlockSpec(spec, in: NSRange(location: 0, length: result.length))
         return result
     }
@@ -541,7 +497,6 @@ public final class MarkdownAttributedCompiler {
         content: String = "",
         theme: MarginaliaTheme
     ) -> NSAttributedString {
-        let blockAttr = BlockAttribute(tag: .paragraph, level: 0, blockquoteDepth: max(1, depth))
         let paragraphStyle = paragraphStyleFor(
             tag: .paragraph,
             level: 0,
@@ -552,8 +507,7 @@ public final class MarkdownAttributedCompiler {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
-            .paragraphStyle: paragraphStyle,
-            .marginaliaBlock: blockAttr
+            .paragraphStyle: paragraphStyle
         ]
         let result = NSMutableAttributedString(string: content + "\n", attributes: attrs)
         let spec = BlockSpec(kind: .paragraph, blockquoteDepth: max(1, depth))
@@ -579,9 +533,6 @@ public final class MarkdownAttributedCompiler {
             style.paragraphSpacing = 4
             style.firstLineHeadIndent = blockquoteIndent
             style.headIndent = blockquoteIndent
-        case .blockquote:
-            style.firstLineHeadIndent = blockquoteIndent
-            style.headIndent = blockquoteIndent
         case .unorderedListItem, .orderedListItem, .taskListItem:
             let outer: CGFloat = 12
             let perLevel: CGFloat = 18
@@ -605,8 +556,7 @@ public final class MarkdownAttributedCompiler {
     private func baseAttributes(theme: MarginaliaTheme) -> [NSAttributedString.Key: Any] {
         [
             .font: theme.bodyFont,
-            .foregroundColor: theme.foregroundColor,
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .foregroundColor: theme.foregroundColor
         ]
     }
 

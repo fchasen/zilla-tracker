@@ -55,10 +55,9 @@ import UIKit
         // collapses the trailing blank paragraph, so the saved source is just
         // the surviving list item.
         #expect(controller.markdown() == "- one\n")
-        // Verify the line at the former marker position is now plain (no list attribute).
         let lineLoc = controller.textStorage.length - 1
-        let listAttr = controller.textStorage.attribute(.marginaliaListItem, at: lineLoc, effectiveRange: nil)
-        #expect(listAttr == nil)
+        let spec = controller.textStorage.blockSpec(at: lineLoc)
+        #expect(spec?.isListItem == false || spec == nil)
     }
 
     @Test func doubleReturnEndsList() throws {
@@ -69,8 +68,8 @@ import UIKit
         #expect(controller.handleNewline())
         #expect(controller.markdown() == "- one\n")
         let lineLoc = controller.textStorage.length - 1
-        let listAttr = controller.textStorage.attribute(.marginaliaListItem, at: lineLoc, effectiveRange: nil)
-        #expect(listAttr == nil)
+        let spec = controller.textStorage.blockSpec(at: lineLoc)
+        #expect(spec?.isListItem == false || spec == nil)
     }
 
     @Test func orderedListIncrements() throws {

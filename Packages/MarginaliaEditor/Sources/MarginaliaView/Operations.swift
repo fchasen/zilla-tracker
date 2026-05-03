@@ -306,32 +306,40 @@ public enum Operations {
         guard storage.length > 0 else { return nil }
         let safe = clampedRange(range, in: storage.length)
         let probe = max(0, min(safe.location, storage.length - 1))
-        guard let listAttr = storage.safeAttribute(.marginaliaListItem, at: probe) as? ListItemAttribute else {
+        guard let spec = storage.blockSpec(at: probe), spec.isListItem else {
             return nil
         }
         let ns = storage.string as NSString
         let lineRange = ns.paragraphRange(for: NSRange(location: probe, length: 0))
         guard lineRange.length > 0 else { return nil }
 
-        let newLevel = max(0, listAttr.level + delta)
-        if newLevel == listAttr.level {
+        let newLevel = max(0, spec.listLevel + delta)
+        if newLevel == spec.listLevel {
             return NSRange(location: probe, length: 0)
         }
 
-        let newListAttr = ListItemAttribute(
-            level: newLevel,
-            kind: listAttr.kind,
-            orderedIndex: listAttr.orderedIndex,
-            isChecked: listAttr.isChecked
-        )
-        let newParagraphStyle = compiler.paragraphStyle(forListLevel: newLevel, theme: theme)
-        let blockTag: BlockTag
-        switch listAttr.kind {
-        case .bullet: blockTag = .unorderedListItem
-        case .ordered: blockTag = .orderedListItem
-        case .task: blockTag = .taskListItem
+        let kind: ListItemKind
+        switch spec.kind {
+        case .unorderedListItem: kind = .bullet
+        case .orderedListItem: kind = .ordered
+        case .taskListItem: kind = .task
+        default: return nil
         }
-        let newBlockAttr = BlockAttribute(tag: blockTag, level: newLevel, blockquoteDepth: 0)
+        let orderedIndex: Int? = {
+            if case .orderedListItem(let i) = spec.kind { return i } else { return nil }
+        }()
+        let isChecked: Bool? = {
+            if case .taskListItem(let c) = spec.kind { return c } else { return nil }
+        }()
+
+        let newParagraphStyle = compiler.paragraphStyle(forListLevel: newLevel, theme: theme)
+        let newSpec: BlockSpec
+        switch kind {
+        case .bullet: newSpec = BlockSpec(kind: .unorderedListItem, listLevel: newLevel)
+        case .ordered: newSpec = BlockSpec(kind: .orderedListItem(index: orderedIndex ?? 1), listLevel: newLevel)
+        case .task: newSpec = BlockSpec(kind: .taskListItem(checked: isChecked ?? false), listLevel: newLevel)
+        }
+        let newSpecBox = BlockSpecBox(newSpec)
 
         var markerRange = NSRange(location: lineRange.location, length: 0)
         if (storage.safeAttribute(.marginaliaListMarker, at: lineRange.location) as? Bool) == true {
@@ -342,21 +350,20 @@ public enum Operations {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: newParagraphStyle,
-            .marginaliaBlock: newBlockAttr,
-            .marginaliaListItem: newListAttr,
-            .marginaliaListMarker: true
+            .marginaliaListMarker: true,
+            .marginaliaBlockSpec: newSpecBox
         ]
         let markerString: String
-        switch listAttr.kind {
+        switch kind {
         case .bullet:
             markerAttrs[.attachment] = BulletGlyphAttachment(level: newLevel, color: theme.foregroundColor)
             markerString = "\u{FFFC} "
         case .ordered:
             let style = OrderedMarkerFormatter.style(forLevel: newLevel)
-            markerString = OrderedMarkerFormatter.format(index: listAttr.orderedIndex ?? 1, style: style) + " "
+            markerString = OrderedMarkerFormatter.format(index: orderedIndex ?? 1, style: style) + " "
         case .task:
             let attachment = CheckboxAttachment()
-            attachment.isChecked = listAttr.isChecked ?? false
+            attachment.isChecked = isChecked ?? false
             markerAttrs[.attachment] = attachment
             markerString = "\u{FFFC} "
         }
@@ -367,9 +374,8 @@ public enum Operations {
         let delta_len = newMarker.length - markerRange.length
         let updatedLineLen = lineRange.length + delta_len
         let updatedLineRange = NSRange(location: lineRange.location, length: updatedLineLen)
-        storage.addAttribute(.marginaliaListItem, value: newListAttr, range: updatedLineRange)
         storage.addAttribute(.paragraphStyle, value: newParagraphStyle, range: updatedLineRange)
-        storage.addAttribute(.marginaliaBlock, value: newBlockAttr, range: updatedLineRange)
+        storage.addAttribute(.marginaliaBlockSpec, value: newSpecBox, range: updatedLineRange)
         storage.endEditing()
 
         let cursor = max(updatedLineRange.location, updatedLineRange.location + updatedLineRange.length - 1)
@@ -392,7 +398,7 @@ public enum Operations {
             .font: theme.bodyFont,
             .foregroundColor: theme.foregroundColor,
             .paragraphStyle: NSParagraphStyle(),
-            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            .marginaliaBlockSpec: BlockSpecBox(.paragraph)
         ]
         storage.beginEditing()
         storage.replaceCharacters(in: markerRange, with: "")
@@ -400,7 +406,6 @@ public enum Operations {
         let bodyRange = NSRange(location: lineRange.location, length: bodyLen)
         if bodyRange.length > 0 {
             storage.setAttributes(plainAttrs, range: bodyRange)
-            storage.removeAttribute(.marginaliaListItem, range: bodyRange)
             storage.removeAttribute(.marginaliaListMarker, range: bodyRange)
         }
         storage.endEditing()
@@ -831,8 +836,7 @@ public enum Operations {
             NSAttributedString.Key.font,
             .foregroundColor,
             .paragraphStyle,
-            .marginaliaBlock,
-            .marginaliaListItem
+            .marginaliaBlockSpec
         ] {
             if let v = raw[key] { carry[key] = v }
         }

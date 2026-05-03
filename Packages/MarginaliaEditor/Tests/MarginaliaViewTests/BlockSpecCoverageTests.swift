@@ -84,7 +84,7 @@ import MarginaliaSyntax
         #expect(spec.blockquoteDepth == 1, "list nested in blockquote should carry depth")
     }
 
-    @Test func specMatchesLegacyBlockAttribute() throws {
+    @Test func everyKindCompilesWithSpecPresent() throws {
         let inputs = [
             "# Heading 1\n",
             "## Heading 2\n",
@@ -99,16 +99,8 @@ import MarginaliaSyntax
         for md in inputs {
             let out = try compiled(md)
             for i in 0..<out.length {
-                guard let spec = out.blockSpec(at: i) else {
+                if out.blockSpec(at: i) == nil {
                     Issue.record("missing BlockSpec at \(i) in '\(md)'")
-                    continue
-                }
-                let legacyBlock = out.attribute(.marginaliaBlock, at: i, effectiveRange: nil) as? BlockAttribute
-                let legacyList = out.attribute(.marginaliaListItem, at: i, effectiveRange: nil) as? ListItemAttribute
-                if let lb = legacyBlock {
-                    let derived = BlockSpec(blockAttribute: lb, listItem: legacyList)
-                    #expect(spec == derived,
-                            "spec mismatch at \(i) in '\(md)': spec=\(spec) derived=\(derived)")
                 }
             }
         }

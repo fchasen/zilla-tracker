@@ -19,10 +19,9 @@ import UIKit
             let attrs = storage.attributes(at: i, effectiveRange: nil)
             let charHex = String((storage.string as NSString).character(at: i), radix: 16)
             let attachKey = attrs[.attachment].map { String(describing: type(of: $0)) } ?? "nil"
-            let listItemKey = (attrs[.marginaliaListItem] as? ListItemAttribute).map { "level=\($0.level) kind=\($0.kind) idx=\(String(describing: $0.orderedIndex))" } ?? "nil"
             let listMarkerKey = (attrs[.marginaliaListMarker] as? Bool).map { String($0) } ?? "nil"
-            let blockKey = (attrs[.marginaliaBlock] as? BlockAttribute).map { "\($0.tag)" } ?? "nil"
-            print("  [\(i)] char=0x\(charHex) attachment=\(attachKey) listItem=\(listItemKey) marker=\(listMarkerKey) block=\(blockKey)")
+            let specKey = storage.blockSpec(at: i).map { "kind=\($0.kind) listLevel=\($0.listLevel)" } ?? "nil"
+            print("  [\(i)] char=0x\(charHex) attachment=\(attachKey) marker=\(listMarkerKey) spec=\(specKey)")
         }
     }
 
@@ -38,8 +37,8 @@ import UIKit
         #expect(firstChar == 0xFFFC, "first char should be FFFC, got 0x\(String(firstChar, radix: 16))")
         let attachment = storage.attribute(.attachment, at: 0, effectiveRange: nil)
         #expect(attachment is BulletGlyphAttachment, "should have BulletGlyphAttachment, got \(String(describing: attachment))")
-        let listItem = storage.attribute(.marginaliaListItem, at: 0, effectiveRange: nil)
-        #expect(listItem is ListItemAttribute, "should have ListItemAttribute, got \(String(describing: listItem))")
+        let spec = storage.blockSpec(at: 0)
+        #expect(spec?.isListItem == true, "should have list-item BlockSpec, got \(String(describing: spec))")
     }
 
     @Test func clickBulletThenTypeThenReturnCreatesSecondItem() throws {
@@ -100,8 +99,8 @@ import UIKit
         // The second item should now be nested.
         #expect(controller.markdown() == "- one\n  - two\n", "second item should be indented in markdown")
         // The bullet for the nested item should be a different shape.
-        let attrs = controller.textStorage.attribute(.marginaliaListItem, at: ns.length - 3, effectiveRange: nil) as? ListItemAttribute
-        #expect(attrs?.level == 1, "nested item should be level 1")
+        let nestedSpec = controller.textStorage.blockSpec(at: ns.length - 3)
+        #expect(nestedSpec?.listLevel == 1, "nested item should be list level 1")
     }
 
     @Test func deleteAllThenChangeDocumentThenType() throws {

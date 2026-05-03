@@ -172,7 +172,7 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             guard total > 0 else { return false }
             let location = parent.controller.currentSelection.location
             let probe = max(0, min(location, total - 1))
-            return storage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute
+            return storage.blockSpec(at: probe)?.isListItem ?? false
         }
 
         public func textView(_ view: NSTextView,

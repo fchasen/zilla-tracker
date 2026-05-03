@@ -40,45 +40,7 @@ import Foundation
         #expect(collected[1].1.kind == .heading(level: 1))
     }
 
-    @Test func bridgeFromLegacyBlockAttribute() {
-        let plain = BlockAttribute(tag: .paragraph)
-        #expect(BlockSpec(blockAttribute: plain, listItem: nil) == .paragraph)
-
-        let h3 = BlockAttribute(tag: .heading, level: 3)
-        #expect(BlockSpec(blockAttribute: h3, listItem: nil)
-                == BlockSpec(kind: .heading(level: 3)))
-
-        let quoted = BlockAttribute(tag: .paragraph, blockquoteDepth: 2)
-        #expect(BlockSpec(blockAttribute: quoted, listItem: nil)
-                == BlockSpec(kind: .paragraph, blockquoteDepth: 2))
-
-        let bullet = BlockAttribute(tag: .unorderedListItem, level: 1)
-        let bulletItem = ListItemAttribute(level: 1, kind: .bullet)
-        #expect(BlockSpec(blockAttribute: bullet, listItem: bulletItem)
-                == BlockSpec(kind: .unorderedListItem, listLevel: 1))
-
-        let orderedItem = ListItemAttribute(level: 0, kind: .ordered, orderedIndex: 4)
-        let ordered = BlockAttribute(tag: .orderedListItem)
-        #expect(BlockSpec(blockAttribute: ordered, listItem: orderedItem)
-                == BlockSpec(kind: .orderedListItem(index: 4)))
-
-        let task = BlockAttribute(tag: .taskListItem)
-        let taskItem = ListItemAttribute(level: 0, kind: .task, isChecked: true)
-        #expect(BlockSpec(blockAttribute: task, listItem: taskItem)
-                == BlockSpec(kind: .taskListItem(checked: true)))
-
-        let code = BlockAttribute(tag: .fencedCode, language: "swift")
-        #expect(BlockSpec(blockAttribute: code, listItem: nil)
-                == BlockSpec(kind: .fencedCode(language: "swift")))
-    }
-
-    @Test func legacyBlockquoteTagMapsToDepth() {
-        let raw = BlockAttribute(tag: .blockquote, blockquoteDepth: 0)
-        #expect(BlockSpec(blockAttribute: raw, listItem: nil)
-                == BlockSpec(kind: .paragraph, blockquoteDepth: 1))
-    }
-
-    @Test func storageBoxComparesByValue() {
+    @Test func storageRunsAreReferenceBounded() {
         let target = NSMutableAttributedString(string: "ab")
         target.setBlockSpec(BlockSpec(kind: .heading(level: 2)),
                             in: NSRange(location: 0, length: 1))
@@ -86,6 +48,15 @@ import Foundation
                             in: NSRange(location: 1, length: 1))
         var ranges = 0
         target.enumerateBlockSpecs { _, _ in ranges += 1 }
-        #expect(ranges == 1, "two equal specs should fuse into one run via isEqual")
+        #expect(ranges == 2, "distinct boxes stay as distinct runs even when spec values match")
+    }
+
+    @Test func sameBoxFusesRuns() {
+        let target = NSMutableAttributedString(string: "ab")
+        let box = BlockSpecBox(BlockSpec(kind: .heading(level: 2)))
+        target.addAttribute(.marginaliaBlockSpec, value: box, range: NSRange(location: 0, length: 2))
+        var ranges = 0
+        target.enumerateBlockSpecs { _, _ in ranges += 1 }
+        #expect(ranges == 1, "a single box applied uniformly produces one run")
     }
 }

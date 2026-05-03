@@ -23,8 +23,8 @@ import UIKit
         controller.testSelection = NSRange(location: bodyStart, length: 0)
         #expect(controller.handleBackspace())
         #expect(controller.markdown() == "apple\n")
-        let listAttr = controller.textStorage.attribute(.marginaliaListItem, at: 0, effectiveRange: nil)
-        #expect(listAttr == nil)
+        let spec = controller.textStorage.blockSpec(at: 0)
+        #expect(spec?.isListItem == false || spec == nil)
     }
 
     @Test func backspaceMidContentDoesNotDemote() throws {

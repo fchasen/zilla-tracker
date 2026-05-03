@@ -136,7 +136,7 @@ private func isCursorInListItem(controller: EditorController) -> Bool {
     guard total > 0 else { return false }
     let location = controller.currentSelection.location
     let probe = max(0, min(location, total - 1))
-    return storage.safeAttribute(.marginaliaListItem, at: probe) is ListItemAttribute
+    return storage.blockSpec(at: probe)?.isListItem ?? false
 }
 
 final class MarginaliaUITextView: UITextView {
