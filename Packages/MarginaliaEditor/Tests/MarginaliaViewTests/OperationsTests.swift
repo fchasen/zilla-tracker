@@ -155,4 +155,43 @@ import UIKit
         }
         #expect(serialize(storage).contains("---"))
     }
+
+    @Test func toggleUnorderedListOnEmptyStorageInjectsMarker() throws {
+        let storage = try compile("")
+        try block(in: storage) { compiler, serializer in
+            Operations.toggleUnorderedList(
+                in: storage, range: NSRange(location: 0, length: 0),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        let out = serialize(storage)
+        #expect(out.hasPrefix("- "), "expected bullet marker, got \"\(out)\"")
+    }
+
+    @Test func toggleTaskListOnEmptyStorageInjectsCheckbox() throws {
+        let storage = try compile("")
+        try block(in: storage) { compiler, serializer in
+            Operations.toggleTaskList(
+                in: storage, range: NSRange(location: 0, length: 0),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        let out = serialize(storage)
+        #expect(out.hasPrefix("- [ ]"), "expected task marker, got \"\(out)\"")
+    }
+
+    @Test func toggleOrderedListOnEmptyStorageInjectsNumber() throws {
+        let storage = try compile("")
+        try block(in: storage) { compiler, serializer in
+            Operations.toggleOrderedList(
+                in: storage, range: NSRange(location: 0, length: 0),
+                compiler: compiler, serializer: serializer,
+                dialect: .commonMark, mode: .rich, theme: .default
+            )
+        }
+        let out = serialize(storage)
+        #expect(out.hasPrefix("1. "), "expected ordered marker, got \"\(out)\"")
+    }
 }
