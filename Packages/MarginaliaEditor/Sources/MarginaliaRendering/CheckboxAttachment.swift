@@ -10,11 +10,24 @@ import UIKit
 /// first — those rendered tiny and font-dependent. This one is a real square
 /// with a stroke, optionally containing a checkmark.
 public final class CheckboxAttachment: NSTextAttachment {
-    public var isChecked: Bool = false
-    /// Multiplier on the line fragment's height — 0.85 gives a square
-    /// slightly smaller than capital letter height, which sits naturally
-    /// inline.
+    public var isChecked: Bool = false {
+        didSet { refreshImage() }
+    }
     public var heightFraction: CGFloat = 0.85
+
+    public override init(data contentData: Data?, ofType uti: String?) {
+        super.init(data: contentData, ofType: uti)
+        refreshImage()
+    }
+
+    public required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        refreshImage()
+    }
+
+    private func refreshImage() {
+        self.image = CheckboxAttachment.render(checked: isChecked, in: CGSize(width: 16, height: 16))
+    }
 
     public override func attachmentBounds(
         for textContainer: NSTextContainer?,
@@ -22,9 +35,10 @@ public final class CheckboxAttachment: NSTextAttachment {
         glyphPosition position: CGPoint,
         characterIndex charIndex: Int
     ) -> CGRect {
-        let side = max(10, lineFrag.height * heightFraction)
-        let yOffset = (side - lineFrag.height) * 0.5 - lineFrag.height * 0.05
-        return CGRect(x: 0, y: -yOffset, width: side, height: side)
+        let height = lineFrag.height > 0 ? lineFrag.height : 17
+        let side = max(10, height * heightFraction)
+        let yOffset = -height * 0.18
+        return CGRect(x: 0, y: yOffset, width: side, height: side)
     }
 
     public override func image(
@@ -39,7 +53,7 @@ public final class CheckboxAttachment: NSTextAttachment {
 extension CheckboxAttachment {
     static func render(checked: Bool, in size: CGSize) -> PlatformImage {
         #if canImport(AppKit) && os(macOS)
-        return NSImage(size: size, flipped: false) { rect in
+        return NSImage(size: size, flipped: true) { rect in
             draw(checked: checked, in: rect)
             return true
         }

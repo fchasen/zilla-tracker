@@ -306,10 +306,6 @@ public final class MarkdownAttributedCompiler {
 
         let attributed = NSMutableAttributedString(string: content, attributes: paragraphAttrs)
 
-        // Render list markers — bullet glyph, ordered number, or checkbox —
-        // at the start of the paragraph. The serializer skips runs flagged
-        // with `.marginaliaListMarker` (or `.attachment`), so these don't
-        // round-trip back into the markdown.
         switch segment.tag {
         case .taskListItem:
             let attachment = CheckboxAttachment()
@@ -322,21 +318,23 @@ public final class MarkdownAttributedCompiler {
                 at: 0
             )
         case .unorderedListItem:
-            let glyph = BulletAttachment.glyph(forLevel: segment.listLevel) + " "
+            let attachment = BulletGlyphAttachment(level: segment.listLevel, color: theme.foregroundColor)
             var markerAttrs = paragraphAttrs
-            markerAttrs[.foregroundColor] = theme.markupColor
+            markerAttrs[.attachment] = attachment
+            markerAttrs[.foregroundColor] = theme.foregroundColor
             markerAttrs[.marginaliaListMarker] = true
             attributed.insert(
-                NSAttributedString(string: glyph, attributes: markerAttrs),
+                NSAttributedString(string: "\u{FFFC} ", attributes: markerAttrs),
                 at: 0
             )
         case .orderedListItem:
-            let n = segment.orderedIndex ?? 1
+            let style = OrderedMarkerFormatter.style(forLevel: segment.listLevel)
+            let marker = OrderedMarkerFormatter.format(index: segment.orderedIndex ?? 1, style: style)
             var markerAttrs = paragraphAttrs
             markerAttrs[.foregroundColor] = theme.markupColor
             markerAttrs[.marginaliaListMarker] = true
             attributed.insert(
-                NSAttributedString(string: "\(n). ", attributes: markerAttrs),
+                NSAttributedString(string: "\(marker) ", attributes: markerAttrs),
                 at: 0
             )
         default:
@@ -349,7 +347,7 @@ public final class MarkdownAttributedCompiler {
             guard safe.length > 0 else { continue }
             for (k, v) in attrs {
                 if k == .font {
-                    if let baseRun = attributed.attribute(.font, at: safe.location, effectiveRange: nil) as? PlatformFont,
+                    if let baseRun = attributed.safeAttribute(.font, at: safe.location) as? PlatformFont,
                        let trait = (v as? PlatformFont).flatMap({ traitsOf($0) }) {
                         let merged = themedFont(baseRun, traits: trait)
                         attributed.addAttribute(.font, value: merged, range: safe)
@@ -441,6 +439,91 @@ public final class MarkdownAttributedCompiler {
 
     // MARK: - paragraph styles
 
+    public func makeListItem(
+        kind: ListItemKind,
+        level: Int,
+        orderedIndex: Int? = nil,
+        isChecked: Bool? = nil,
+        content: String = "",
+        theme: MarginaliaTheme
+    ) -> NSAttributedString {
+        let listAttr = ListItemAttribute(
+            level: level,
+            kind: kind,
+            orderedIndex: orderedIndex,
+            isChecked: isChecked
+        )
+        let blockTag: BlockTag
+        switch kind {
+        case .bullet: blockTag = .unorderedListItem
+        case .ordered: blockTag = .orderedListItem
+        case .task: blockTag = .taskListItem
+        }
+        let blockAttr = BlockAttribute(tag: blockTag, level: level, blockquoteDepth: 0)
+        let paragraphStyle = paragraphStyleFor(
+            tag: blockTag,
+            level: 0,
+            blockquoteDepth: 0,
+            listLevel: level,
+            theme: theme
+        )
+        let baseAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: paragraphStyle,
+            .marginaliaBlock: blockAttr,
+            .marginaliaListItem: listAttr
+        ]
+        let result = NSMutableAttributedString()
+        var markerAttrs = baseAttrs
+        markerAttrs[.marginaliaListMarker] = true
+        switch kind {
+        case .bullet:
+            let attachment = BulletGlyphAttachment(level: level, color: theme.foregroundColor)
+            markerAttrs[.attachment] = attachment
+            markerAttrs[.foregroundColor] = theme.foregroundColor
+            result.append(NSAttributedString(string: "\u{FFFC} ", attributes: markerAttrs))
+        case .ordered:
+            let style = OrderedMarkerFormatter.style(forLevel: level)
+            let s = OrderedMarkerFormatter.format(index: orderedIndex ?? 1, style: style)
+            markerAttrs[.foregroundColor] = theme.markupColor
+            result.append(NSAttributedString(string: "\(s) ", attributes: markerAttrs))
+        case .task:
+            let attachment = CheckboxAttachment()
+            attachment.isChecked = isChecked ?? false
+            markerAttrs[.attachment] = attachment
+            result.append(NSAttributedString(string: "\u{FFFC} ", attributes: markerAttrs))
+        }
+        result.append(NSAttributedString(string: content + "\n", attributes: baseAttrs))
+        return result
+    }
+
+    public func paragraphStyle(forListLevel level: Int, theme: MarginaliaTheme) -> NSParagraphStyle {
+        paragraphStyleFor(tag: .unorderedListItem, level: 0, blockquoteDepth: 0, listLevel: level, theme: theme)
+    }
+
+    public func makeBlockquoteLine(
+        depth: Int = 1,
+        content: String = "",
+        theme: MarginaliaTheme
+    ) -> NSAttributedString {
+        let blockAttr = BlockAttribute(tag: .paragraph, level: 0, blockquoteDepth: max(1, depth))
+        let paragraphStyle = paragraphStyleFor(
+            tag: .paragraph,
+            level: 0,
+            blockquoteDepth: max(1, depth),
+            listLevel: 0,
+            theme: theme
+        )
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: paragraphStyle,
+            .marginaliaBlock: blockAttr
+        ]
+        return NSAttributedString(string: content + "\n", attributes: attrs)
+    }
+
     private func paragraphStyleFor(
         tag: BlockTag,
         level: Int,
@@ -452,7 +535,6 @@ public final class MarkdownAttributedCompiler {
         style.lineBreakMode = .byWordWrapping
 
         let blockquoteIndent = CGFloat(blockquoteDepth) * 16
-        let listIndent = CGFloat(max(0, listLevel)) * 18
 
         switch tag {
         case .heading:
@@ -464,8 +546,12 @@ public final class MarkdownAttributedCompiler {
             style.firstLineHeadIndent = blockquoteIndent
             style.headIndent = blockquoteIndent
         case .unorderedListItem, .orderedListItem, .taskListItem:
-            style.firstLineHeadIndent = blockquoteIndent + listIndent
-            style.headIndent = blockquoteIndent + listIndent + 18
+            let outer: CGFloat = 12
+            let perLevel: CGFloat = 18
+            let bodyOffset: CGFloat = 22
+            let firstLine = blockquoteIndent + outer + CGFloat(max(0, listLevel)) * perLevel
+            style.firstLineHeadIndent = firstLine
+            style.headIndent = firstLine + bodyOffset
         case .fencedCode, .indentedCode:
             style.firstLineHeadIndent = blockquoteIndent + 8
             style.headIndent = blockquoteIndent + 8
