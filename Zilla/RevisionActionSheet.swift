@@ -134,7 +134,7 @@ struct RevisionActionSheet: View {
             transactions.append(.action(state.action))
         }
         if !trimmed.isEmpty {
-            transactions.append(.comment(Markdown.toRemarkup(trimmed)))
+            transactions.append(.comment(trimmed))
         }
         guard !transactions.isEmpty else { return }
         isSubmitting = true

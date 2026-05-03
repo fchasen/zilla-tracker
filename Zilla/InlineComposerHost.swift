@@ -11,6 +11,7 @@ struct InlineComposerHost: View {
     let editingPHID: String?
     let initialContent: String?
     let chromed: Bool
+    let showToolbar: Bool
 
     init(
         path: String,
@@ -20,7 +21,8 @@ struct InlineComposerHost: View {
         replyTo: String?,
         editingPHID: String? = nil,
         initialContent: String? = nil,
-        chromed: Bool = true
+        chromed: Bool = true,
+        showToolbar: Bool = true
     ) {
         self.path = path
         self.line = line
@@ -30,6 +32,7 @@ struct InlineComposerHost: View {
         self.editingPHID = editingPHID
         self.initialContent = initialContent
         self.chromed = chromed
+        self.showToolbar = showToolbar
     }
 
     @Environment(\.modelContext) private var modelContext
@@ -62,6 +65,7 @@ struct InlineComposerHost: View {
             placeholder: editingPHID != nil ? "Edit draft…" : (replyTo == nil ? "Add a comment…" : "Reply…"),
             postLabel: editingPHID != nil ? "Save" : "Post",
             chromed: chromed,
+            showToolbar: showToolbar,
             onCancel: cancel,
             onPost: { Task { await post() } }
         )
@@ -95,7 +99,7 @@ struct InlineComposerHost: View {
     private func post() async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let body = Markdown.toRemarkup(trimmed)
+        let body = trimmed
         isPosting = true
         defer { isPosting = false }
         let error: Error?

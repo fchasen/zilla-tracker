@@ -56,7 +56,7 @@ struct RevisionCommentComposer: View {
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
-            transactions: [.comment(Markdown.toRemarkup(trimmed))],
+            transactions: [.comment(trimmed)],
             using: phab.client
         ) {
             workspace.lastUpdateError = error.localizedDescription
