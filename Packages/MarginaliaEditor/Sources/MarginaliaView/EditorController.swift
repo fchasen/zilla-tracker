@@ -127,6 +127,39 @@ public final class EditorController {
         return result
     }
 
+    /// Apply an editor action against the host text view's current
+    /// selection. The text view owns the selection; this is the path the
+    /// `@objc` action methods call from the responder chain.
+    @discardableResult
+    public func perform(_ action: EditorAction) -> NSRange {
+        let range = currentSelection
+        let resulting: NSRange
+        switch action {
+        case .bold:
+            resulting = Operations.toggleBold(in: textStorage, range: range, theme: theme)
+        case .italic:
+            resulting = Operations.toggleItalic(in: textStorage, range: range, theme: theme)
+        case .strikethrough:
+            resulting = Operations.toggleStrikethrough(in: textStorage, range: range, theme: theme)
+        case .codeSpan:
+            resulting = Operations.toggleCodeSpan(in: textStorage, range: range, theme: theme)
+        case .link(let url, let label):
+            resulting = Operations.insertLink(
+                in: textStorage,
+                replacing: range,
+                label: label ?? "label",
+                url: url ?? "url",
+                theme: theme
+            )
+        case .heading, .unorderedList, .orderedList, .taskList,
+             .blockquote, .codeBlock, .horizontalRule:
+            // Phase 2c+ — block-level operations land here.
+            resulting = range
+        }
+        setHostSelection(resulting)
+        return resulting
+    }
+
     /// Insert a link at the host text view's cursor (or replace its
     /// selection). The link's display text is `label`; the URL rides on a
     /// `.link` attribute and round-trips as `[label](url)` markdown.

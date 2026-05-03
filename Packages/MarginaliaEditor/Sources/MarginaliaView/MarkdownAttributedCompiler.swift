@@ -201,9 +201,15 @@ public final class MarkdownAttributedCompiler {
         let inlineSpans = inlineHighlights.filter { rangesIntersect($0.range, segRange) }
         let inlineMarkupSpans = inlineSpans.filter { $0.tag == .punctuationDelimiter }
 
-        // Combine block-level + inline-level markup ranges into the set of
-        // characters that get stripped from rendered storage.
-        var stripRanges = (blockMarkup + inlineMarkupSpans).map { $0.range }
+        // Block-level markup tokens (`#`, `>`, `-`, `1.`, fence backticks)
+        // cover only the marker; extend each through any horizontal
+        // whitespace that follows so the rendered storage drops the
+        // post-marker space too. Inline markup (emphasis/link delimiters)
+        // never absorbs surrounding whitespace.
+        let blockStrip = blockMarkup.map {
+            extendThroughTrailingHorizontalWhitespace($0.range, in: nsSource)
+        }
+        var stripRanges = blockStrip + inlineMarkupSpans.map { $0.range }
         // Task list markers (`[ ]` / `[x]`) aren't tagged by the bundled
         // highlight queries; strip them by lookahead within the segment.
         if segment.tag == .taskListItem {
@@ -474,6 +480,18 @@ public final class MarkdownAttributedCompiler {
         let location = max(0, min(range.location, length))
         let remaining = max(0, length - location)
         return NSRange(location: location, length: max(0, min(range.length, remaining)))
+    }
+
+    /// Walk forward from a strip range's end as long as the next character
+    /// is a horizontal whitespace (` ` or `\t`). Used to absorb the trailing
+    /// space that follows block-markup tokens like `#`, `>`, list markers.
+    private func extendThroughTrailingHorizontalWhitespace(_ range: NSRange, in source: NSString) -> NSRange {
+        var end = range.location + range.length
+        while end < source.length {
+            let ch = source.character(at: end)
+            if ch == 0x20 || ch == 0x09 { end += 1 } else { break }
+        }
+        return NSRange(location: range.location, length: end - range.location)
     }
 
     /// Find the `[ ]` / `[x]` / `[X]` bracket range (including the trailing

@@ -64,12 +64,233 @@ public enum Operations {
         return NSRange(location: cursor, length: 0)
     }
 
+    // MARK: - inline format toggles
+
+    @discardableResult
+    public static func toggleBold(
+        in storage: NSTextStorage,
+        range: NSRange,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        toggleFontTrait(in: storage, range: range, trait: .bold, theme: theme, placeholder: "bold")
+    }
+
+    @discardableResult
+    public static func toggleItalic(
+        in storage: NSTextStorage,
+        range: NSRange,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        toggleFontTrait(in: storage, range: range, trait: .italic, theme: theme, placeholder: "italic")
+    }
+
+    @discardableResult
+    public static func toggleStrikethrough(
+        in storage: NSTextStorage,
+        range: NSRange,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        if range.length == 0 {
+            return insertStyledPlaceholder(
+                in: storage,
+                at: range.location,
+                placeholder: "strike",
+                theme: theme
+            ) { attrs in
+                var a = attrs
+                a[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                return a
+            }
+        }
+        let safe = clampedRange(range, in: storage.length)
+        let allOn = isUniformAttribute(in: storage, range: safe, key: .strikethroughStyle) { value in
+            (value as? Int).map { $0 != 0 } ?? false
+        }
+        storage.beginEditing()
+        if allOn {
+            storage.removeAttribute(.strikethroughStyle, range: safe)
+        } else {
+            storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: safe)
+        }
+        storage.endEditing()
+        return safe
+    }
+
+    @discardableResult
+    public static func toggleCodeSpan(
+        in storage: NSTextStorage,
+        range: NSRange,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        if range.length == 0 {
+            return insertStyledPlaceholder(
+                in: storage,
+                at: range.location,
+                placeholder: "code",
+                theme: theme
+            ) { attrs in
+                var a = attrs
+                a[.font] = theme.monospaceFont
+                a[.marginaliaInline] = InlineTag.codeSpan
+                a[.backgroundColor] = subtleCodeBackground(theme: theme)
+                return a
+            }
+        }
+        let safe = clampedRange(range, in: storage.length)
+        let allOn = isUniformAttribute(in: storage, range: safe, key: .marginaliaInline) { value in
+            (value as? InlineTag) == .codeSpan
+        }
+        storage.beginEditing()
+        if allOn {
+            storage.removeAttribute(.marginaliaInline, range: safe)
+            storage.removeAttribute(.backgroundColor, range: safe)
+            storage.addAttribute(.font, value: theme.bodyFont, range: safe)
+        } else {
+            storage.addAttribute(.marginaliaInline, value: InlineTag.codeSpan, range: safe)
+            storage.addAttribute(.font, value: theme.monospaceFont, range: safe)
+            storage.addAttribute(.backgroundColor, value: subtleCodeBackground(theme: theme), range: safe)
+        }
+        storage.endEditing()
+        return safe
+    }
+
+    // MARK: - private toggle helpers
+
+    private enum FontTrait { case bold, italic }
+
+    private static func toggleFontTrait(
+        in storage: NSTextStorage,
+        range: NSRange,
+        trait: FontTrait,
+        theme: MarginaliaTheme,
+        placeholder: String
+    ) -> NSRange {
+        if range.length == 0 {
+            return insertStyledPlaceholder(
+                in: storage,
+                at: range.location,
+                placeholder: placeholder,
+                theme: theme
+            ) { attrs in
+                var a = attrs
+                let baseFont = (a[.font] as? PlatformFont) ?? theme.bodyFont
+                a[.font] = applyTrait(trait, on: baseFont, enable: true)
+                return a
+            }
+        }
+        let safe = clampedRange(range, in: storage.length)
+        let allOn = isUniformFontTrait(in: storage, range: safe, trait: trait)
+        storage.beginEditing()
+        storage.enumerateAttribute(.font, in: safe) { value, subRange, _ in
+            let base = (value as? PlatformFont) ?? theme.bodyFont
+            let updated = applyTrait(trait, on: base, enable: !allOn)
+            storage.addAttribute(.font, value: updated, range: subRange)
+        }
+        storage.endEditing()
+        return safe
+    }
+
+    private static func insertStyledPlaceholder(
+        in storage: NSTextStorage,
+        at location: Int,
+        placeholder: String,
+        theme: MarginaliaTheme,
+        styling: (inout [NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any]
+    ) -> NSRange {
+        let safe = max(0, min(location, storage.length))
+        var attrs = inheritedAttributes(in: storage, at: safe)
+        attrs = styling(&attrs)
+        let inserted = NSAttributedString(string: placeholder, attributes: attrs)
+        storage.beginEditing()
+        storage.replaceCharacters(in: NSRange(location: safe, length: 0), with: inserted)
+        storage.endEditing()
+        return NSRange(location: safe, length: (placeholder as NSString).length)
+    }
+
+    private static func isUniformFontTrait(
+        in storage: NSTextStorage,
+        range: NSRange,
+        trait: FontTrait
+    ) -> Bool {
+        var allOn = true
+        var sawAny = false
+        storage.enumerateAttribute(.font, in: range) { value, _, stop in
+            sawAny = true
+            let font = value as? PlatformFont
+            if font == nil || !hasTrait(trait, on: font!) {
+                allOn = false
+                stop.pointee = true
+            }
+        }
+        return sawAny && allOn
+    }
+
+    private static func isUniformAttribute(
+        in storage: NSTextStorage,
+        range: NSRange,
+        key: NSAttributedString.Key,
+        predicate: (Any?) -> Bool
+    ) -> Bool {
+        var allOn = true
+        var sawAny = false
+        storage.enumerateAttribute(key, in: range) { value, _, stop in
+            sawAny = true
+            if !predicate(value) {
+                allOn = false
+                stop.pointee = true
+            }
+        }
+        return sawAny && allOn
+    }
+
+    private static func subtleCodeBackground(theme: MarginaliaTheme) -> PlatformColor {
+        #if canImport(AppKit) && os(macOS)
+        return NSColor.tertiaryLabelColor.withAlphaComponent(0.12)
+        #else
+        return UIColor.tertiaryLabel.withAlphaComponent(0.12)
+        #endif
+    }
+
     // MARK: - helpers
 
     private static func clampedRange(_ range: NSRange, in length: Int) -> NSRange {
         let location = max(0, min(range.location, length))
         let remaining = max(0, length - location)
         return NSRange(location: location, length: max(0, min(range.length, remaining)))
+    }
+
+    private static func hasTrait(_ trait: FontTrait, on font: PlatformFont) -> Bool {
+        #if canImport(AppKit) && os(macOS)
+        let symbolic = font.fontDescriptor.symbolicTraits
+        switch trait {
+        case .bold: return symbolic.contains(.bold)
+        case .italic: return symbolic.contains(.italic)
+        }
+        #else
+        let symbolic = font.fontDescriptor.symbolicTraits
+        switch trait {
+        case .bold: return symbolic.contains(.traitBold)
+        case .italic: return symbolic.contains(.traitItalic)
+        }
+        #endif
+    }
+
+    private static func applyTrait(_ trait: FontTrait, on font: PlatformFont, enable: Bool) -> PlatformFont {
+        #if canImport(AppKit) && os(macOS)
+        var symbolic = font.fontDescriptor.symbolicTraits
+        let toggle: NSFontDescriptor.SymbolicTraits = (trait == .bold) ? .bold : .italic
+        if enable { symbolic.insert(toggle) } else { symbolic.remove(toggle) }
+        let descriptor = font.fontDescriptor.withSymbolicTraits(symbolic)
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+        #else
+        var symbolic = font.fontDescriptor.symbolicTraits
+        let toggle: UIFontDescriptor.SymbolicTraits = (trait == .bold) ? .traitBold : .traitItalic
+        if enable { symbolic.insert(toggle) } else { symbolic.remove(toggle) }
+        if let descriptor = font.fontDescriptor.withSymbolicTraits(symbolic) {
+            return UIFont(descriptor: descriptor, size: font.pointSize)
+        }
+        return font
+        #endif
     }
 
     /// Read the attributes at `location` to seed inserted text. If the

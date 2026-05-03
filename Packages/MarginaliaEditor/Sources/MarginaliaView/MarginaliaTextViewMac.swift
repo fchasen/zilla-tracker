@@ -49,6 +49,7 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
 
         context.coordinator.textView = textView
         controller.hostTextView = textView
+        textView.marginaliaController = controller
 
         switch sizing {
         case .fitsContent:
@@ -182,6 +183,45 @@ final class MarginaliaNSTextView: NSTextView {
     }
     var minimumIntrinsicHeight: CGFloat = 0 {
         didSet { invalidateIntrinsicContentSize() }
+    }
+
+    /// The owning controller. Set in `MarginaliaTextViewMac.makeNSView`. The
+    /// `@objc` action methods read it to dispatch to `Operations`. Held weak
+    /// so SwiftUI can tear down the text view without leaking the controller.
+    weak var marginaliaController: EditorController?
+
+    @objc func toggleBold(_ sender: Any?) {
+        marginaliaController?.perform(.bold)
+    }
+    @objc func toggleItalic(_ sender: Any?) {
+        marginaliaController?.perform(.italic)
+    }
+    @objc func toggleStrikethrough(_ sender: Any?) {
+        marginaliaController?.perform(.strikethrough)
+    }
+    @objc func toggleCodeSpan(_ sender: Any?) {
+        marginaliaController?.perform(.codeSpan)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           let chars = event.charactersIgnoringModifiers?.lowercased(),
+           let action = shortcutAction(forCommandKey: chars,
+                                       shift: event.modifierFlags.contains(.shift)) {
+            marginaliaController?.perform(action)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private func shortcutAction(forCommandKey key: String, shift: Bool) -> EditorAction? {
+        switch (key, shift) {
+        case ("b", false): return .bold
+        case ("i", false): return .italic
+        case ("e", false): return .codeSpan
+        default: return nil
+        }
     }
 
     override var intrinsicContentSize: NSSize {

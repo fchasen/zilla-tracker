@@ -105,15 +105,13 @@ struct MarginaliaToolbar: View {
         }
     }
 
+    /// SwiftUI `.keyboardShortcut` is window-scoped, so attaching one to a
+    /// toolbar button broadcasts the shortcut to every Marginalia in the
+    /// scene. Keyboard shortcuts are handled inside the focused text view's
+    /// `keyDown` (mac) and `keyCommands` (iOS) instead. Toolbar buttons
+    /// activate the action they're bound to without an explicit shortcut.
     private func shortcut(for action: Marginalia.Action) -> KeyboardShortcut? {
-        switch action {
-        case .bold: return KeyboardShortcut("b", modifiers: .command)
-        case .italic: return KeyboardShortcut("i", modifiers: .command)
-        case .link: return KeyboardShortcut("k", modifiers: .command)
-        case .heading(let level) where (1...6).contains(level):
-            return KeyboardShortcut(KeyEquivalent(Character(String(level))), modifiers: [.command, .option])
-        default: return nil
-        }
+        nil
     }
 }
 
@@ -209,17 +207,12 @@ private struct OptionalShortcut: ViewModifier {
     }
 }
 
-/// Phase 1 stub: the formatting actions are wired through the responder
-/// chain in Phase 2 (see `Operations.swift`). For now, built-in toolbar
-/// actions are no-ops; custom items continue to work via their own action
-/// closures in `MarginaliaToolbar.button(for:)`.
 enum MarginaliaToolbarActions {
     static func perform(
         _ action: Marginalia.Action,
         controller: EditorController,
         text: Binding<String>
     ) {
-        // TODO Phase 2: route to Operations.swift via NSResponder chain.
-        _ = (action, controller, text)
+        controller.perform(action)
     }
 }

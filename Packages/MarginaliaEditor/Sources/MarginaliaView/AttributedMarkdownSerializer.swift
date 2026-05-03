@@ -70,12 +70,7 @@ public final class AttributedMarkdownSerializer {
         case .heading:
             let level = max(1, min(6, block.level))
             let prefix = String(repeating: "#", count: level) + " "
-            // Tree-sitter classifies only `#` chars as the heading marker,
-            // leaving the post-marker space in the inline content. Strip
-            // leading spaces here so we always emit exactly one space after
-            // the hashes.
-            let body = String(trimmed.drop(while: { $0 == " " }))
-            return prefixLines(blockquotePrefix + prefix + body, with: "")
+            return prefixLines(blockquotePrefix + prefix + trimmed, with: "")
         case .paragraph:
             return prefixLines(trimmed, with: blockquotePrefix)
         case .blockquote:

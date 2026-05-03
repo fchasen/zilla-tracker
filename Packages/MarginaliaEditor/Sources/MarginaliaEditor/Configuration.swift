@@ -4,22 +4,7 @@ import MarginaliaView
 
 extension Marginalia {
 
-    /// What action a toolbar button or keyboard shortcut performs against the
-    /// active selection.
-    public enum Action: Sendable, Equatable {
-        case bold
-        case italic
-        case heading(level: Int)
-        case unorderedList
-        case orderedList
-        case taskList
-        case blockquote
-        case codeSpan
-        case codeBlock
-        case link
-        case strikethrough
-        case horizontalRule
-    }
+    public typealias Action = EditorAction
 
     /// One slot in the toolbar.
     public enum ToolbarItem {
