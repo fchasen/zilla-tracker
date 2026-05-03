@@ -114,6 +114,53 @@ import UIKit
         _ = applied
     }
 
+    @Test func setSpecParagraphToNestedBullet() throws {
+        let env = try env()
+        let storage = try storage(from: "alpha\n")
+        let lineRange = NSRange(location: 0, length: storage.length)
+        let step = Step.setSpec(
+            lineRange: lineRange,
+            BlockSpec(kind: .unorderedListItem, listLevel: 2)
+        )
+        _ = step.apply(to: storage, env: env)
+        let spec = try #require(storage.blockSpec(at: 0))
+        #expect(spec.kind == .unorderedListItem,
+                "expected nested bullet, got \(spec.kind)")
+        #expect(spec.listLevel == 2,
+                "expected listLevel 2, got \(spec.listLevel)")
+    }
+
+    @Test func setSpecParagraphToNestedOrdered() throws {
+        let env = try env()
+        let storage = try storage(from: "alpha\n")
+        let lineRange = NSRange(location: 0, length: storage.length)
+        let step = Step.setSpec(
+            lineRange: lineRange,
+            BlockSpec(kind: .orderedListItem(index: 1), listLevel: 1)
+        )
+        _ = step.apply(to: storage, env: env)
+        let spec = try #require(storage.blockSpec(at: 0))
+        if case .orderedListItem = spec.kind {
+            #expect(spec.listLevel == 1)
+        } else {
+            Issue.record("expected ordered list item at level 1, got \(spec)")
+        }
+    }
+
+    @Test func setSpecParagraphToNestedTask() throws {
+        let env = try env()
+        let storage = try storage(from: "alpha\n")
+        let lineRange = NSRange(location: 0, length: storage.length)
+        let step = Step.setSpec(
+            lineRange: lineRange,
+            BlockSpec(kind: .taskListItem(checked: true), listLevel: 1)
+        )
+        _ = step.apply(to: storage, env: env)
+        let spec = try #require(storage.blockSpec(at: 0))
+        #expect(spec.kind == .taskListItem(checked: true))
+        #expect(spec.listLevel == 1)
+    }
+
     @Test func controllerApplyWiresUndo() throws {
         let controller = try EditorController(initialMarkdown: "alpha\n")
         let lineRange = NSRange(location: 0, length: controller.textStorage.length)

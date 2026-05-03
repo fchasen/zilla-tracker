@@ -120,12 +120,20 @@ public enum Step {
         let body = stripBlockMarkup(priorMarkdown)
         let bodyEmpty = body.replacingOccurrences(of: "\n", with: "").trimmingCharacters(in: .whitespaces).isEmpty
         // Tree-sitter's markdown grammar rejects empty list-item / blockquote
-        // lines (`- \n`, `> \n`), so empty bodies need direct compiler
-        // constructors instead of round-tripping through the parser.
-        if bodyEmpty {
-            if let direct = renderEmpty(spec: spec, env: env) {
-                return direct
-            }
+        // lines (`- \n`, `> \n`), and nested list items without a parent
+        // list (`  - foo`) parse as indented code. Both bypass the parser
+        // via the compiler's direct constructors. Inline marks in the body
+        // are not preserved on this path — acceptable since list-item
+        // toggle from a non-list line is a structural change anyway.
+        if bodyEmpty, let direct = renderEmpty(spec: spec, env: env) {
+            return direct
+        }
+        // Nested list items (`  - foo`) need direct construction even with
+        // a non-empty body. Level-0 lists round-trip through tree-sitter
+        // so inline marks (`- **bold**`) compile correctly.
+        if spec.isListItem, spec.listLevel > 0,
+           let direct = renderListItem(spec: spec, body: body, env: env) {
+            return direct
         }
         let newMarkdown = compose(spec: spec, body: body)
         let normalized = newMarkdown.hasSuffix("\n") ? newMarkdown : newMarkdown + "\n"
@@ -145,6 +153,33 @@ public enum Step {
             return env.compiler.makeListItem(kind: .task, level: spec.listLevel, isChecked: checked, theme: env.theme)
         case .paragraph where spec.blockquoteDepth > 0:
             return env.compiler.makeBlockquoteLine(depth: spec.blockquoteDepth, theme: env.theme)
+        default:
+            return nil
+        }
+    }
+
+    private func renderListItem(
+        spec: BlockSpec,
+        body: String,
+        env: StepEnvironment
+    ) -> NSAttributedString? {
+        let trimmed = body.replacingOccurrences(of: "\n", with: "")
+        switch spec.kind {
+        case .unorderedListItem:
+            return env.compiler.makeListItem(
+                kind: .bullet, level: spec.listLevel,
+                content: trimmed, theme: env.theme
+            )
+        case .orderedListItem(let index):
+            return env.compiler.makeListItem(
+                kind: .ordered, level: spec.listLevel, orderedIndex: index,
+                content: trimmed, theme: env.theme
+            )
+        case .taskListItem(let checked):
+            return env.compiler.makeListItem(
+                kind: .task, level: spec.listLevel, isChecked: checked,
+                content: trimmed, theme: env.theme
+            )
         default:
             return nil
         }

@@ -36,7 +36,13 @@ public final class BlockquoteLayoutFragment: NSTextLayoutFragment {
             bottomY = bounds.height
         }
         let height = max(0, bottomY - topY)
-        let barRect = CGRect(x: barInset, y: topY, width: barWidth, height: height)
+        // TextKit 2 positions the layout fragment at the paragraph's leading
+        // edge — i.e., layoutFragmentFrame.origin.x already includes
+        // lineFragmentPadding + firstLineHeadIndent. Pin the bar back to the
+        // text container's left edge so it sits in the gutter, not where the
+        // text begins.
+        let barX = barInset - bounds.origin.x
+        let barRect = CGRect(x: barX, y: topY, width: barWidth, height: height)
 
         context.saveGState()
         context.translateBy(x: point.x, y: point.y)
