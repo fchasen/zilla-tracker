@@ -223,7 +223,13 @@ public enum Operations {
         storage.beginEditing()
         storage.replaceCharacters(in: lineRange, with: newAttr)
         storage.endEditing()
-        return NSRange(location: lineRange.location + newAttr.length, length: 0)
+        // Keep the cursor on the styled line by landing it just before the
+        // trailing newline. Otherwise the user types into the *next*
+        // paragraph instead of continuing to edit what they just headed /
+        // listed / quoted.
+        let endOfLine = lineRange.location + newAttr.length
+        let cursor = max(lineRange.location, endOfLine - 1)
+        return NSRange(location: cursor, length: 0)
     }
 
     // MARK: - markdown transforms

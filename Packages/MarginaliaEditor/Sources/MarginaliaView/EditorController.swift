@@ -127,6 +127,18 @@ public final class EditorController {
         textStorage.beginEditing()
         textStorage.addAttributes(plainAttrs, range: lineRange)
         textStorage.endEditing()
+        // NSTextView caches typing-attributes separately from storage; reset
+        // them to match so the user's next keystroke isn't still typing in
+        // heading-sized bold.
+        #if canImport(AppKit) && os(macOS)
+        if let tv = hostTextView as? NSTextView {
+            tv.typingAttributes = plainAttrs
+        }
+        #elseif canImport(UIKit)
+        if let tv = hostTextView as? UITextView {
+            tv.typingAttributes = plainAttrs
+        }
+        #endif
     }
 
     deinit {
@@ -274,26 +286,53 @@ public final class EditorController {
         return result
     }
 
-    /// Capture the storage + selection so a single Cmd-Z reverts the
-    /// upcoming operation atomically. Operations otherwise mutate
-    /// `textStorage` directly, bypassing NSTextView's auto-undo path.
-    /// The captured closure registers its own inverse during replay so
-    /// undo/redo cycles work.
+    /// Capture the storage + selection so Cmd-Z reverts the upcoming
+    /// operation. Operations mutate `textStorage` directly, which bypasses
+    /// NSTextView's auto-undo path; without manual registration, Cmd-Z
+    /// would skip them entirely.
+    ///
+    /// The closure narrows the revert to the diff range (so unrelated
+    /// edits made *after* this op aren't blown away when the user finally
+    /// undoes back to it). For attribute-only changes (e.g. bold toggle)
+    /// the diff finds no character delta, so we fall back to full-storage
+    /// replace.
     private func snapshotForUndo() {
-        let snapshot = NSAttributedString(attributedString: textStorage)
-        let cursor = currentSelection
+        let preStorage = NSAttributedString(attributedString: textStorage)
+        let preSelection = currentSelection
+        let preLen = preStorage.length
+
         undoManager.registerUndo(withTarget: self) { [weak self] target in
             guard let self else { _ = target; return }
             self.snapshotForUndo()
             self.applyingMarkdown = true
             self.textStorage.beginEditing()
-            self.textStorage.replaceCharacters(
-                in: NSRange(location: 0, length: self.textStorage.length),
-                with: snapshot
-            )
+            let postLen = self.textStorage.length
+            let preStr = preStorage.string as NSString
+            let postStr = self.textStorage.string as NSString
+            var leftSame = 0
+            let minLen = min(preLen, postLen)
+            while leftSame < minLen,
+                  preStr.character(at: leftSame) == postStr.character(at: leftSame) {
+                leftSame += 1
+            }
+            var rightSame = 0
+            while rightSame < (minLen - leftSame),
+                  preStr.character(at: preLen - 1 - rightSame) == postStr.character(at: postLen - 1 - rightSame) {
+                rightSame += 1
+            }
+            let charactersChanged = (preLen != postLen) || (leftSame < minLen) || (rightSame > 0)
+            if charactersChanged {
+                let preDiffRange = NSRange(location: leftSame, length: preLen - leftSame - rightSame)
+                let postDiffRange = NSRange(location: leftSame, length: postLen - leftSame - rightSame)
+                let oldSubstring = preStorage.attributedSubstring(from: preDiffRange)
+                self.textStorage.replaceCharacters(in: postDiffRange, with: oldSubstring)
+            } else {
+                let fullRange = NSRange(location: 0, length: postLen)
+                self.textStorage.replaceCharacters(in: fullRange, with: preStorage)
+            }
             self.textStorage.endEditing()
             self.applyingMarkdown = false
-            self.setHostSelection(cursor)
+            self.setHostSelection(preSelection)
             self.resegment()
         }
     }
@@ -388,10 +427,17 @@ public final class EditorController {
     }
 
     private func setHostSelection(_ range: NSRange) {
+        let total = textStorage.length
+        let safeLocation = max(0, min(range.location, total))
+        let remaining = max(0, total - safeLocation)
+        let safe = NSRange(
+            location: safeLocation,
+            length: max(0, min(range.length, remaining))
+        )
         #if canImport(AppKit) && os(macOS)
-        if let tv = hostTextView as? NSTextView { tv.setSelectedRange(range) }
+        if let tv = hostTextView as? NSTextView { tv.setSelectedRange(safe) }
         #elseif canImport(UIKit)
-        if let tv = hostTextView as? UITextView { tv.selectedRange = range }
+        if let tv = hostTextView as? UITextView { tv.selectedRange = safe }
         #endif
     }
 
