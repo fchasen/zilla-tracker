@@ -306,6 +306,21 @@ public final class MarkdownAttributedCompiler {
 
         let attributed = NSMutableAttributedString(string: content, attributes: paragraphAttrs)
 
+        // Task-list paragraphs render the bracket as a real checkbox glyph
+        // via an attachment. The marker text was stripped above; insert the
+        // attachment at the start of the paragraph.
+        if segment.tag == .taskListItem {
+            let attachment = CheckboxAttachment()
+            attachment.isChecked = segment.isChecked ?? false
+            var attachmentAttrs = paragraphAttrs
+            attachmentAttrs[.attachment] = attachment
+            let attachmentString = NSAttributedString(
+                string: "\u{FFFC}",
+                attributes: attachmentAttrs
+            )
+            attributed.insert(attachmentString, at: 0)
+        }
+
         // Layer style runs on top.
         for (range, attrs) in styleRuns {
             let safe = clampedRange(range, in: attributed.length)

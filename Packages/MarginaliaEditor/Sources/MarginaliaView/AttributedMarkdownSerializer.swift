@@ -142,6 +142,14 @@ public final class AttributedMarkdownSerializer {
         // Skip lone newlines so they're emitted by the block-level joiner.
         if text == "\n" { return "\n" }
 
+        // Attachment runs round-trip via their host metadata; skip the
+        // `\u{FFFC}` placeholder text so it doesn't appear in markdown.
+        // Block-level emit (e.g. task list `[x]` prefix) re-emits the
+        // attachment-derived markdown above.
+        if attrs[.attachment] != nil {
+            return ""
+        }
+
         var content = text
         var prefix = ""
         var suffix = ""

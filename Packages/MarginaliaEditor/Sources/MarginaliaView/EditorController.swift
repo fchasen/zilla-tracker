@@ -214,6 +214,36 @@ public final class EditorController {
         return result
     }
 
+    /// Toggle the task-list checkbox at the given storage offset. Returns
+    /// true when a checkbox was found and toggled. The attachment instance
+    /// is replaced (so its rendered image refreshes) and the paragraph's
+    /// `.marginaliaListItem` is updated so the serializer round-trips the
+    /// new state.
+    @discardableResult
+    public func toggleCheckbox(at location: Int) -> Bool {
+        let total = textStorage.length
+        guard location >= 0, location < total else { return false }
+        guard let existing = textStorage.attribute(.attachment, at: location, effectiveRange: nil) as? CheckboxAttachment,
+              let listAttr = textStorage.attribute(.marginaliaListItem, at: location, effectiveRange: nil) as? ListItemAttribute,
+              listAttr.kind == .task else { return false }
+        let newChecked = !existing.isChecked
+        let newAttachment = CheckboxAttachment()
+        newAttachment.isChecked = newChecked
+        let newListAttr = ListItemAttribute(
+            level: listAttr.level,
+            kind: .task,
+            orderedIndex: listAttr.orderedIndex,
+            isChecked: newChecked
+        )
+        let ns = textStorage.string as NSString
+        let lineRange = ns.paragraphRange(for: NSRange(location: location, length: 0))
+        textStorage.beginEditing()
+        textStorage.addAttribute(.attachment, value: newAttachment, range: NSRange(location: location, length: 1))
+        textStorage.addAttribute(.marginaliaListItem, value: newListAttr, range: lineRange)
+        textStorage.endEditing()
+        return true
+    }
+
     /// Called from the text view when the user presses Return. Returns
     /// `true` if the newline was consumed by list-continuation handling;
     /// `false` if the text view should insert the newline normally.

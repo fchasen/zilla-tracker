@@ -198,6 +198,24 @@ final class MarginaliaNSTextView: NSTextView {
     /// so SwiftUI can tear down the text view without leaking the controller.
     weak var marginaliaController: EditorController?
 
+    override func mouseDown(with event: NSEvent) {
+        // Single click without modifiers on a task-list checkbox toggles it
+        // in place — the standard editable-text-view single-click reserves
+        // for cursor placement, but flipping a checkbox is a more obvious
+        // affordance.
+        if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+           let storage = textStorage {
+            let point = convert(event.locationInWindow, from: nil)
+            let charIndex = characterIndexForInsertion(at: point)
+            for probe in [charIndex, charIndex - 1] where probe >= 0 && probe < storage.length {
+                if storage.attribute(.attachment, at: probe, effectiveRange: nil) is CheckboxAttachment {
+                    if marginaliaController?.toggleCheckbox(at: probe) == true { return }
+                }
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
     @objc func toggleBold(_ sender: Any?) {
         marginaliaController?.perform(.bold)
     }
