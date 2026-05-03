@@ -26,20 +26,14 @@ import MarginaliaView
         Binding(get: { box.value }, set: { box.value = $0 })
     }
 
-    private func showPreviewBinding() -> (Box<Bool>, Binding<Bool>) {
-        let box = Box(false)
-        return (box, bind(box))
-    }
-
     // MARK: - selection-aware wraps
 
     @Test func boldWrapsSelection() throws {
         let c = try EditorController(initialText: "hello world")
         c.selection = NSRange(location: 6, length: 5)
         let textBox = Box("hello world")
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.bold, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.bold, controller: c, text: bind(textBox))
 
         #expect(c.text == "hello **world**")
         #expect(textBox.value == "hello **world**")
@@ -49,9 +43,8 @@ import MarginaliaView
         let c = try EditorController(initialText: "hello world")
         c.selection = NSRange(location: 0, length: 5)
         let textBox = Box("hello world")
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.italic, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.italic, controller: c, text: bind(textBox))
 
         #expect(c.text == "*hello* world")
     }
@@ -60,9 +53,8 @@ import MarginaliaView
         let c = try EditorController(initialText: "hello world")
         c.selection = NSRange(location: 6, length: 5)
         let textBox = Box("hello world")
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.strikethrough, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.strikethrough, controller: c, text: bind(textBox))
 
         #expect(c.text == "hello ~~world~~")
     }
@@ -71,9 +63,8 @@ import MarginaliaView
         let c = try EditorController(initialText: "this is some code test")
         c.selection = NSRange(location: 8, length: 9)
         let textBox = Box(c.text)
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.codeSpan, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.codeSpan, controller: c, text: bind(textBox))
 
         #expect(c.text == "this is `some code` test")
     }
@@ -84,9 +75,8 @@ import MarginaliaView
         let c = try EditorController(initialText: "hello")
         c.selection = NSRange(location: 5, length: 0)
         let textBox = Box(c.text)
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.horizontalRule, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.horizontalRule, controller: c, text: bind(textBox))
 
         #expect(c.text.contains("---"))
     }
@@ -97,9 +87,8 @@ import MarginaliaView
         let c = try EditorController(initialText: "")
         c.selection = NSRange(location: 159, length: 28)
         let textBox = Box(c.text)
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.taskList, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.taskList, controller: c, text: bind(textBox))
         #expect(c.text.contains("- [ ] "))
     }
 
@@ -110,34 +99,11 @@ import MarginaliaView
         c.setText("")
         c.selection = NSRange(location: 0, length: 0)
         let textBox = Box("")
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.blockquote, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.blockquote, controller: c, text: bind(textBox))
 
         #expect(!c.text.contains("lorem"), "Quote must not bring deleted text back: \(c.text)")
         #expect(c.text.hasPrefix("> "))
-    }
-
-    // MARK: - togglePreview only flips showPreview
-
-    @Test func togglePreviewFlipsBinding() throws {
-        let c = try EditorController(initialText: "")
-        let (showBox, sp) = showPreviewBinding()
-        #expect(!showBox.value)
-
-        MarginaliaToolbarActions.perform(.togglePreview, controller: c, text: bind(Box("")), showPreview: sp)
-
-        #expect(showBox.value)
-    }
-
-    @Test func togglePreviewCanFlipBackToFalse() throws {
-        let c = try EditorController(initialText: "")
-        let (showBox, sp) = showPreviewBinding()
-        showBox.value = true
-
-        MarginaliaToolbarActions.perform(.togglePreview, controller: c, text: bind(Box("")), showPreview: sp)
-
-        #expect(!showBox.value)
     }
 }
 #endif

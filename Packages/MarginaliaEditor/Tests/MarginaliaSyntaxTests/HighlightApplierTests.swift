@@ -82,8 +82,17 @@ import SwiftTreeSitter
 
     @Test func inlineLink() throws {
         let spans = try inline("[label](https://example.com)")
-        #expect(spans.contains { $0.tag == .textURI })
+        // Brackets, parens, and the URL destination are all classified as
+        // markup so they hide off-line; the label content is text.reference.
+        #expect(spans.contains { $0.tag == .punctuationDelimiter })
         #expect(spans.contains { $0.tag == .textReference })
+    }
+
+    @Test func uriAutolinkStaysVisible() throws {
+        let spans = try inline("<https://example.com>")
+        // Standalone autolinks have no separate label, so they keep text.uri
+        // styling and aren't hidden.
+        #expect(spans.contains { $0.tag == .textURI })
     }
 
     @Test func emphasisRangeIncludesContent() throws {

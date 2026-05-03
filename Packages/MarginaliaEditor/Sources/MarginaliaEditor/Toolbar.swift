@@ -5,8 +5,6 @@ import MarginaliaView
 
 struct MarginaliaToolbar: View {
     let items: [Marginalia.ToolbarItem]
-    @Binding var showPreview: Bool
-    let canPreview: Bool
     let perform: (Marginalia.Action) -> Void
 
     var body: some View {
@@ -54,7 +52,6 @@ struct MarginaliaToolbar: View {
                 shortcut: shortcut(for: .heading(level: level)),
                 action: { perform(.heading(level: level)) }
             )
-            .disabled(isDisabled(.heading(level: level)))
         case .action(let action):
             ToolbarActionButton(
                 systemImage: label(for: action),
@@ -62,7 +59,6 @@ struct MarginaliaToolbar: View {
                 shortcut: shortcut(for: action),
                 action: { perform(action) }
             )
-            .disabled(isDisabled(action))
         case let .custom(_, label, symbol, shortcut, _, customPerform):
             ToolbarActionButton(
                 systemImage: symbol,
@@ -70,17 +66,9 @@ struct MarginaliaToolbar: View {
                 shortcut: shortcut,
                 action: customPerform
             )
-            .disabled(showPreview)
         case .divider, .spacer:
             EmptyView()
         }
-    }
-
-    private func isDisabled(_ action: Marginalia.Action) -> Bool {
-        if action == .togglePreview {
-            return !canPreview
-        }
-        return showPreview
     }
 
     private func label(for action: Marginalia.Action) -> String {
@@ -97,7 +85,6 @@ struct MarginaliaToolbar: View {
         case .codeBlock: return "curlybraces"
         case .link: return "link"
         case .horizontalRule: return "minus"
-        case .togglePreview: return showPreview ? "pencil" : "eye"
         }
     }
 
@@ -115,7 +102,6 @@ struct MarginaliaToolbar: View {
         case .codeBlock: return "Code block"
         case .link: return "Link (⌘K)"
         case .horizontalRule: return "Horizontal rule"
-        case .togglePreview: return showPreview ? "Edit" : "Preview"
         }
     }
 
@@ -234,14 +220,8 @@ enum MarginaliaToolbarActions {
     static func perform(
         _ action: Marginalia.Action,
         controller: EditorController,
-        text: Binding<String>,
-        showPreview: Binding<Bool>
+        text: Binding<String>
     ) {
-        if action == .togglePreview {
-            showPreview.wrappedValue.toggle()
-            return
-        }
-
         let currentText = controller.text
         let currentSelection = controller.clampedRange(controller.selection)
 
@@ -274,8 +254,6 @@ enum MarginaliaToolbarActions {
             result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "[", suffix: "](url)", placeholder: "label")
         case .horizontalRule:
             result = EditingOps.insertHorizontalRule(in: currentText, selection: currentSelection)
-        case .togglePreview:
-            return
         }
 
         controller.applyEdit(result)

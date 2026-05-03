@@ -19,7 +19,6 @@ extension Marginalia {
         case link
         case strikethrough
         case horizontalRule
-        case togglePreview
     }
 
     /// One slot in the toolbar.
@@ -108,9 +107,7 @@ extension Marginalia {
             .action(.codeSpan),
             .action(.codeBlock),
             .action(.link),
-            .action(.horizontalRule),
-            .spacer,
-            .action(.togglePreview)
+            .action(.horizontalRule)
         ]
     }
 }

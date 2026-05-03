@@ -56,7 +56,7 @@ import MarginaliaSyntax
 
     // MARK: - link colors
 
-    @Test func linkBracketAndURLAreDifferentColors() throws {
+    @Test func linkLabelUsesLinkColorAndURLIsMarkup() throws {
         let runs = try runs(for: "[label](https://example.com)")
 
         let refColor = runs
@@ -68,10 +68,10 @@ import MarginaliaSyntax
             .compactMap { run -> NSColor? in
                 run.attributes[.foregroundColor] as? NSColor
             }
-            .first { $0 == MarginaliaTheme.default.linkURLColor }
+            .first { $0 == MarginaliaTheme.default.markupColor }
         #expect(refColor != nil, "Bracket label should use linkColor.")
-        #expect(urlColor != nil, "URL destination should use linkURLColor.")
-        #expect(MarginaliaTheme.default.linkColor != MarginaliaTheme.default.linkURLColor)
+        #expect(urlColor != nil, "URL destination should be markup so it hides off-line.")
+        #expect(MarginaliaTheme.default.linkColor != MarginaliaTheme.default.markupColor)
     }
 }
 #endif

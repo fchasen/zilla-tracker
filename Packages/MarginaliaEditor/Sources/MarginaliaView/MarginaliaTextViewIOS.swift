@@ -105,7 +105,7 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
             defer { isApplyingFromBinding = false }
 
             if text != lastAppliedText {
-                if parent.controller.textStorage.string != text {
+                if parent.controller.text != text {
                     parent.controller.setText(text)
                 }
                 lastAppliedText = text
@@ -128,7 +128,10 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
 
         public func textViewDidChange(_ textView: UITextView) {
             guard !isApplyingFromBinding else { return }
-            let newText = textView.text ?? ""
+            // Read from the controller (source) — `textView.text` is the
+            // elided WYSIWYG display, which would lose markup if assigned
+            // straight back to the source binding.
+            let newText = parent.controller.text
             if parent.text != newText {
                 parent.text = newText
             }

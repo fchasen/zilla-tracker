@@ -23,7 +23,6 @@ public struct MarginaliaPlayground: View {
                 fixturePicker
                 Marginalia(text: $text)
                     .dialect(dialect)
-                    .defaultPreview()
                     .frame(minHeight: 320)
             }
             .padding(12)

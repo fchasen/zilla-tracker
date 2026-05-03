@@ -10,13 +10,59 @@ import UIKit
 
 @Suite(.serialized) struct LayoutFragmentTests {
 
-    @Test func codeBlockGetsDefaultFragment() throws {
+    @Test func fencedCodeBlockDispatchesFencedFragmentInSourceMode() throws {
         let c = try EditorController(initialText: "```\nlet x = 1\n```\n")
+        c.mode = .source
         c.refreshNow()
 
         let fragments = collectFragments(in: c)
-        #expect(!fragments.contains { $0 is BlockquoteLayoutFragment })
-        #expect(!fragments.contains { $0 is HorizontalRuleLayoutFragment })
+        let fenced = fragments.compactMap { $0 as? FencedCodeBlockLayoutFragment }
+        #expect(fenced.count >= 1, "expected FencedCodeBlockLayoutFragment, got \(fragments.map(\.self))")
+        #expect(fenced.contains { $0.isFirstLine })
+        #expect(fenced.contains { $0.isLastLine })
+    }
+
+    @Test func fencedCodeBlockDispatchesFencedFragmentInWysiwygMode() throws {
+        let c = try EditorController(initialText: "```\nlet x = 1\n```\n")
+        c.mode = .wysiwyg
+        c.refreshNow()
+
+        let fragments = collectFragments(in: c)
+        let fenced = fragments.compactMap { $0 as? FencedCodeBlockLayoutFragment }
+        #expect(fenced.count >= 1, "expected FencedCodeBlockLayoutFragment in wysiwyg too")
+    }
+
+    @Test func fencedCodeBlockExposesLanguage() throws {
+        let c = try EditorController(initialText: "```swift\nlet x = 1\n```\n")
+        c.mode = .source
+        c.refreshNow()
+
+        let fragments = collectFragments(in: c)
+        let fenced = fragments.compactMap { $0 as? FencedCodeBlockLayoutFragment }
+        #expect(fenced.first?.language == "swift")
+    }
+
+    @Test func indentedCodeBlockDispatchesIndentedFragment() throws {
+        let c = try EditorController(initialText: "    let x = 1\n    let y = 2\n")
+        c.mode = .source
+        c.refreshNow()
+
+        let fragments = collectFragments(in: c)
+        let indented = fragments.compactMap { $0 as? IndentedCodeBlockLayoutFragment }
+        #expect(indented.count >= 1, "expected IndentedCodeBlockLayoutFragment, got \(fragments.map(\.self))")
+    }
+
+    @Test func pipeTableDispatchesPipeTableFragment() throws {
+        let source = "| a | b |\n|---|---|\n| 1 | 2 |\n"
+        let c = try EditorController(initialText: source)
+        c.mode = .source
+        c.refreshNow()
+
+        let fragments = collectFragments(in: c)
+        let pipe = fragments.compactMap { $0 as? PipeTableLayoutFragment }
+        #expect(pipe.count >= 1, "expected PipeTableLayoutFragment, got \(fragments.map(\.self))")
+        #expect(pipe.contains { $0.isFirstLine })
+        #expect(pipe.contains { $0.isLastLine })
     }
 
     @Test func blockquoteGetsBlockquoteFragment() throws {

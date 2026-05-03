@@ -18,9 +18,6 @@ import UIKit
 ///     .inlineContentProvider { content in
 ///         MarginaliaChip.attachment(for: content)
 ///     }
-///     .previewRenderer { source, dialect in
-///         AttributedString(source)
-///     }
 ///     .frame(minHeight: 240)
 /// ```
 ///
@@ -37,12 +34,14 @@ public struct Marginalia: View {
     @Environment(\.marginaliaDialect) private var dialect
     @Environment(\.marginaliaTheme) private var theme
     @Environment(\.marginaliaInlineContentProvider) private var inlineProvider
-    @Environment(\.marginaliaPreviewRenderer) private var previewRenderer
-    @Environment(\.marginaliaPreviewViewBuilder) private var previewViewBuilder
 
-    @State private var showPreview = false
     @AppStorage("marginalia.toolbarVisible") private var toolbarVisible = true
+    @AppStorage("marginalia.mode") private var modeRawValue: String = MarginaliaMode.wysiwyg.rawValue
     @StateObject private var hosting = MarginaliaHosting()
+
+    private var mode: MarginaliaMode {
+        MarginaliaMode(rawValue: modeRawValue) ?? .wysiwyg
+    }
 
     public init(text: Binding<String>, selection: Binding<NSRange> = .constant(NSRange(location: 0, length: 0))) {
         self._text = text
@@ -55,16 +54,13 @@ public struct Marginalia: View {
                 HStack(spacing: 12) {
                     if !configuration.toolbar.isEmpty {
                         MarginaliaToolbar(
-                            items: configuration.toolbar,
-                            showPreview: $showPreview,
-                            canPreview: previewRenderer != nil || previewViewBuilder != nil,
+                            items: configuration.toolbar + [.spacer, modeToggleItem],
                             perform: { action in
                                 guard let controller = hosting.controller else { return }
                                 MarginaliaToolbarActions.perform(
                                     action,
                                     controller: controller,
-                                    text: $text,
-                                    showPreview: $showPreview
+                                    text: $text
                                 )
                             }
                         )
@@ -80,22 +76,13 @@ public struct Marginalia: View {
                 }
                 .padding(6)
             }
-            if showPreview, (previewRenderer != nil || previewViewBuilder != nil) {
-                MarginaliaPreview(
-                    source: text,
-                    dialect: dialect,
-                    renderer: previewRenderer,
-                    viewBuilder: previewViewBuilder
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                editorBody
-            }
+            editorBody
         }
         .onAppear {
-            hosting.ensureController(initialText: text, dialect: dialect, theme: theme)
-            if let controller = hosting.controller, controller.text != text {
-                controller.setText(text)
+            hosting.ensureController(initialText: text, dialect: dialect, theme: theme, mode: mode)
+            if let controller = hosting.controller {
+                if controller.text != text { controller.setText(text) }
+                controller.mode = mode
             }
         }
         .onChange(of: dialect) { _, newDialect in
@@ -104,6 +91,25 @@ public struct Marginalia: View {
         .onChange(of: theme) { _, newTheme in
             hosting.controller?.theme = newTheme
         }
+        .onChange(of: modeRawValue) { _, _ in
+            hosting.controller?.mode = mode
+        }
+    }
+
+    private var modeToggleItem: Marginalia.ToolbarItem {
+        let label = mode == .source ? "Show rendered" : "Show source"
+        let symbol = mode == .source ? "eye" : "doc.plaintext"
+        return .custom(
+            id: "marginaliaModeToggle",
+            label: label,
+            systemImage: symbol,
+            shortcut: nil,
+            topLevel: true,
+            action: {
+                let next: MarginaliaMode = (mode == .source) ? .wysiwyg : .source
+                modeRawValue = next.rawValue
+            }
+        )
     }
 
     @ViewBuilder
@@ -164,10 +170,7 @@ public struct Marginalia: View {
     private func makeIOSEditMenuBuilder(controller: EditorController) -> MarginaliaTextViewIOS.EditMenuBuilder? {
         let toolbar = configuration.toolbar
         guard !toolbar.isEmpty else { return nil }
-        let canPreview = previewRenderer != nil || previewViewBuilder != nil
         let textBinding = $text
-        let showPreviewBinding = $showPreview
-        let isShowingPreview = showPreview
         return { _, suggested in
             var topLevel: [UIAction] = []
             var sections: [UIMenuElement] = []
@@ -180,30 +183,15 @@ public struct Marginalia: View {
             }
             for item in toolbar {
                 switch item {
-                case .action(.togglePreview):
-                    guard canPreview else { continue }
-                    flush()
-                    topLevel.append(UIAction(
-                        title: editMenuTitle(for: .togglePreview, showPreview: isShowingPreview),
-                        image: UIImage(systemName: editMenuSymbol(for: .togglePreview, showPreview: isShowingPreview))
-                    ) { _ in
-                        MarginaliaToolbarActions.perform(
-                            .togglePreview,
-                            controller: controller,
-                            text: textBinding,
-                            showPreview: showPreviewBinding
-                        )
-                    })
                 case .action(let action):
                     current.append(UIAction(
-                        title: editMenuTitle(for: action, showPreview: isShowingPreview),
-                        image: UIImage(systemName: editMenuSymbol(for: action, showPreview: isShowingPreview))
+                        title: editMenuTitle(for: action),
+                        image: UIImage(systemName: editMenuSymbol(for: action))
                     ) { _ in
                         MarginaliaToolbarActions.perform(
                             action,
                             controller: controller,
-                            text: textBinding,
-                            showPreview: showPreviewBinding
+                            text: textBinding
                         )
                     })
                 case .custom(_, let label, let symbol, _, let isTopLevel, let custom):
@@ -239,7 +227,7 @@ public struct Marginalia: View {
 }
 
 #if os(iOS)
-private func editMenuTitle(for action: Marginalia.Action, showPreview: Bool) -> String {
+private func editMenuTitle(for action: Marginalia.Action) -> String {
     switch action {
     case .bold: return "Bold"
     case .italic: return "Italic"
@@ -253,11 +241,10 @@ private func editMenuTitle(for action: Marginalia.Action, showPreview: Bool) -> 
     case .codeBlock: return "Code Block"
     case .link: return "Link"
     case .horizontalRule: return "Horizontal Rule"
-    case .togglePreview: return showPreview ? "Edit" : "Preview"
     }
 }
 
-private func editMenuSymbol(for action: Marginalia.Action, showPreview: Bool) -> String {
+private func editMenuSymbol(for action: Marginalia.Action) -> String {
     switch action {
     case .bold: return "bold"
     case .italic: return "italic"
@@ -271,7 +258,6 @@ private func editMenuSymbol(for action: Marginalia.Action, showPreview: Bool) ->
     case .codeBlock: return "curlybraces"
     case .link: return "link"
     case .horizontalRule: return "minus"
-    case .togglePreview: return showPreview ? "pencil" : "eye"
     }
 }
 #endif
@@ -299,9 +285,16 @@ private struct SizingFrame: ViewModifier {
 final class MarginaliaHosting: ObservableObject {
     @Published var controller: EditorController?
 
-    func ensureController(initialText: String, dialect: Highlighter.Dialect, theme: MarginaliaTheme) {
+    func ensureController(
+        initialText: String,
+        dialect: Highlighter.Dialect,
+        theme: MarginaliaTheme,
+        mode: MarginaliaMode
+    ) {
         if controller == nil {
-            controller = try? EditorController(initialText: initialText, theme: theme, dialect: dialect)
+            let c = try? EditorController(initialText: initialText, theme: theme, dialect: dialect)
+            c?.mode = mode
+            controller = c
         }
     }
 }

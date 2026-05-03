@@ -84,7 +84,40 @@ public final class Highlighter {
     /// Compute the markup-character ranges that should be hidden when the
     /// cursor is *not* on those lines (caret-aware focus mode).
     public func markupRanges(for source: String, blockRegions: [BlockRegion] = []) -> [NSRange] {
-        runs(for: source, blockRegions: blockRegions).filter { isMarkupRun($0) }.map(\.range)
+        let raw = runs(for: source, blockRegions: blockRegions)
+            .filter { isMarkupRun($0) }
+            .map(\.range)
+        return Highlighter.extendBlockPrefixMarkup(raw, in: source)
+    }
+
+    /// `#` heading and `>` blockquote markers hide along with their trailing
+    /// whitespace so the body text reads flush-left when the caret is off the
+    /// line. List markers (`-` `*` `+` and ordered) are intentionally left
+    /// unextended because their `-` swaps to a bullet glyph and we want the
+    /// space between the bullet and the item text to remain visible.
+    static func extendBlockPrefixMarkup(_ ranges: [NSRange], in source: String) -> [NSRange] {
+        let ns = source as NSString
+        return ranges.map { range in
+            guard range.length > 0 else { return range }
+            let firstChar = ns.character(at: range.location)
+            guard firstChar == 0x23 /* # */ || firstChar == 0x3E /* > */ else { return range }
+            var end = range.location + range.length
+            while end < ns.length {
+                let c = ns.character(at: end)
+                if c == 0x20 /* space */ || c == 0x09 /* tab */ {
+                    end += 1
+                } else {
+                    break
+                }
+            }
+            return NSRange(location: range.location, length: end - range.location)
+        }
+    }
+
+    /// Inline links and images, derived from the inline tree.
+    public func inlineRegions(for source: String) -> [InlineRegion] {
+        guard let tree = inlineParser.parse(source), let root = tree.rootNode else { return [] }
+        return InlineClassifier.classify(rootNode: root, mapping: inlineParser.mapping)
     }
 
     private func isMarkupRun(_ run: Run) -> Bool {

@@ -3,7 +3,6 @@ import BugzillaKit
 import MarginaliaEditor
 import PhabricatorKit
 import SearchfoxKit
-import Textual
 
 struct MarkdownEditor: View {
     @Binding var text: String
@@ -23,9 +22,6 @@ struct MarkdownEditor: View {
         Marginalia(text: $text, selection: $selection)
             .dialect(dialect)
             .theme(.default(fontScale: fontScale))
-            .previewView { source, dialect in
-                StructuredText(markdown: MarkdownEditor.normalize(source, dialect: dialect))
-            }
             .configuration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
             .frame(minHeight: minHeight)
             .overlay {
@@ -131,13 +127,6 @@ struct MarkdownEditor: View {
         text = ns.replacingCharacters(in: safe, with: string)
         let cursorAfter = safe.location + (string as NSString).length
         selection = NSRange(location: cursorAfter, length: 0)
-    }
-
-    static func normalize(_ source: String, dialect: Highlighter.Dialect) -> String {
-        switch dialect {
-        case .remarkup:   return Remarkup.toCommonMark(source)
-        case .commonMark: return source
-        }
     }
 
     static func safeRange(_ range: NSRange, in text: String) -> NSRange {

@@ -13,9 +13,8 @@ import MarginaliaSyntax
         let c = try EditorController(initialText: "title")
         c.selection = NSRange(location: 0, length: 5)
         let textBox = Box(c.text)
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.heading(level: level), controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.heading(level: level), controller: c, text: bind(textBox))
 
         let prefix = String(repeating: "#", count: level) + " "
         #expect(c.text == prefix + "title")
@@ -25,9 +24,8 @@ import MarginaliaSyntax
         let c = try EditorController(initialText: "click here")
         c.selection = NSRange(location: 0, length: 5)
         let textBox = Box(c.text)
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.link, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.link, controller: c, text: bind(textBox))
 
         #expect(c.text == "[click](url) here")
     }
@@ -36,9 +34,8 @@ import MarginaliaSyntax
         let c = try EditorController(initialText: "let x = 1")
         c.selection = NSRange(location: 0, length: 9)
         let textBox = Box(c.text)
-        let (_, sp) = showPreviewBinding()
 
-        MarginaliaToolbarActions.perform(.codeBlock, controller: c, text: bind(textBox), showPreview: sp)
+        MarginaliaToolbarActions.perform(.codeBlock, controller: c, text: bind(textBox))
 
         #expect(c.text.contains("```"))
         #expect(c.text.contains("let x = 1"))
@@ -63,11 +60,6 @@ import MarginaliaSyntax
 
     private func bind<T>(_ box: Box<T>) -> Binding<T> {
         Binding(get: { box.value }, set: { box.value = $0 })
-    }
-
-    private func showPreviewBinding() -> (Box<Bool>, Binding<Bool>) {
-        let box = Box(false)
-        return (box, bind(box))
     }
 }
 #endif

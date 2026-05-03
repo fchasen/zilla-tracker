@@ -165,10 +165,10 @@ public final class HighlightApplier {
 
     (strong_emphasis) @text.strong
 
-    [
-      (link_destination)
-      (uri_autolink)
-    ] @text.uri
+    (uri_autolink) @text.uri
+
+    (image
+      (link_destination) @text.uri)
 
     [
       (link_label)
@@ -196,6 +196,7 @@ public final class HighlightApplier {
         "]"
         "("
         ")"
+        (link_destination)
       ] @punctuation.delimiter)
 
     (shortcut_link

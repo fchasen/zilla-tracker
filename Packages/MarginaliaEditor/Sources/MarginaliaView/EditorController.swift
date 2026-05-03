@@ -15,8 +15,14 @@ import UIKit
 /// text storage. The platform-specific representable wrappers
 /// (`MarginaliaViewMac` / `MarginaliaViewIOS`) read it but never own the
 /// storage themselves — replacing the text view doesn't lose state.
+///
+/// `sourceStorage` is the canonical markdown the host owns; `textStorage`
+/// is what the layout manager renders. They're kept in lockstep here (1:1
+/// mapping); a future display transform diverges them so the editor can
+/// elide markup syntax in WYSIWYG mode.
 public final class EditorController {
 
+    public let sourceStorage: NSTextStorage
     public let textStorage: NSTextStorage
     public let contentStorage: NSTextContentStorage
     public let layoutManager: NSTextLayoutManager
@@ -27,6 +33,9 @@ public final class EditorController {
     }
     public var dialect: Highlighter.Dialect {
         didSet { rebuildHighlighter(); refresh() }
+    }
+    public var mode: MarginaliaMode = .wysiwyg {
+        didSet { refresh() }
     }
 
     /// Most recent block-level classification, computed alongside highlights.
@@ -41,6 +50,16 @@ public final class EditorController {
     }
 
     public private(set) var hiddenRanges: [NSRange] = []
+
+    /// Inline links and images parsed from the current source. Surfaced for
+    /// callers (e.g. future click-to-open routing, chip rendering); the
+    /// editor does not modify storage based on them yet.
+    public private(set) var inlineRegions: [InlineRegion] = []
+
+    /// Translation between the markdown source and the rendered display
+    /// string. Identity in `.source` mode; elides markup syntax in
+    /// `.wysiwyg` mode.
+    public private(set) var displayMapping: SourceDisplayMapping = .identity(for: "")
 
     /// The platform text view backed by `textContainer`. Held weakly so the
     /// view can be torn down by SwiftUI without leaking; set by the
@@ -59,6 +78,9 @@ public final class EditorController {
     private let layoutDelegate: LayoutManagerDelegate
     private var refreshing = false
     private var storageObserver: NSObjectProtocol?
+    /// Set while we're mirroring source ↔ display so the storage observer
+    /// doesn't bounce the same edit back through the sync.
+    private var syncing = false
 
     public init(
         initialText: String = "",
@@ -71,6 +93,7 @@ public final class EditorController {
         self.highlighter = try Highlighter(dialect: dialect, theme: theme)
         self.parser = try MarkdownParser(grammar: .block)
 
+        self.sourceStorage = NSTextStorage(string: initialText)
         self.textStorage = NSTextStorage(string: initialText)
         self.contentStorage = NSTextContentStorage()
         self.contentStorage.textStorage = textStorage
@@ -89,8 +112,15 @@ public final class EditorController {
             object: textStorage,
             queue: nil
         ) { [weak self] _ in
-            self?.scheduleRefresh()
-            self?.intrinsicSizeInvalidator?()
+            guard let self, !self.syncing else { return }
+            // Only re-parse on character edits — attribute-only edits
+            // (notably the focus-mode hide pass below) would otherwise drag
+            // a full reparse along on every cursor move.
+            if self.textStorage.editedMask.contains(.editedCharacters) {
+                self.applyDisplayEditToSource()
+                self.scheduleRefresh()
+            }
+            self.intrinsicSizeInvalidator?()
         }
 
         refresh()
@@ -104,19 +134,24 @@ public final class EditorController {
 
     /// Replace the entire text. Triggers a full re-parse + re-highlight.
     public func setText(_ text: String) {
-        let range = NSRange(location: 0, length: textStorage.length)
-        textStorage.replaceCharacters(in: range, with: text)
+        let sourceRange = NSRange(location: 0, length: sourceStorage.length)
+        syncing = true
+        sourceStorage.replaceCharacters(in: sourceRange, with: text)
+        syncing = false
+        scheduleRefresh()
     }
 
     public var text: String {
-        get { textStorage.string }
+        get { sourceStorage.string }
         set { setText(newValue) }
     }
 
-    /// Apply a single edit. Caller is responsible for ensuring the edit's
-    /// NSRange is valid against the current `text`.
+    /// Apply a single edit in source coordinates. Caller is responsible for
+    /// ensuring the edit's NSRange is valid against the current `text`.
     public func applyEdit(replacing range: NSRange, with replacement: String) {
-        textStorage.replaceCharacters(in: range, with: replacement)
+        syncing = true
+        sourceStorage.replaceCharacters(in: range, with: replacement)
+        syncing = false
         scheduleRefresh()
     }
 
@@ -163,7 +198,7 @@ public final class EditorController {
     /// receives a stale selection (e.g. from a `.constant` SwiftUI binding)
     /// and needs to defend against `NSRangeException` in `EditingOps`.
     public func clampedRange(_ range: NSRange) -> NSRange {
-        let length = textStorage.length
+        let length = sourceStorage.length
         let location = max(0, min(range.location, length))
         let remaining = max(0, length - location)
         return NSRange(
@@ -197,7 +232,7 @@ public final class EditorController {
         guard !refreshing else { return }
         refreshing = true
         defer { refreshing = false }
-        let source = textStorage.string
+        let source = sourceStorage.string
 
         if let tree = parser.parse(source), let root = tree.rootNode {
             blockRegions = BlockClassifier.classify(rootNode: root, mapping: parser.mapping)
@@ -207,48 +242,244 @@ public final class EditorController {
 
         let runs = highlighter.runs(for: source, blockRegions: blockRegions)
         markupRanges = highlighter.markupRanges(for: source, blockRegions: blockRegions)
+        inlineRegions = highlighter.inlineRegions(for: source)
+
+        let newMapping = computeMapping(for: source)
+        rebuildDisplayIfNeeded(with: newMapping)
+        displayMapping = newMapping
 
         applyAttributes(runs: runs, full: source)
+        applyImageAttachmentChips()
         recomputeHidden()
     }
 
-    private func applyAttributes(runs: [Highlighter.Run], full source: String) {
+    private func applyImageAttachmentChips() {
+        for region in inlineRegions {
+            guard case let .image(_, alt) = region.kind else { continue }
+            let displayRange = displayMapping.displayRange(forSource: region.range)
+            // Only attach when the substitution actually inserted a single
+            // `￼` character — in source mode there's no substitution.
+            guard displayRange.length == 1 else { continue }
+            let attachment = ChipTextAttachment()
+            attachment.chipLabel = alt.isEmpty ? "image" : alt
+            attachment.chipSymbol = "photo"
+            textStorage.addAttribute(.attachment, value: attachment, range: displayRange)
+        }
+    }
+
+    private func computeMapping(for source: String) -> SourceDisplayMapping {
+        let subs: [DisplaySubstitution]
+        switch mode {
+        case .source:
+            // Source mode: only checkbox glyph substitution applies; markup
+            // is left visible.
+            subs = checkboxSubstitutions(in: source)
+        case .wysiwyg:
+            subs = wysiwygSubstitutions(for: source)
+        }
+        return DisplayTransform.transform(source: source, substitutions: subs)
+    }
+
+    private func wysiwygSubstitutions(for source: String) -> [DisplaySubstitution] {
+        let imageRanges = inlineRegions.compactMap { region -> NSRange? in
+            if case .image = region.kind { return region.range }
+            return nil
+        }
+        var subs: [DisplaySubstitution] = []
+        // Image chips first — the whole `![alt](url)` source range collapses
+        // to a single `￼` placeholder; the attachment is attached after the
+        // mapping runs in `applyImageAttachmentChips`.
+        for range in imageRanges {
+            subs.append(DisplaySubstitution(sourceRange: range, displayString: "\u{FFFC}"))
+        }
+        // Checkbox glyphs.
+        subs.append(contentsOf: checkboxSubstitutions(in: source))
+        // Markup elides — skip any range that falls inside an image (the
+        // image substitution covers it already).
+        let elides = wysiwygElideRanges(for: source).filter { range in
+            !imageRanges.contains(where: { $0.contains(range.location) })
+        }
+        subs.append(contentsOf: elides.map(DisplaySubstitution.elide))
+        return subs
+    }
+
+    private func checkboxSubstitutions(in source: String) -> [DisplaySubstitution] {
+        let pattern = #"^[ \t]*(?:[-*+]|\d+[.)])\s+(\[[ xX]\])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
+            return []
+        }
         let total = NSRange(location: 0, length: (source as NSString).length)
+        let ns = source as NSString
+        return regex.matches(in: source, options: [], range: total).compactMap { match in
+            let bracketRange = match.range(at: 1)
+            guard bracketRange.location != NSNotFound, bracketRange.length == 3 else { return nil }
+            let middle = ns.substring(with: NSRange(location: bracketRange.location + 1, length: 1))
+            let glyph = (middle == " ") ? "\u{2610}" : "\u{2611}"
+            return DisplaySubstitution(sourceRange: bracketRange, displayString: glyph)
+        }
+    }
+
+    /// In WYSIWYG mode, every markup range from the highlighter is a candidate
+    /// for elision *except* list markers (which become bullets via glyph
+    /// substitution) and thematic breaks (which the layout fragment paints).
+    private func wysiwygElideRanges(for source: String) -> [NSRange] {
+        let listMarkerLocations = listMarkerStartLocations(in: source)
+        let horizontalRuleRanges: [NSRange] = blockRegions.compactMap { region in
+            if case .horizontalRule = region.kind { return region.range }
+            return nil
+        }
+        let ns = source as NSString
+        return markupRanges.filter { range in
+            if listMarkerLocations.contains(range.location) {
+                return false
+            }
+            if horizontalRuleRanges.contains(where: { $0.contains(range.location) }) {
+                return false
+            }
+            // `block_continuation` and similar all-whitespace markup tokens
+            // tag the leading indent that signals list nesting; eliding them
+            // would collapse `  - nested` to `- nested` and lose structure.
+            let content = ns.substring(with: range)
+            if content.allSatisfy({ $0.isWhitespace }) {
+                return false
+            }
+            return true
+        }
+    }
+
+    /// Source offsets where list markers begin (unordered or ordered). Used
+    /// to keep list-marker tokens visible in WYSIWYG mode — tree-sitter's
+    /// marker tokens span the marker char *plus the trailing space*, but
+    /// we want the whole token kept so the bullet glyph substitution and
+    /// the space-after-bullet remain in display.
+    private func listMarkerStartLocations(in source: String) -> Set<Int> {
+        let pattern = #"^([ \t]*)((?:[-*+])|(?:\d+[.\)]))(?=[ \t])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
+            return []
+        }
+        let total = NSRange(location: 0, length: (source as NSString).length)
+        return Set(regex.matches(in: source, options: [], range: total).map { match in
+            match.range(at: 2).location
+        })
+    }
+
+    private func rebuildDisplayIfNeeded(with newMapping: SourceDisplayMapping) {
+        guard textStorage.string != newMapping.displayString else { return }
+        let oldDisplaySelection = currentDisplaySelection()
+        let sourceSelection = displayMapping.sourceRange(forDisplay: oldDisplaySelection)
+        syncing = true
+        textStorage.replaceCharacters(
+            in: NSRange(location: 0, length: textStorage.length),
+            with: newMapping.displayString
+        )
+        syncing = false
+        let newDisplaySelection = newMapping.displayRange(forSource: sourceSelection)
+        setDisplaySelection(newDisplaySelection)
+    }
+
+    private func currentDisplaySelection() -> NSRange {
+        #if canImport(AppKit) && os(macOS)
+        if let tv = hostTextView as? NSTextView {
+            return tv.selectedRange()
+        }
+        #elseif canImport(UIKit)
+        if let tv = hostTextView as? UITextView {
+            return tv.selectedRange
+        }
+        #endif
+        return selection
+    }
+
+    private func setDisplaySelection(_ range: NSRange) {
+        let length = textStorage.length
+        let location = max(0, min(range.location, length))
+        let remaining = max(0, length - location)
+        let clamped = NSRange(
+            location: location,
+            length: max(0, min(range.length, remaining))
+        )
+        #if canImport(AppKit) && os(macOS)
+        if let tv = hostTextView as? NSTextView {
+            tv.setSelectedRange(clamped)
+        }
+        #elseif canImport(UIKit)
+        if let tv = hostTextView as? UITextView {
+            tv.selectedRange = clamped
+        }
+        #endif
+    }
+
+    /// The text view edits `textStorage` (display); we receive the edit via
+    /// the storage observer and translate it back to source coordinates
+    /// using the *current* (pre-edit) mapping. The next `runRefresh` rebuilds
+    /// the mapping for the new source.
+    private func applyDisplayEditToSource() {
+        let editedDisplayRange = textStorage.editedRange
+        let changeInLength = textStorage.changeInLength
+        let oldDisplayDeleteRange = NSRange(
+            location: editedDisplayRange.location,
+            length: max(0, editedDisplayRange.length - changeInLength)
+        )
+        let sourceDeleteRange = displayMapping.sourceRange(forDisplay: oldDisplayDeleteRange)
+        let insertedText: String
+        if editedDisplayRange.length > 0 {
+            let ns = textStorage.string as NSString
+            let safeRange = NSRange(
+                location: max(0, min(editedDisplayRange.location, ns.length)),
+                length: max(0, min(editedDisplayRange.length, ns.length - editedDisplayRange.location))
+            )
+            insertedText = ns.substring(with: safeRange)
+        } else {
+            insertedText = ""
+        }
+        let safeSourceRange = NSRange(
+            location: max(0, min(sourceDeleteRange.location, sourceStorage.length)),
+            length: max(0, min(sourceDeleteRange.length, sourceStorage.length - sourceDeleteRange.location))
+        )
+        syncing = true
+        sourceStorage.replaceCharacters(in: safeSourceRange, with: insertedText)
+        syncing = false
+    }
+
+
+    private func applyAttributes(runs: [Highlighter.Run], full source: String) {
+        let displayTotal = NSRange(location: 0, length: textStorage.length)
         textStorage.beginEditing()
         // Reset to base style first so removed markers don't leave stale attrs
-        textStorage.setAttributes(baseAttributes, range: total)
+        textStorage.setAttributes(baseAttributes, range: displayTotal)
         for run in runs {
-            let valid = NSRange(
-                location: max(0, min(run.range.location, total.length)),
-                length: max(0, min(run.range.length, total.length - run.range.location))
-            )
-            guard valid.length > 0 else { continue }
+            let displayRange = displayMapping.displayRange(forSource: run.range)
+            guard displayRange.length > 0 else { continue }
             let typedAttrs = run.attributes.reduce(into: [NSAttributedString.Key: Any]()) { acc, kv in
                 acc[kv.key] = kv.value
             }
-            textStorage.addAttributes(typedAttrs, range: valid)
+            textStorage.addAttributes(typedAttrs, range: displayRange)
         }
-        applyBulletAttachments(in: total, source: source)
+        applyBulletAttachments(source: source)
         textStorage.endEditing()
     }
 
     /// Substitutes each `-` / `*` / `+` list marker with a rendered bullet
     /// glyph that varies by nesting level (• ◦ ▪ ▫ cycling), so the text
-    /// reads as a real bulleted list rather than ASCII source. The
-    /// underlying source character is unchanged — only its display.
-    private func applyBulletAttachments(in total: NSRange, source: String) {
+    /// reads as a real bulleted list rather than ASCII source. The marker
+    /// stays in source storage; only the displayed glyph is substituted via
+    /// `glyphInfoCompat` on the corresponding display character.
+    private func applyBulletAttachments(source: String) {
         let pattern = #"^([ \t]*)([-*+])(?=[ \t])"#
         guard let regex = try? NSRegularExpression(
             pattern: pattern,
             options: [.anchorsMatchLines]
         ) else { return }
         let ns = source as NSString
-        let matches = regex.matches(in: source, options: [], range: total)
+        let sourceTotal = NSRange(location: 0, length: ns.length)
+        let matches = regex.matches(in: source, options: [], range: sourceTotal)
         let cfFont = theme.bodyFont as CTFont
         for match in matches {
             let leadingRange = match.range(at: 1)
-            let markerRange = match.range(at: 2)
-            guard markerRange.location != NSNotFound else { continue }
+            let markerSourceRange = match.range(at: 2)
+            guard markerSourceRange.location != NSNotFound else { continue }
+            let markerDisplayRange = displayMapping.displayRange(forSource: markerSourceRange)
+            guard markerDisplayRange.length > 0 else { continue }
             let leading = leadingRange.location == NSNotFound
                 ? ""
                 : ns.substring(with: leadingRange)
@@ -259,10 +490,10 @@ public final class EditorController {
             for i in 0..<nsGlyph.length { bulletChars.append(nsGlyph.character(at: i)) }
             var cgGlyphs = [CGGlyph](repeating: 0, count: bulletChars.count)
             guard CTFontGetGlyphsForCharacters(cfFont, bulletChars, &cgGlyphs, bulletChars.count) else { continue }
-            let baseChar = ns.substring(with: markerRange) as CFString
+            let baseChar = ns.substring(with: markerSourceRange) as CFString
             guard let info = CTGlyphInfoCreateWithGlyph(cgGlyphs[0], cfFont, baseChar) else { continue }
-            textStorage.addAttribute(.glyphInfoCompat, value: info, range: markerRange)
-            textStorage.addAttribute(.font, value: theme.bodyFont, range: markerRange)
+            textStorage.addAttribute(.glyphInfoCompat, value: info, range: markerDisplayRange)
+            textStorage.addAttribute(.font, value: theme.bodyFont, range: markerDisplayRange)
         }
     }
 
@@ -274,11 +505,13 @@ public final class EditorController {
     }
 
     private func recomputeHidden() {
-        hiddenRanges = HiddenRangeComputer.hiddenRanges(
-            markupRanges: markupRanges,
-            cursorRange: selection,
-            in: textStorage.string
-        )
+        // Phase A's tiny-font/clear-color hiding is gone — the WYSIWYG
+        // display transform now elides markup at the storage level. The
+        // public `hiddenRanges` is kept for API stability and reflects the
+        // markup ranges currently elided from display.
+        hiddenRanges = displayMapping.runs.compactMap { run in
+            run.kind == .elide ? run.sourceRange : nil
+        }
     }
 }
 

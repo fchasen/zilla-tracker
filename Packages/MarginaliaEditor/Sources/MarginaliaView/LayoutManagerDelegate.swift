@@ -24,31 +24,72 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
         textLayoutFragmentFor location: NSTextLocation,
         in textElement: NSTextElement
     ) -> NSTextLayoutFragment {
-        guard let controller else {
-            return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
-        }
-        guard let kind = blockKind(for: textElement, in: controller) else {
+        guard let controller,
+              let placement = blockPlacement(for: textElement, in: controller) else {
             return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
         }
 
-        switch kind {
+        switch placement.region.kind {
         case .blockquote:
             return BlockquoteLayoutFragment(textElement: textElement, range: textElement.elementRange)
         case .horizontalRule:
             return HorizontalRuleLayoutFragment(textElement: textElement, range: textElement.elementRange)
+        case .fencedCode(let language):
+            let fragment = FencedCodeBlockLayoutFragment(
+                textElement: textElement,
+                range: textElement.elementRange
+            )
+            fragment.language = language
+            fragment.isFirstLine = placement.isFirstLine
+            fragment.isLastLine = placement.isLastLine
+            return fragment
+        case .indentedCode:
+            let fragment = IndentedCodeBlockLayoutFragment(
+                textElement: textElement,
+                range: textElement.elementRange
+            )
+            fragment.isFirstLine = placement.isFirstLine
+            fragment.isLastLine = placement.isLastLine
+            return fragment
+        case .pipeTable:
+            let fragment = PipeTableLayoutFragment(
+                textElement: textElement,
+                range: textElement.elementRange
+            )
+            fragment.isFirstLine = placement.isFirstLine
+            fragment.isLastLine = placement.isLastLine
+            return fragment
         default:
             return NSTextLayoutFragment(textElement: textElement, range: textElement.elementRange)
         }
     }
 
-    private func blockKind(for element: NSTextElement, in controller: EditorController) -> BlockKind? {
+    private struct BlockPlacement {
+        let region: BlockRegion
+        let isFirstLine: Bool
+        let isLastLine: Bool
+    }
+
+    private func blockPlacement(for element: NSTextElement, in controller: EditorController) -> BlockPlacement? {
         guard let elementRange = element.elementRange else { return nil }
-        let lowerLocation = elementRange.location
         let storage = controller.contentStorage
-        let docOffset = storage.offset(from: storage.documentRange.location, to: lowerLocation)
+        let elementDisplayStart = storage.offset(from: storage.documentRange.location, to: elementRange.location)
+        let elementDisplayEnd = storage.offset(from: storage.documentRange.location, to: elementRange.endLocation)
+        // Element ranges live in display coordinates; BlockRegions live in
+        // source coordinates. Bridge through the controller's mapping so
+        // dispatch + first/last math work in both modes.
+        let mapping = controller.displayMapping
+        let elementSourceStart = mapping.sourcePosition(forDisplay: elementDisplayStart)
         for region in controller.blockRegions {
-            if region.range.contains(docOffset) {
-                return region.kind
+            if region.range.contains(elementSourceStart) {
+                let blockDisplayRange = mapping.displayRange(forSource: region.range)
+                let blockDisplayEnd = blockDisplayRange.location + blockDisplayRange.length
+                let isFirstLine = elementDisplayStart == blockDisplayRange.location
+                // The element range may or may not include a trailing newline
+                // that's also the block's terminator — count "ends within one
+                // of the block's last display char" as the closing line.
+                let isLastLine = elementDisplayEnd >= blockDisplayEnd - 1
+                return BlockPlacement(region: region, isFirstLine: isFirstLine, isLastLine: isLastLine)
             }
         }
         return nil
