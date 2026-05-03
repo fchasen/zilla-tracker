@@ -84,11 +84,7 @@ struct BugDetailView: View {
     var body: some View {
         Group {
             if bugID == nil {
-                ContentUnavailableView(
-                    "No bug selected",
-                    systemImage: "ant",
-                    description: Text("Pick a bug from the list.")
-                )
+                EmptyStateIcon(systemName: "ant")
             } else if let error = loadError, bug == nil {
                 ContentUnavailableView(
                     "Couldn't load bug",
@@ -1772,7 +1768,6 @@ private struct CommentBlock: View {
                     .padding(12)
             }
         }
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)

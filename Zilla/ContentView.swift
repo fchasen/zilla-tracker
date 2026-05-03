@@ -19,6 +19,18 @@ import AppKit
 private let revisionLog = Logger(subsystem: "com.zilla", category: "Revision")
 
 
+struct EmptyStateIcon: View {
+    let systemName: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 56, weight: .light))
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+
 // MARK: - Pills
 
 struct BugTypePill: View {
@@ -1016,6 +1028,22 @@ final class Workspace {
         }
     }
 
+    /// Phabricator stores `isDone` on the *transaction* that introduced the
+    /// thread head, keyed by its comments. Walk the loaded transactions and
+    /// build a lookup keyed by every contained comment PHID so callers can
+    /// resolve the done state from any comment in the thread.
+    var inlineDoneStates: [String: Bool] {
+        var result: [String: Bool] = [:]
+        for transaction in loadedRevisionTransactions {
+            guard transaction.fields.replyToCommentPHID == nil,
+                  let isDone = transaction.fields.isDone else { continue }
+            for comment in transaction.comments where (comment.removed ?? false) == false {
+                result[comment.phid] = isDone
+            }
+        }
+        return result
+    }
+
     @MainActor
     func setInlineDone(commentPHID: String, isDone: Bool, using client: PhabricatorClient) async -> Error? {
         guard let revision = loadedRevision else { return nil }
@@ -1234,6 +1262,8 @@ struct ContentView: View {
             RevisionDetailView(revisionID: id)
         } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftEditorView(draftID: id)
+        } else if case .review(let list) = workspace.sidebarSelection {
+            EmptyStateIcon(systemName: list.systemImage)
         } else {
             BugDetailView(bugID: workspace.selectedBugID)
         }
@@ -1311,11 +1341,7 @@ private struct BugInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            ContentUnavailableView(
-                "No bug selected",
-                systemImage: "sidebar.right",
-                description: Text("Select a bug to see its details.")
-            )
+            EmptyStateIcon(systemName: "sidebar.right")
         }
     }
 }
@@ -1609,20 +1635,13 @@ struct Sidebar: View {
                 }
 
                 Section(isExpanded: $componentsExpanded) {
-                    if followedComponents.isEmpty {
-                        Text("No components yet. Tap + in the toolbar to follow one.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 4)
-                    } else {
-                        ForEach(followedComponents) { followed in
-                            FollowedComponentEntry(
-                                followed: followed,
-                                onAddMetaBug: { addMetaBugTarget = followed }
-                            )
-                        }
-                        .onMove(perform: moveComponents)
+                    ForEach(followedComponents) { followed in
+                        FollowedComponentEntry(
+                            followed: followed,
+                            onAddMetaBug: { addMetaBugTarget = followed }
+                        )
                     }
+                    .onMove(perform: moveComponents)
                 } header: {
                     Text("Components")
                 }
@@ -1634,9 +1653,15 @@ struct Sidebar: View {
         .toolbarTitleDisplayMode(.inline)
         #endif
         .toolbar {
+            #if os(iOS)
+            ToolbarItem(placement: .topBarLeading) {
+                accountMenu
+            }
+            #else
             ToolbarItem(placement: .primaryAction) {
                 accountMenu
             }
+            #endif
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showAddComponent = true
@@ -2095,6 +2120,8 @@ struct BugListView: View {
         .navigationTitle(title)
         #if os(macOS)
         .navigationSplitViewColumnWidth(min: 360, ideal: 560)
+        #else
+        .toolbarTitleDisplayMode(.inline)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
