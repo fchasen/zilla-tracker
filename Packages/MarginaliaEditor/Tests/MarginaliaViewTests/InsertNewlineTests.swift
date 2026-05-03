@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import MarginaliaSyntax
+import MarginaliaRendering
 @testable import MarginaliaView
 #if canImport(AppKit) && os(macOS)
 import AppKit
@@ -40,18 +41,37 @@ import UIKit
     }
 
     @Test func bulletListContinues() throws {
-        // Storage = "one\n" with .marginaliaListItem applied; cursor at end of "one".
         let s = try storage(from: "- one\n")
         let result = try handle(in: s, cursor: s.length - 1)
         #expect(result != nil)
         #expect(serialize(s) == "- one\n- \n")
     }
 
-    // emptyBulletTerminatesList: deferred — tree-sitter doesn't always
-    // segment a trailing empty bullet line as a list-item, so the handler
-    // can't see the .marginaliaListItem attribute it needs to dispatch.
-    // Phase 5 polish: detect the empty trailing line via raw text shape
-    // and terminate when the user double-Returns.
+    @Test func emptyBulletTerminatesList() throws {
+        let controller = try EditorController(initialMarkdown: "- one\n- \n")
+        controller.testSelection = NSRange(location: controller.textStorage.length - 1, length: 0)
+        #expect(controller.handleNewline())
+        // Empty list line drops back to a plain paragraph — markdown round-trip
+        // collapses the trailing blank paragraph, so the saved source is just
+        // the surviving list item.
+        #expect(controller.markdown() == "- one\n")
+        // Verify the line at the former marker position is now plain (no list attribute).
+        let lineLoc = controller.textStorage.length - 1
+        let listAttr = controller.textStorage.attribute(.marginaliaListItem, at: lineLoc, effectiveRange: nil)
+        #expect(listAttr == nil)
+    }
+
+    @Test func doubleReturnEndsList() throws {
+        let controller = try EditorController(initialMarkdown: "- one\n")
+        controller.testSelection = NSRange(location: controller.textStorage.length - 1, length: 0)
+        #expect(controller.handleNewline())
+        controller.testSelection = NSRange(location: controller.textStorage.length - 1, length: 0)
+        #expect(controller.handleNewline())
+        #expect(controller.markdown() == "- one\n")
+        let lineLoc = controller.textStorage.length - 1
+        let listAttr = controller.textStorage.attribute(.marginaliaListItem, at: lineLoc, effectiveRange: nil)
+        #expect(listAttr == nil)
+    }
 
     @Test func orderedListIncrements() throws {
         let s = try storage(from: "1. apple\n")
@@ -65,5 +85,41 @@ import UIKit
         let out = serialize(s)
         #expect(out.contains("- [x] done"))
         #expect(out.contains("- [ ] "))
+    }
+
+    @Test func nestedOrderedRendersAsAlpha() throws {
+        let compiler = try MarkdownAttributedCompiler()
+        let attr = compiler.compile("1. one\n   1. nested\n", dialect: .commonMark, mode: .rich, theme: .default)
+        let storage = NSTextStorage(attributedString: attr)
+        let raw = storage.string
+        #expect(raw.contains("a. "))
+        #expect(raw.contains("1. one"))
+    }
+
+    @Test func bulletStorageHasAttachmentMarker() throws {
+        let compiler = try MarkdownAttributedCompiler()
+        let attr = compiler.compile("- one\n", dialect: .commonMark, mode: .rich, theme: .default)
+        let storage = NSTextStorage(attributedString: attr)
+        // The first character should be U+FFFC carrying a BulletGlyphAttachment.
+        let firstChar = (storage.string as NSString).character(at: 0)
+        #expect(firstChar == 0xFFFC)
+        let attachment = storage.attribute(.attachment, at: 0, effectiveRange: nil)
+        #expect(attachment is MarginaliaRendering.BulletGlyphAttachment)
+        // The second character should be a space.
+        #expect((storage.string as NSString).substring(with: NSRange(location: 1, length: 1)) == " ")
+        // The whole marker run should be flagged so the serializer drops it.
+        let markerFlag = storage.attribute(.marginaliaListMarker, at: 0, effectiveRange: nil) as? Bool
+        #expect(markerFlag == true)
+    }
+
+    @Test func doubleNestedOrderedRendersAsRoman() throws {
+        let compiler = try MarkdownAttributedCompiler()
+        let attr = compiler.compile(
+            "1. one\n   1. nested\n      1. deeper\n",
+            dialect: .commonMark, mode: .rich, theme: .default
+        )
+        let storage = NSTextStorage(attributedString: attr)
+        let raw = storage.string
+        #expect(raw.contains("i. "))
     }
 }

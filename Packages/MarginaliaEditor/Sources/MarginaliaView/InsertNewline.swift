@@ -9,11 +9,6 @@ import UIKit
 
 public enum InsertNewline {
 
-    /// If the cursor sits on a list-item paragraph, intercept the newline:
-    /// non-empty items grow a fresh sibling marker; empty items terminate
-    /// the list (the line drops back to a plain paragraph). Returns the
-    /// post-edit selection if it consumed the newline, `nil` to let the
-    /// text view handle it normally.
     @discardableResult
     public static func handle(
         in storage: NSTextStorage,
@@ -27,72 +22,61 @@ public enum InsertNewline {
         let ns = storage.string as NSString
         guard cursor >= 0, cursor <= ns.length, ns.length > 0 else { return nil }
         let probe = max(0, min(cursor, ns.length - 1))
-        guard let _ = storage.attribute(.marginaliaListItem, at: probe, effectiveRange: nil) as? ListItemAttribute else {
+        guard let listAttr = storage.safeAttribute(.marginaliaListItem, at: probe) as? ListItemAttribute else {
             return nil
         }
         let lineRange = ns.paragraphRange(for: NSRange(location: probe, length: 0))
-        let para = storage.attributedSubstring(from: lineRange)
-        let md = serializer.serialize(para, dialect: dialect)
-        let line = trimTrailingNewlines(md)
 
-        if isEmptyListLine(line) {
-            // Strip the marker; the line becomes a plain blank paragraph.
-            let replacement = compiler.compile("\n", dialect: dialect, mode: mode, theme: theme)
+        if isEmptyListLine(in: storage, lineRange: lineRange) {
+            let plainAttrs: [NSAttributedString.Key: Any] = [
+                .font: theme.bodyFont,
+                .foregroundColor: theme.foregroundColor,
+                .paragraphStyle: NSParagraphStyle(),
+                .marginaliaBlock: BlockAttribute(tag: .paragraph)
+            ]
+            let replacement = NSAttributedString(string: "\n", attributes: plainAttrs)
             storage.beginEditing()
             storage.replaceCharacters(in: lineRange, with: replacement)
             storage.endEditing()
             return NSRange(location: lineRange.location, length: 0)
         }
 
-        let nextMarker = nextListMarker(forLine: line)
-        let combined = line + "\n" + nextMarker + "\n"
-        let replacement = compiler.compile(combined, dialect: dialect, mode: mode, theme: theme)
+        let nextOrderedIndex: Int? = listAttr.kind == .ordered ? (listAttr.orderedIndex ?? 0) + 1 : nil
+        let nextChecked: Bool? = listAttr.kind == .task ? false : nil
+        let nextItem = compiler.makeListItem(
+            kind: listAttr.kind,
+            level: listAttr.level,
+            orderedIndex: nextOrderedIndex,
+            isChecked: nextChecked,
+            theme: theme
+        )
+
+        let insertLocation = lineRange.location + lineRange.length
         storage.beginEditing()
-        storage.replaceCharacters(in: lineRange, with: replacement)
+        storage.replaceCharacters(in: NSRange(location: insertLocation, length: 0), with: nextItem)
         storage.endEditing()
-        // Cursor at end of the new (empty) list-item line — that's one
-        // character before the trailing newline.
-        let cursorAt = lineRange.location + replacement.length - 1
-        return NSRange(location: max(lineRange.location, cursorAt), length: 0)
+        let cursorAt = insertLocation + nextItem.length - 1
+        return NSRange(location: max(insertLocation, cursorAt), length: 0)
     }
 
-    // MARK: - line helpers
-
-    private static func trimTrailingNewlines(_ s: String) -> String {
-        var out = s
-        while out.hasSuffix("\n") { out.removeLast() }
-        return out
-    }
-
-    private static func isEmptyListLine(_ line: String) -> Bool {
-        line.range(
-            of: #"^\s*([-*+]|\d+[.)])\s*(\[[ xX]\]\s*)?$"#,
-            options: .regularExpression
-        ) != nil
-    }
-
-    private static func nextListMarker(forLine line: String) -> String {
-        if line.range(of: #"^\s*[-*+]\s+\[[ xX]\]\s+"#, options: .regularExpression) != nil {
-            let leading = leadingWhitespace(of: line)
-            return leading + "- [ ] "
+    /// True if `lineRange` contains only the marker run (FFFC, marker text,
+    /// space, tab) plus a trailing newline — i.e., the user has not typed any
+    /// body content for this list item.
+    private static func isEmptyListLine(in storage: NSTextStorage, lineRange: NSRange) -> Bool {
+        guard lineRange.length > 0,
+              lineRange.location + lineRange.length <= storage.length,
+              lineRange.location < storage.length else {
+            return true
         }
-        if let m = try? NSRegularExpression(pattern: #"^(\s*)(\d+)[.)]\s+"#)
-            .firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
-            let ns = line as NSString
-            let leading = ns.substring(with: m.range(at: 1))
-            let index = Int(ns.substring(with: m.range(at: 2))) ?? 0
-            return "\(leading)\(index + 1). "
+        var bodyStart = lineRange.location
+        var markerRange = NSRange(location: lineRange.location, length: 0)
+        if let flag = storage.safeAttribute(.marginaliaListMarker, at: lineRange.location, longestEffectiveRange: &markerRange, in: lineRange) as? Bool, flag {
+            bodyStart = markerRange.location + markerRange.length
         }
-        // Bullet (or fallback)
-        let leading = leadingWhitespace(of: line)
-        return leading + "- "
-    }
-
-    private static func leadingWhitespace(of line: String) -> String {
-        var out = ""
-        for ch in line {
-            if ch == " " || ch == "\t" { out.append(ch) } else { break }
-        }
-        return out
+        let bodyEnd = lineRange.location + lineRange.length
+        guard bodyEnd > bodyStart else { return true }
+        let body = (storage.string as NSString).substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
+        let trimmed = body.replacingOccurrences(of: "\n", with: "").trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty
     }
 }

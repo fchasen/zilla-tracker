@@ -48,19 +48,8 @@ public enum Operations {
         let attributed = NSMutableAttributedString(string: label, attributes: attrs)
         storage.beginEditing()
         storage.replaceCharacters(in: safe, with: attributed)
-        // Append a single space after the link so a follow-on character the
-        // user types isn't auto-linked. Inherits the paragraph attributes
-        // but drops link-specific ones.
-        var trailing = inheritedAttributes(in: storage, at: safe.location)
-        trailing.removeValue(forKey: .link)
-        trailing.removeValue(forKey: .marginaliaLink)
-        trailing.removeValue(forKey: .underlineStyle)
-        trailing.removeValue(forKey: .marginaliaInline)
-        let trailingSpace = NSAttributedString(string: " ", attributes: trailing)
-        let trailingLocation = safe.location + (label as NSString).length
-        storage.replaceCharacters(in: NSRange(location: trailingLocation, length: 0), with: trailingSpace)
         storage.endEditing()
-        let cursor = trailingLocation + 1
+        let cursor = safe.location + (label as NSString).length
         return NSRange(location: cursor, length: 0)
     }
 
@@ -102,7 +91,11 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
+        if let range = injectEmptyListIfNeeded(
+            in: storage, range: range, kind: .bullet,
+            compiler: compiler, theme: theme
+        ) { return range }
+        return mutateBlocks(
             in: storage, range: range, compiler: compiler, serializer: serializer,
             dialect: dialect, mode: mode, theme: theme
         ) { md in
@@ -120,7 +113,11 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
+        if let range = injectEmptyListIfNeeded(
+            in: storage, range: range, kind: .ordered,
+            compiler: compiler, theme: theme
+        ) { return range }
+        return mutateBlocks(
             in: storage, range: range, compiler: compiler, serializer: serializer,
             dialect: dialect, mode: mode, theme: theme
         ) { md in
@@ -138,12 +135,52 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
+        if let range = injectEmptyListIfNeeded(
+            in: storage, range: range, kind: .task,
+            compiler: compiler, theme: theme
+        ) { return range }
+        return mutateBlocks(
             in: storage, range: range, compiler: compiler, serializer: serializer,
             dialect: dialect, mode: mode, theme: theme
         ) { md in
             transformList(md, kind: .task)
         }
+    }
+
+    /// When toggling a list on an empty paragraph (or empty editor), tree-sitter
+    /// won't recognize "- \n" / "1. \n" / "- [ ] \n" as a list item — the grammar
+    /// requires non-empty content. Bypass the markdown round-trip and construct
+    /// the marker run directly.
+    private static func injectEmptyListIfNeeded(
+        in storage: NSTextStorage,
+        range: NSRange,
+        kind: ListItemKind,
+        compiler: MarkdownAttributedCompiler,
+        theme: MarginaliaTheme
+    ) -> NSRange? {
+        let safe = clampedRange(range, in: storage.length)
+        let ns = storage.string as NSString
+        let lineRange = storage.length == 0
+            ? NSRange(location: 0, length: 0)
+            : ns.paragraphRange(for: safe)
+        let lineText = lineRange.length > 0 ? ns.substring(with: lineRange) : ""
+        let trimmed = lineText
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard trimmed.isEmpty else { return nil }
+        let listItem = compiler.makeListItem(
+            kind: kind,
+            level: 0,
+            orderedIndex: kind == .ordered ? 1 : nil,
+            isChecked: kind == .task ? false : nil,
+            theme: theme
+        )
+        storage.beginEditing()
+        storage.replaceCharacters(in: lineRange, with: listItem)
+        storage.endEditing()
+        let cursor = lineRange.location + listItem.length - 1
+        return NSRange(location: max(lineRange.location, cursor), length: 0)
     }
 
     @discardableResult
@@ -156,12 +193,40 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
+        if let result = injectEmptyBlockquoteIfNeeded(
+            in: storage, range: range, compiler: compiler, theme: theme
+        ) { return result }
+        return mutateBlocks(
             in: storage, range: range, compiler: compiler, serializer: serializer,
             dialect: dialect, mode: mode, theme: theme
         ) { md in
             transformBlockquote(md)
         }
+    }
+
+    private static func injectEmptyBlockquoteIfNeeded(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        theme: MarginaliaTheme
+    ) -> NSRange? {
+        let safe = clampedRange(range, in: storage.length)
+        let ns = storage.string as NSString
+        let lineRange = storage.length == 0
+            ? NSRange(location: 0, length: 0)
+            : ns.paragraphRange(for: safe)
+        let lineText = lineRange.length > 0 ? ns.substring(with: lineRange) : ""
+        let trimmed = lineText
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard trimmed.isEmpty else { return nil }
+        let line = compiler.makeBlockquoteLine(theme: theme)
+        storage.beginEditing()
+        storage.replaceCharacters(in: lineRange, with: line)
+        storage.endEditing()
+        let cursor = lineRange.location + line.length - 1
+        return NSRange(location: max(lineRange.location, cursor), length: 0)
     }
 
     @discardableResult
@@ -192,7 +257,11 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
+        if let result = adjustListLevelIfApplicable(
+            in: storage, range: range, delta: 1,
+            compiler: compiler, theme: theme
+        ) { return result }
+        return mutateBlocks(
             in: storage, range: range, compiler: compiler, serializer: serializer,
             dialect: dialect, mode: mode, theme: theme
         ) { md in
@@ -210,12 +279,132 @@ public enum Operations {
         mode: Mode,
         theme: MarginaliaTheme
     ) -> NSRange {
-        mutateBlocks(
+        if let result = adjustListLevelIfApplicable(
+            in: storage, range: range, delta: -1,
+            compiler: compiler, theme: theme
+        ) { return result }
+        return mutateBlocks(
             in: storage, range: range, compiler: compiler, serializer: serializer,
             dialect: dialect, mode: mode, theme: theme
         ) { md in
             transformOutdent(md)
         }
+    }
+
+    /// If the cursor sits in a list-item paragraph, adjust the line's nesting
+    /// level by `delta`. Returns the new cursor range, or nil if not on a
+    /// list-item line. Outdent below level 0 demotes to a plain paragraph.
+    /// This bypasses the markdown round-trip because tree-sitter loses parent
+    /// context when a single list line is recompiled in isolation.
+    private static func adjustListLevelIfApplicable(
+        in storage: NSTextStorage,
+        range: NSRange,
+        delta: Int,
+        compiler: MarkdownAttributedCompiler,
+        theme: MarginaliaTheme
+    ) -> NSRange? {
+        guard storage.length > 0 else { return nil }
+        let safe = clampedRange(range, in: storage.length)
+        let probe = max(0, min(safe.location, storage.length - 1))
+        guard let listAttr = storage.safeAttribute(.marginaliaListItem, at: probe) as? ListItemAttribute else {
+            return nil
+        }
+        let ns = storage.string as NSString
+        let lineRange = ns.paragraphRange(for: NSRange(location: probe, length: 0))
+        guard lineRange.length > 0 else { return nil }
+
+        let newLevel = max(0, listAttr.level + delta)
+        if newLevel == listAttr.level {
+            return NSRange(location: probe, length: 0)
+        }
+
+        let newListAttr = ListItemAttribute(
+            level: newLevel,
+            kind: listAttr.kind,
+            orderedIndex: listAttr.orderedIndex,
+            isChecked: listAttr.isChecked
+        )
+        let newParagraphStyle = compiler.paragraphStyle(forListLevel: newLevel, theme: theme)
+        let blockTag: BlockTag
+        switch listAttr.kind {
+        case .bullet: blockTag = .unorderedListItem
+        case .ordered: blockTag = .orderedListItem
+        case .task: blockTag = .taskListItem
+        }
+        let newBlockAttr = BlockAttribute(tag: blockTag, level: newLevel, blockquoteDepth: 0)
+
+        var markerRange = NSRange(location: lineRange.location, length: 0)
+        if (storage.safeAttribute(.marginaliaListMarker, at: lineRange.location) as? Bool) == true {
+            _ = storage.safeAttribute(.marginaliaListMarker, at: lineRange.location, longestEffectiveRange: &markerRange, in: lineRange)
+        }
+
+        var markerAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: newParagraphStyle,
+            .marginaliaBlock: newBlockAttr,
+            .marginaliaListItem: newListAttr,
+            .marginaliaListMarker: true
+        ]
+        let markerString: String
+        switch listAttr.kind {
+        case .bullet:
+            markerAttrs[.attachment] = BulletGlyphAttachment(level: newLevel, color: theme.foregroundColor)
+            markerString = "\u{FFFC} "
+        case .ordered:
+            let style = OrderedMarkerFormatter.style(forLevel: newLevel)
+            markerString = OrderedMarkerFormatter.format(index: listAttr.orderedIndex ?? 1, style: style) + " "
+        case .task:
+            let attachment = CheckboxAttachment()
+            attachment.isChecked = listAttr.isChecked ?? false
+            markerAttrs[.attachment] = attachment
+            markerString = "\u{FFFC} "
+        }
+        let newMarker = NSAttributedString(string: markerString, attributes: markerAttrs)
+
+        storage.beginEditing()
+        storage.replaceCharacters(in: markerRange, with: newMarker)
+        let delta_len = newMarker.length - markerRange.length
+        let updatedLineLen = lineRange.length + delta_len
+        let updatedLineRange = NSRange(location: lineRange.location, length: updatedLineLen)
+        storage.addAttribute(.marginaliaListItem, value: newListAttr, range: updatedLineRange)
+        storage.addAttribute(.paragraphStyle, value: newParagraphStyle, range: updatedLineRange)
+        storage.addAttribute(.marginaliaBlock, value: newBlockAttr, range: updatedLineRange)
+        storage.endEditing()
+
+        let cursor = max(updatedLineRange.location, updatedLineRange.location + updatedLineRange.length - 1)
+        return NSRange(location: cursor, length: 0)
+    }
+
+    private static func demoteListItemToPlain(
+        in storage: NSTextStorage,
+        lineRange: NSRange,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        guard lineRange.length > 0,
+              lineRange.location + lineRange.length <= storage.length,
+              lineRange.location < storage.length else {
+            return NSRange(location: lineRange.location, length: 0)
+        }
+        var markerRange = NSRange(location: lineRange.location, length: 0)
+        _ = storage.safeAttribute(.marginaliaListMarker, at: lineRange.location, longestEffectiveRange: &markerRange, in: lineRange)
+        let plainAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        storage.beginEditing()
+        storage.replaceCharacters(in: markerRange, with: "")
+        let bodyLen = lineRange.length - markerRange.length
+        let bodyRange = NSRange(location: lineRange.location, length: bodyLen)
+        if bodyRange.length > 0 {
+            storage.setAttributes(plainAttrs, range: bodyRange)
+            storage.removeAttribute(.marginaliaListItem, range: bodyRange)
+            storage.removeAttribute(.marginaliaListMarker, range: bodyRange)
+        }
+        storage.endEditing()
+        return NSRange(location: lineRange.location, length: 0)
     }
 
     @discardableResult
@@ -255,7 +444,11 @@ public enum Operations {
         let para = storage.attributedSubstring(from: lineRange)
         let md = serializer.serialize(para, dialect: dialect)
         let newMd = transform(md)
-        let newAttr = compiler.compile(newMd, dialect: dialect, mode: mode, theme: theme)
+        // Tree-sitter's markdown grammar requires a trailing newline to recognize
+        // block-level constructs. Empty input followed by a marker (e.g. "- ")
+        // would otherwise compile as literal paragraph text.
+        let normalized = newMd.isEmpty || newMd.hasSuffix("\n") ? newMd : newMd + "\n"
+        let newAttr = compiler.compile(normalized, dialect: dialect, mode: mode, theme: theme)
         storage.beginEditing()
         storage.replaceCharacters(in: lineRange, with: newAttr)
         storage.endEditing()

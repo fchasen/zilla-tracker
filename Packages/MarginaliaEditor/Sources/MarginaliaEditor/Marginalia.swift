@@ -223,6 +223,8 @@ private func editMenuTitle(for action: Marginalia.Action) -> String {
     case .codeBlock: return "Code Block"
     case .link: return "Link"
     case .horizontalRule: return "Horizontal Rule"
+    case .indent: return "Indent"
+    case .outdent: return "Outdent"
     }
 }
 
@@ -240,6 +242,8 @@ private func editMenuSymbol(for action: Marginalia.Action) -> String {
     case .codeBlock: return "curlybraces"
     case .link: return "link"
     case .horizontalRule: return "minus"
+    case .indent: return "increase.indent"
+    case .outdent: return "decrease.indent"
     }
 }
 #endif
