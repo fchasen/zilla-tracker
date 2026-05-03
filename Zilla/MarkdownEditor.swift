@@ -8,8 +8,9 @@ struct MarkdownEditor: View {
     @Binding var text: String
     var minHeight: CGFloat = 96
     var isDisabled: Bool = false
-    var dialect: Highlighter.Dialect = .commonMark
+    var dialect: Dialect = .commonMark
     var bordered: Bool = true
+    var showToolbar: Bool = true
 
     @Environment(\.zillaFontScale) private var fontScale
 
@@ -19,10 +20,10 @@ struct MarkdownEditor: View {
     @State private var showingLinkInsert = false
 
     var body: some View {
-        Marginalia(text: $text, selection: $selection)
+        Marginalia(text: $text)
             .dialect(dialect)
             .theme(.default(fontScale: fontScale))
-            .configuration(Marginalia.Configuration(toolbar: toolbar, minHeight: minHeight))
+            .configuration(Marginalia.Configuration(toolbar: showToolbar ? toolbar : [], minHeight: minHeight))
             .frame(minHeight: minHeight)
             .overlay {
                 if bordered {

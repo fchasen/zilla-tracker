@@ -10,25 +10,8 @@ import AppKit
 import UIKit
 #endif
 
-/// SwiftUI live Markdown editor.
-///
-/// ```swift
-/// Marginalia(text: $draft.bugDescription, selection: $selection)
-///     .dialect(.commonMark)
-///     .inlineContentProvider { content in
-///         MarginaliaChip.attachment(for: content)
-///     }
-///     .frame(minHeight: 240)
-/// ```
-///
-/// `Marginalia` is intentionally a **value** view: bindings come in via
-/// `init`, configuration comes in via the editor modifiers (which
-/// flow through SwiftUI's environment). Everything else (the `EditorController`,
-/// the TextKit 2 stack, the parser, the highlighter) is an implementation
-/// detail held in `@StateObject` storage so it survives view recreation.
 public struct Marginalia: View {
     @Binding public var text: String
-    @Binding public var selection: NSRange
 
     @Environment(\.marginaliaConfiguration) private var configuration
     @Environment(\.marginaliaDialect) private var dialect
@@ -36,11 +19,15 @@ public struct Marginalia: View {
     @Environment(\.marginaliaInlineContentProvider) private var inlineProvider
 
     @AppStorage("marginalia.toolbarVisible") private var toolbarVisible = true
+    @AppStorage("marginalia.mode") private var modeRawValue: String = Mode.rich.rawValue
     @StateObject private var hosting = MarginaliaHosting()
 
-    public init(text: Binding<String>, selection: Binding<NSRange> = .constant(NSRange(location: 0, length: 0))) {
+    private var mode: Mode {
+        Mode(rawValue: modeRawValue) ?? .rich
+    }
+
+    public init(text: Binding<String>) {
         self._text = text
-        self._selection = selection
     }
 
     public var body: some View {
@@ -49,7 +36,7 @@ public struct Marginalia: View {
                 HStack(spacing: 12) {
                     if !configuration.toolbar.isEmpty {
                         MarginaliaToolbar(
-                            items: configuration.toolbar,
+                            items: configuration.toolbar + [.spacer, modeToggleItem],
                             perform: { action in
                                 guard let controller = hosting.controller else { return }
                                 MarginaliaToolbarActions.perform(
@@ -65,7 +52,7 @@ public struct Marginalia: View {
                         MarginaliaStatusBar(
                             items: configuration.statusItems,
                             text: text,
-                            selection: selection
+                            selection: NSRange(location: 0, length: 0)
                         )
                     }
                 }
@@ -74,9 +61,10 @@ public struct Marginalia: View {
             editorBody
         }
         .onAppear {
-            hosting.ensureController(initialText: text, dialect: dialect, theme: theme)
-            if let controller = hosting.controller, controller.text != text {
-                controller.setText(text)
+            hosting.ensureController(initialText: text, dialect: dialect, theme: theme, mode: mode)
+            if let controller = hosting.controller {
+                if controller.markdown() != text { controller.setMarkdown(text) }
+                controller.mode = mode
             }
         }
         .onChange(of: dialect) { _, newDialect in
@@ -85,6 +73,25 @@ public struct Marginalia: View {
         .onChange(of: theme) { _, newTheme in
             hosting.controller?.theme = newTheme
         }
+        .onChange(of: modeRawValue) { _, _ in
+            hosting.controller?.mode = mode
+        }
+    }
+
+    private var modeToggleItem: Marginalia.ToolbarItem {
+        let label = mode == .source ? "Show rendered" : "Show source"
+        let symbol = mode == .source ? "eye" : "doc.plaintext"
+        return .custom(
+            id: "marginaliaModeToggle",
+            label: label,
+            systemImage: symbol,
+            shortcut: nil,
+            topLevel: true,
+            action: {
+                let next: Mode = (mode == .source) ? .rich : .source
+                modeRawValue = next.rawValue
+            }
+        )
     }
 
     @ViewBuilder
@@ -94,7 +101,6 @@ public struct Marginalia: View {
             MarginaliaTextViewMac(
                 controller: controller,
                 text: $text,
-                selection: $selection,
                 sizing: configuration.sizing,
                 minHeight: configuration.minHeight,
                 contextMenuItems: macContextMenuItems()
@@ -104,7 +110,6 @@ public struct Marginalia: View {
             MarginaliaTextViewIOS(
                 controller: controller,
                 text: $text,
-                selection: $selection,
                 sizing: configuration.sizing,
                 minHeight: configuration.minHeight,
                 editMenuBuilder: makeIOSEditMenuBuilder(controller: controller)
@@ -237,10 +242,6 @@ private func editMenuSymbol(for action: Marginalia.Action) -> String {
 }
 #endif
 
-/// In `.fitsContent` mode the representable reports its content height via
-/// `intrinsicContentSize`/`sizeThatFits`, so the SwiftUI frame must NOT be
-/// `maxHeight: .infinity` (that would override the intrinsic height). In
-/// `.fillContainer` mode we want it to fill.
 private struct SizingFrame: ViewModifier {
     let sizing: EditorSizing
     func body(content: Content) -> some View {
@@ -253,20 +254,22 @@ private struct SizingFrame: ViewModifier {
     }
 }
 
-/// Holder around the `EditorController` so SwiftUI's `@StateObject` lifecycle
-/// keeps it alive across body re-evaluations. `controller` is `@Published`
-/// so the body re-renders past the initial `ProgressView` once the
-/// controller finishes setting up.
 final class MarginaliaHosting: ObservableObject {
     @Published var controller: EditorController?
 
     func ensureController(
         initialText: String,
-        dialect: Highlighter.Dialect,
-        theme: MarginaliaTheme
+        dialect: Dialect,
+        theme: MarginaliaTheme,
+        mode: Mode
     ) {
         if controller == nil {
-            controller = try? EditorController(initialText: initialText, theme: theme, dialect: dialect)
+            controller = try? EditorController(
+                initialMarkdown: initialText,
+                theme: theme,
+                dialect: dialect,
+                mode: mode
+            )
         }
     }
 }

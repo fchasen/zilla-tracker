@@ -4,17 +4,8 @@ import SwiftUI
 import MarginaliaSyntax
 import MarginaliaRendering
 
-/// macOS `NSViewRepresentable` that hosts an `NSTextView` configured against
-/// an `EditorController`. The controller owns the storage; this view just
-/// embeds a text view that points at the controller's content storage and
-/// keeps the SwiftUI bindings in sync.
-///
-/// The `sizing` parameter controls whether the view grows to fit its
-/// content (`.fitsContent`, the default) or fills the parent and scrolls
-/// internally (`.fillContainer`).
 public struct MarginaliaTextViewMac: NSViewRepresentable {
     @Binding public var text: String
-    @Binding public var selection: NSRange
     public let controller: EditorController
     public let sizing: EditorSizing
     public let minHeight: CGFloat
@@ -23,14 +14,12 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
     public init(
         controller: EditorController,
         text: Binding<String>,
-        selection: Binding<NSRange>,
         sizing: EditorSizing = .fitsContent,
         minHeight: CGFloat = 96,
         contextMenuItems: [MarginaliaContextMenuItem] = []
     ) {
         self.controller = controller
         self._text = text
-        self._selection = selection
         self.sizing = sizing
         self.minHeight = minHeight
         self.contextMenuItems = contextMenuItems
@@ -42,14 +31,10 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             textContainer: controller.textContainer
         )
         textView.delegate = context.coordinator
-        textView.isRichText = false
+        textView.isRichText = true
         textView.isEditable = true
         textView.isSelectable = true
-        // Auto-undo is off — `EditorController.undoManager` records source
-        // mutations and is vended via the `undoManager(for:)` delegate hook
-        // so Cmd-Z replays the inverse source edit (not a stale display edit
-        // recorded against an old mapping).
-        textView.allowsUndo = false
+        textView.allowsUndo = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -64,19 +49,9 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
 
         context.coordinator.textView = textView
         controller.hostTextView = textView
-        textView.onMarginaliaLinkClick = { [weak controller] url in
-            guard let controller else { return }
-            if let location = EditorController.taskToggleSourceLocation(from: url) {
-                controller.toggleTask(atSourceLocation: location)
-            }
-        }
 
         switch sizing {
         case .fitsContent:
-            // No NSScrollView — the text view's intrinsic content size
-            // drives SwiftUI layout, so the editor grows with content and
-            // any surrounding ScrollView (or scroll-enabled parent) handles
-            // overflow.
             textView.autoresizingMask = [.width]
             textView.usesFindBar = false
             textView.fitsContent = true
@@ -106,15 +81,12 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
            mtv.minimumIntrinsicHeight != minHeight {
             mtv.minimumIntrinsicHeight = minHeight
         }
-        coordinator.apply(text: text, selection: selection, to: textView)
+        coordinator.applyExternalText(text, to: textView)
     }
 
     public func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
         guard sizing == .fitsContent, let textView = textView(in: nsView) else { return nil }
         if let proposedWidth = proposal.width, proposedWidth > 0 {
-            // Drive the text container's width so wrapping reflects the
-            // SwiftUI parent's available width — otherwise the text view
-            // sticks to whatever container size it was inited with.
             let inset = textView.textContainerInset
             let containerWidth = max(0, proposedWidth - inset.width * 2)
             controller.textContainer.size = NSSize(
@@ -127,9 +99,7 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
         return CGSize(width: width, height: max(intrinsic.height, 28))
     }
 
-    public func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    public func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     private func textView(in nsView: NSView) -> NSTextView? {
         if let tv = nsView as? NSTextView { return tv }
@@ -140,93 +110,36 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
     public final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: MarginaliaTextViewMac
         weak var textView: NSTextView?
-        var lastAppliedText: String
-        var lastAppliedSelection: NSRange
-        var isApplyingFromBinding = false
+        var lastAppliedMarkdown: String
 
         init(_ parent: MarginaliaTextViewMac) {
             self.parent = parent
-            self.lastAppliedText = parent.text
-            self.lastAppliedSelection = parent.selection
+            self.lastAppliedMarkdown = parent.text
         }
 
-        /// Pushes the SwiftUI bindings into the text view *only when they have
-        /// changed externally*. The lastApplied watermarks are the bindings'
-        /// values as of the last apply; they are NEVER updated from delegate
-        /// callbacks. That's how we tell "external write" apart from "user
-        /// just typed and the binding hasn't caught up yet" (or, in the
-        /// `.constant` case, will never catch up).
-        public func apply(text: String, selection: NSRange, to textView: NSTextView) {
-            isApplyingFromBinding = true
-            defer { isApplyingFromBinding = false }
-
-            if text != lastAppliedText {
-                if parent.controller.text != text {
-                    parent.controller.setText(text)
+        /// Push an external markdown change into the controller (and storage).
+        /// Triggered by SwiftUI binding updates from sources outside the
+        /// editor (e.g. the host loaded a different bug's text). Internal
+        /// edits flow back via `textDidChange` and update the watermark.
+        func applyExternalText(_ md: String, to: NSTextView) {
+            if md != lastAppliedMarkdown {
+                if parent.controller.markdown() != md {
+                    parent.controller.setMarkdown(md)
                 }
-                lastAppliedText = text
-            }
-
-            if selection != lastAppliedSelection {
-                // The binding's selection is in source coordinates (the
-                // canonical text the host owns). Translate to display before
-                // pushing onto the text view, which lives in display coords.
-                let displayRange = parent.controller.displayMapping.displayRange(forSource: selection)
-                let length = parent.controller.textStorage.length
-                let location = max(0, min(displayRange.location, length))
-                let remaining = max(0, length - location)
-                let clamped = NSRange(
-                    location: location,
-                    length: max(0, min(displayRange.length, remaining))
-                )
-                if textView.selectedRange() != clamped {
-                    textView.setSelectedRange(clamped)
-                }
-                lastAppliedSelection = selection
+                lastAppliedMarkdown = md
             }
         }
 
         public func textDidChange(_ notification: Notification) {
-            guard !isApplyingFromBinding else { return }
-            // The text view edits the display storage; the controller's
-            // storage observer mirrors the change back to source. Read from
-            // the controller (source of truth) so the binding holds source,
-            // not the elided WYSIWYG display.
-            let newString = parent.controller.text
-            if parent.text != newString {
-                parent.text = newString
+            let md = parent.controller.markdown()
+            if parent.text != md {
+                parent.text = md
             }
-        }
-
-        public func textViewDidChangeSelection(_ notification: Notification) {
-            guard !isApplyingFromBinding else { return }
-            guard let tv = notification.object as? NSTextView else { return }
-            // Translate the text view's display-coord selection back to
-            // source so the host's binding stays in source coordinates.
-            let sourceRange = parent.controller.displayMapping
-                .sourceRange(forDisplay: tv.selectedRange())
-            parent.controller.selection = sourceRange
-            if parent.selection != sourceRange {
-                parent.selection = sourceRange
-            }
+            lastAppliedMarkdown = md
         }
 
         public func undoManager(for view: NSTextView) -> UndoManager? {
             parent.controller.undoManager
-        }
-
-        public func textView(_ textView: NSTextView,
-                             clickedOnLink link: Any,
-                             at charIndex: Int) -> Bool {
-            guard let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)) else {
-                return false
-            }
-            if let location = EditorController.taskToggleSourceLocation(from: url) {
-                parent.controller.toggleTask(atSourceLocation: location)
-                parent.text = parent.controller.text
-                return true
-            }
-            return false
         }
 
         public func textView(_ view: NSTextView,
@@ -255,129 +168,20 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
         @objc private func invokeContextMenuItem(_ sender: NSMenuItem) {
             (sender.representedObject as? ContextMenuActionBox)?.action()
         }
-
-        public func textView(_ textView: NSTextView,
-                             doCommandBy commandSelector: Selector) -> Bool {
-            // ListContinuation / EditingOps operate on the canonical source
-            // string and source-coord positions; translate the text view's
-            // display-coord selection through the mapping before calling them.
-            let mapping = parent.controller.displayMapping
-            let sourceText = parent.controller.text
-            let displayRange = textView.selectedRange()
-            let sourceRange = mapping.sourceRange(forDisplay: displayRange)
-
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-                if displayRange.length == 0,
-                   let result = ListContinuation.handleReturn(in: sourceText, cursor: sourceRange.location) {
-                    apply(editResult: result, in: textView)
-                    return true
-                }
-            }
-            if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
-                if displayRange.length == 0,
-                   let result = EditingOps.clearEmptyLineMarker(in: sourceText, cursor: sourceRange.location) {
-                    apply(editResult: result, in: textView)
-                    return true
-                }
-            }
-            if commandSelector == #selector(NSResponder.insertTab(_:)),
-               let result = EditingOps.indentListLines(
-                in: sourceText,
-                selection: sourceRange
-               ) {
-                apply(editResult: result, in: textView)
-                return true
-            }
-            if commandSelector == #selector(NSResponder.insertBacktab(_:)),
-               let result = EditingOps.outdentListLines(
-                in: sourceText,
-                selection: sourceRange
-               ) {
-                apply(editResult: result, in: textView)
-                return true
-            }
-            return false
-        }
-
-        /// Replace the storage with `editResult.text` and put the cursor at
-        /// `editResult.selection`, then update the bindings + watermarks so
-        /// the next SwiftUI re-render is a no-op.
-        ///
-        /// Delegates to `EditorController.applyEdit(_:)` so clamping happens
-        /// before `recomputeHidden` reads `controller.selection` — that
-        /// ordering is what prevents `NSRangeException` when the
-        /// edit-op result's selection points past the new shorter text
-        /// (e.g. Shift-Tab outdent moving a sub-item to top level).
-        private func apply(editResult result: EditResult, in textView: NSTextView) {
-            isApplyingFromBinding = true
-            parent.controller.applyEdit(result)
-            isApplyingFromBinding = false
-            parent.text = parent.controller.text
-            parent.selection = parent.controller.selection
-            // Pin watermarks to the bindings' actual values after the write.
-            // With a `.constant` binding the write was a no-op, so the read
-            // returns the pre-existing value — and that's what we record so
-            // the next stale-binding re-render is a no-op skip.
-            lastAppliedText = parent.text
-            lastAppliedSelection = parent.selection
-        }
     }
 }
 
-/// Reference wrapper for a `() -> Void` closure so it can ride along on
-/// `NSMenuItem.representedObject` (which requires an Objective-C class).
 private final class ContextMenuActionBox {
     let action: () -> Void
     init(_ action: @escaping () -> Void) { self.action = action }
 }
 
-/// `NSTextView` subclass that reports its content height as
-/// `intrinsicContentSize` when `fitsContent` is enabled. SwiftUI uses that
-/// to size the representable so the editor grows with content (no internal
-/// scrolling). Width is left as `noIntrinsicMetric` so the SwiftUI parent
-/// continues to own horizontal layout.
 final class MarginaliaNSTextView: NSTextView {
     var fitsContent: Bool = false {
         didSet { invalidateIntrinsicContentSize() }
     }
-    /// Floor for the intrinsic height in `fitsContent` mode — the editor
-    /// starts at this height even when empty, then grows as content
-    /// exceeds it.
     var minimumIntrinsicHeight: CGFloat = 0 {
         didSet { invalidateIntrinsicContentSize() }
-    }
-    /// Closure called when the user single-clicks on a `marginalia://…`
-    /// `.link` attribute — the standard editable-text-view link handler
-    /// reserves single-click for cursor placement and only fires
-    /// `clickedOnLink:` on cmd-click, so we intercept here for in-editor
-    /// affordances like toggling task checkboxes.
-    var onMarginaliaLinkClick: ((URL) -> Void)?
-
-    override func mouseDown(with event: NSEvent) {
-        if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-           let storage = textStorage {
-            let pt = convert(event.locationInWindow, from: nil)
-            let charIndex = characterIndexForInsertion(at: pt)
-            if let url = nearestMarginaliaLink(at: charIndex, in: storage) {
-                onMarginaliaLinkClick?(url)
-                return
-            }
-        }
-        super.mouseDown(with: event)
-    }
-
-    private func nearestMarginaliaLink(at index: Int, in storage: NSTextStorage) -> URL? {
-        // `characterIndexForInsertion` returns an INSERTION POINT — for a
-        // click on a 1-char attachment glyph that's either the index of the
-        // glyph or one past it, depending on which half was clicked. Probe
-        // both sides for a `marginalia://` link.
-        for probe in [index, index - 1] where probe >= 0 && probe < storage.length {
-            let attrs = storage.attributes(at: probe, effectiveRange: nil)
-            if let url = attrs[.link] as? URL, url.scheme == "marginalia" {
-                return url
-            }
-        }
-        return nil
     }
 
     override var intrinsicContentSize: NSSize {
@@ -389,8 +193,6 @@ final class MarginaliaNSTextView: NSTextView {
         let used = layoutManager.usageBoundsForTextContainer
         let inset = textContainerInset
         let contentHeight = used.height + inset.height * 2
-        // Floor at the larger of the user's configured min height and one
-        // line of font height — so an empty editor is still tap-targetable.
         let floor = max(minimumIntrinsicHeight, font?.boundingRectForFont.height ?? 16)
         return NSSize(width: NSView.noIntrinsicMetric, height: max(contentHeight, floor))
     }

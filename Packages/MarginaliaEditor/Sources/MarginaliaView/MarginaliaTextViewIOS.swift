@@ -4,16 +4,10 @@ import SwiftUI
 import MarginaliaSyntax
 import MarginaliaRendering
 
-/// iOS `UIViewRepresentable` that hosts a TextKit-2 `UITextView` configured
-/// against the same `EditorController` the macOS path uses. The text view is
-/// initialized with the controller's `NSTextContainer` so it shares the
-/// controller's TK2 stack — that way attribute updates the controller pushes
-/// into its `NSTextStorage` are automatically reflected in the view.
 public struct MarginaliaTextViewIOS: UIViewRepresentable {
     public typealias EditMenuBuilder = @MainActor (NSRange, [UIMenuElement]) -> UIMenu?
 
     @Binding public var text: String
-    @Binding public var selection: NSRange
     public let controller: EditorController
     public let sizing: EditorSizing
     public let minHeight: CGFloat
@@ -22,24 +16,18 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
     public init(
         controller: EditorController,
         text: Binding<String>,
-        selection: Binding<NSRange>,
         sizing: EditorSizing = .fitsContent,
         minHeight: CGFloat = 96,
         editMenuBuilder: EditMenuBuilder? = nil
     ) {
         self.controller = controller
         self._text = text
-        self._selection = selection
         self.sizing = sizing
         self.minHeight = minHeight
         self.editMenuBuilder = editMenuBuilder
     }
 
     public func makeUIView(context: Context) -> UITextView {
-        // `init(frame:textContainer:)` is the designated init; UITextView uses
-        // TextKit 2 when the container's `textLayoutManager` is non-nil, which
-        // it is here because the controller wired the container into its
-        // `NSTextLayoutManager`.
         let textView = MarginaliaUITextView(frame: .zero, textContainer: controller.textContainer)
         textView.delegate = context.coordinator
         textView.font = controller.theme.bodyFont
@@ -66,7 +54,7 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
     public func updateUIView(_ uiView: UITextView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
-        coordinator.apply(text: text, selection: selection, to: uiView)
+        coordinator.applyExternalText(text, to: uiView)
     }
 
     public func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
@@ -88,98 +76,34 @@ public struct MarginaliaTextViewIOS: UIViewRepresentable {
     public final class Coordinator: NSObject, UITextViewDelegate {
         var parent: MarginaliaTextViewIOS
         weak var textView: UITextView?
-        var lastAppliedText: String
-        var lastAppliedSelection: NSRange
-        var isApplyingFromBinding = false
+        var lastAppliedMarkdown: String
 
         init(_ parent: MarginaliaTextViewIOS) {
             self.parent = parent
-            self.lastAppliedText = parent.text
-            self.lastAppliedSelection = parent.selection
+            self.lastAppliedMarkdown = parent.text
         }
 
-        /// See `MarginaliaTextViewMac.Coordinator.apply` for the rationale.
-        /// Same logic, different platform types.
-        public func apply(text: String, selection: NSRange, to textView: UITextView) {
-            isApplyingFromBinding = true
-            defer { isApplyingFromBinding = false }
-
-            if text != lastAppliedText {
-                if parent.controller.text != text {
-                    parent.controller.setText(text)
+        func applyExternalText(_ md: String, to: UITextView) {
+            if md != lastAppliedMarkdown {
+                if parent.controller.markdown() != md {
+                    parent.controller.setMarkdown(md)
                 }
-                lastAppliedText = text
-            }
-
-            if selection != lastAppliedSelection {
-                // Binding lives in source coords; the text view lives in
-                // display coords. Translate before pushing across.
-                let displayRange = parent.controller.displayMapping.displayRange(forSource: selection)
-                let length = parent.controller.textStorage.length
-                let location = max(0, min(displayRange.location, length))
-                let remaining = max(0, length - location)
-                let clamped = NSRange(
-                    location: location,
-                    length: max(0, min(displayRange.length, remaining))
-                )
-                if textView.selectedRange != clamped {
-                    textView.selectedRange = clamped
-                }
-                lastAppliedSelection = selection
+                lastAppliedMarkdown = md
             }
         }
 
         public func textViewDidChange(_ textView: UITextView) {
-            guard !isApplyingFromBinding else { return }
-            // Read from the controller (source) — `textView.text` is the
-            // elided WYSIWYG display, which would lose markup if assigned
-            // straight back to the source binding.
-            let newText = parent.controller.text
-            if parent.text != newText {
-                parent.text = newText
+            let md = parent.controller.markdown()
+            if parent.text != md {
+                parent.text = md
             }
-        }
-
-        public func textViewDidChangeSelection(_ textView: UITextView) {
-            guard !isApplyingFromBinding else { return }
-            let sourceRange = parent.controller.displayMapping
-                .sourceRange(forDisplay: textView.selectedRange)
-            parent.controller.selection = sourceRange
-            if parent.selection != sourceRange {
-                parent.selection = sourceRange
-            }
+            lastAppliedMarkdown = md
         }
 
         public func textView(_ textView: UITextView,
                              editMenuForTextIn range: NSRange,
                              suggestedActions: [UIMenuElement]) -> UIMenu? {
             parent.editMenuBuilder?(range, suggestedActions)
-        }
-
-        public func textView(_ textView: UITextView,
-                             shouldChangeTextIn range: NSRange,
-                             replacementText text: String) -> Bool {
-            if text == "\n" {
-                let mapping = parent.controller.displayMapping
-                let sourceRange = mapping.sourceRange(forDisplay: range)
-                if let result = ListContinuation.handleReturn(
-                    in: parent.controller.text,
-                    cursor: sourceRange.location
-                ) {
-                    isApplyingFromBinding = true
-                    // Delegate to controller.applyEdit so the selection is
-                    // clamped BEFORE the synchronous refresh reads it — same
-                    // crash-prevention ordering the macOS coordinator uses.
-                    parent.controller.applyEdit(result)
-                    isApplyingFromBinding = false
-                    parent.text = parent.controller.text
-                    parent.selection = parent.controller.selection
-                    lastAppliedText = parent.text
-                    lastAppliedSelection = parent.selection
-                    return false
-                }
-            }
-            return true
         }
     }
 }

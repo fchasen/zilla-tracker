@@ -209,54 +209,17 @@ private struct OptionalShortcut: ViewModifier {
     }
 }
 
-/// The toolbar's perform logic, extracted from the SwiftUI view so it's
-/// directly unit-testable. Reads the *current* text and selection from the
-/// `EditorController` (the source of truth — the SwiftUI selection binding
-/// may be `.constant`, in which case the toolbar would otherwise wrap at
-/// position 0 regardless of where the user's cursor is) and applies the
-/// resulting `EditResult` back through `controller.applyEdit`, which clamps
-/// out-of-bounds selections rather than crashing.
+/// Phase 1 stub: the formatting actions are wired through the responder
+/// chain in Phase 2 (see `Operations.swift`). For now, built-in toolbar
+/// actions are no-ops; custom items continue to work via their own action
+/// closures in `MarginaliaToolbar.button(for:)`.
 enum MarginaliaToolbarActions {
     static func perform(
         _ action: Marginalia.Action,
         controller: EditorController,
         text: Binding<String>
     ) {
-        let currentText = controller.text
-        let currentSelection = controller.clampedRange(controller.selection)
-
-        let result: EditResult
-        switch action {
-        case .bold:
-            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "**", suffix: "**", placeholder: "bold")
-        case .italic:
-            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "*", suffix: "*", placeholder: "italic")
-        case .strikethrough:
-            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "~~", suffix: "~~", placeholder: "strike")
-        case .heading(let level):
-            result = EditingOps.prefixLines(in: currentText, selection: currentSelection, marker: String(repeating: "#", count: level) + " ")
-        case .unorderedList:
-            result = EditingOps.applyListMarker(in: currentText, selection: currentSelection, kind: .bullet)
-                ?? EditResult(text: currentText, selection: currentSelection)
-        case .orderedList:
-            result = EditingOps.applyListMarker(in: currentText, selection: currentSelection, kind: .numbered)
-                ?? EditResult(text: currentText, selection: currentSelection)
-        case .taskList:
-            result = EditingOps.applyListMarker(in: currentText, selection: currentSelection, kind: .task)
-                ?? EditResult(text: currentText, selection: currentSelection)
-        case .blockquote:
-            result = EditingOps.prefixLines(in: currentText, selection: currentSelection, marker: "> ")
-        case .codeSpan:
-            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "`", suffix: "`", placeholder: "code")
-        case .codeBlock:
-            result = EditingOps.wrapCodeBlock(in: currentText, selection: currentSelection)
-        case .link:
-            result = EditingOps.wrap(in: currentText, selection: currentSelection, prefix: "[", suffix: "](url)", placeholder: "label")
-        case .horizontalRule:
-            result = EditingOps.insertHorizontalRule(in: currentText, selection: currentSelection)
-        }
-
-        controller.applyEdit(result)
-        text.wrappedValue = result.text
+        // TODO Phase 2: route to Operations.swift via NSResponder chain.
+        _ = (action, controller, text)
     }
 }

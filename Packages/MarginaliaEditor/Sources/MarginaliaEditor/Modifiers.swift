@@ -6,7 +6,7 @@ import MarginaliaRendering
 // MARK: - environment values
 
 private struct DialectKey: EnvironmentKey {
-    static let defaultValue: Highlighter.Dialect = .commonMark
+    static let defaultValue: Dialect = .commonMark
 }
 
 private struct ThemeKey: EnvironmentKey {
@@ -22,7 +22,7 @@ private struct InlineContentProviderKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    public var marginaliaDialect: Highlighter.Dialect {
+    public var marginaliaDialect: Dialect {
         get { self[DialectKey.self] }
         set { self[DialectKey.self] = newValue }
     }
@@ -46,7 +46,7 @@ extension EnvironmentValues {
 // MARK: - public modifiers
 
 extension View {
-    public func dialect(_ dialect: Highlighter.Dialect) -> some View {
+    public func dialect(_ dialect: Dialect) -> some View {
         environment(\.marginaliaDialect, dialect)
     }
 

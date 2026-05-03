@@ -12,7 +12,7 @@ import MarginaliaView
 public struct MarginaliaPlayground: View {
     @State private var text: String = MarginaliaPlayground.fixtures[0].source
     @State private var fixture: Int = 0
-    @State private var dialect: Highlighter.Dialect = .commonMark
+    @State private var dialect: Dialect = .commonMark
     @State private var showInspector: Bool = true
 
     public init() {}
@@ -53,8 +53,8 @@ public struct MarginaliaPlayground: View {
                 text = MarginaliaPlayground.fixtures[idx].source
             }
             Picker("Dialect", selection: $dialect) {
-                Text("CommonMark").tag(Highlighter.Dialect.commonMark)
-                Text("Remarkup").tag(Highlighter.Dialect.remarkup)
+                Text("CommonMark").tag(Dialect.commonMark)
+                Text("Remarkup").tag(Dialect.remarkup)
             }
             .pickerStyle(.segmented)
         }
@@ -134,7 +134,7 @@ public struct MarginaliaPlayground: View {
 /// markup ranges, and hidden ranges for whatever's in the editor.
 struct MarginaliaInspector: View {
     let source: String
-    let dialect: Highlighter.Dialect
+    let dialect: Dialect
 
     var body: some View {
         ScrollView {
@@ -188,10 +188,13 @@ struct MarginaliaInspector: View {
     }
 
     private var highlightLines: [String] {
-        guard let h = try? Highlighter(dialect: dialect) else { return [] }
-        return h.runs(for: source).prefix(40).map {
-            "\($0.range.location)…\($0.range.location + $0.range.length): \($0.attributes.keys.map(\.rawValue).sorted().joined(separator: ", "))"
-        }
+        guard let p = try? MarkdownParser(grammar: .block),
+              let tree = p.parse(source),
+              let root = tree.rootNode,
+              let highlighter = try? HighlightApplier() else { return [] }
+        return highlighter.highlights(rootNode: root, in: tree, mapping: p.mapping, grammar: .block)
+            .prefix(40)
+            .map { "\($0.range.location)…\($0.range.location + $0.range.length): \($0.tag.rawValue)" }
     }
 
     private func describe(_ kind: BlockKind) -> String {
