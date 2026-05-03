@@ -291,25 +291,41 @@ public enum Operations {
     private enum ListMarkerKind { case bullet, ordered, task }
 
     private static func transformList(_ md: String, kind: ListMarkerKind) -> String {
-        let lines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let rawLines = md.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // Treat an empty input as "the user wants a list line right here" —
+        // otherwise clicking the bullet button on an empty editor does
+        // nothing.
+        let lines = rawLines.isEmpty ? [""] : rawLines
+        let allEmpty = lines.allSatisfy { $0.isEmpty }
         let allMatch = lines.allSatisfy { line in
             line.isEmpty || lineHasListMarker(line, kind: kind)
         }
-        if allMatch && !lines.allSatisfy({ $0.isEmpty }) {
+        if allMatch && !allEmpty {
             return lines.map(stripListMarker).joined(separator: "\n")
+        }
+        let prefix: (Int) -> String = { idx in
+            switch kind {
+            case .bullet: return "- "
+            case .ordered: return "\(idx). "
+            case .task: return "- [ ] "
+            }
         }
         var counter = 1
         let stripped = lines.map(stripListMarker)
-        return stripped.map { line -> String in
-            guard !line.isEmpty else { return line }
-            switch kind {
-            case .bullet: return "- " + line
-            case .ordered:
-                defer { counter += 1 }
-                return "\(counter). " + line
-            case .task: return "- [ ] " + line
+        let result = stripped.enumerated().map { idx, line -> String in
+            // Empty paragraph: still inject a marker on the first blank
+            // line so the toolbar action visibly creates a list item.
+            if line.isEmpty {
+                if allEmpty && idx == 0 {
+                    defer { if kind == .ordered { counter += 1 } }
+                    return prefix(counter)
+                }
+                return line
             }
-        }.joined(separator: "\n")
+            defer { if kind == .ordered { counter += 1 } }
+            return prefix(counter) + line
+        }
+        return result.joined(separator: "\n")
     }
 
     private static func lineHasListMarker(_ line: String, kind: ListMarkerKind) -> Bool {

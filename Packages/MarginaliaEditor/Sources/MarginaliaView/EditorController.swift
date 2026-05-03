@@ -233,6 +233,7 @@ public final class EditorController {
     public func perform(_ action: EditorAction) -> NSRange {
         snapshotForUndo()
         let range = currentSelection
+        defer { refreshTypingAttributes(at: currentSelection.location) }
         let resulting: NSRange
         switch action {
         case .bold:
@@ -342,50 +343,67 @@ public final class EditorController {
     /// NSTextView's auto-undo path; without manual registration, Cmd-Z
     /// would skip them entirely.
     ///
-    /// The closure narrows the revert to the diff range (so unrelated
-    /// edits made *after* this op aren't blown away when the user finally
-    /// undoes back to it). For attribute-only changes (e.g. bold toggle)
-    /// the diff finds no character delta, so we fall back to full-storage
-    /// replace.
+    /// The closure replaces the full storage with the captured snapshot —
+    /// simple, correct, no boundary edge cases. The cost is that an undo
+    /// of an early operation may also revert later edits the user expected
+    /// to keep, but that's preferable to crashing on out-of-range diff
+    /// math when the storage state has drifted.
     private func snapshotForUndo() {
         let preStorage = NSAttributedString(attributedString: textStorage)
         let preSelection = currentSelection
-        let preLen = preStorage.length
 
         undoManager.registerUndo(withTarget: self) { [weak self] target in
             guard let self else { _ = target; return }
             self.snapshotForUndo()
             self.applyingMarkdown = true
             self.textStorage.beginEditing()
-            let postLen = self.textStorage.length
-            let preStr = preStorage.string as NSString
-            let postStr = self.textStorage.string as NSString
-            var leftSame = 0
-            let minLen = min(preLen, postLen)
-            while leftSame < minLen,
-                  preStr.character(at: leftSame) == postStr.character(at: leftSame) {
-                leftSame += 1
-            }
-            var rightSame = 0
-            while rightSame < (minLen - leftSame),
-                  preStr.character(at: preLen - 1 - rightSame) == postStr.character(at: postLen - 1 - rightSame) {
-                rightSame += 1
-            }
-            let charactersChanged = (preLen != postLen) || (leftSame < minLen) || (rightSame > 0)
-            if charactersChanged {
-                let preDiffRange = NSRange(location: leftSame, length: preLen - leftSame - rightSame)
-                let postDiffRange = NSRange(location: leftSame, length: postLen - leftSame - rightSame)
-                let oldSubstring = preStorage.attributedSubstring(from: preDiffRange)
-                self.textStorage.replaceCharacters(in: postDiffRange, with: oldSubstring)
-            } else {
-                let fullRange = NSRange(location: 0, length: postLen)
-                self.textStorage.replaceCharacters(in: fullRange, with: preStorage)
-            }
+            let total = self.textStorage.length
+            self.textStorage.replaceCharacters(
+                in: NSRange(location: 0, length: total),
+                with: preStorage
+            )
             self.textStorage.endEditing()
             self.applyingMarkdown = false
             self.setHostSelection(preSelection)
+            self.refreshTypingAttributes(at: preSelection.location)
             self.resegment()
         }
+    }
+
+    /// After programmatic storage edits, NSTextView's `typingAttributes`
+    /// can still hold attributes from the prior content (heading font,
+    /// bullet marker color, etc.). Re-derive them from the storage at the
+    /// cursor — or fall back to plain paragraph defaults when storage is
+    /// empty — so the user's next keystroke renders as expected.
+    private func refreshTypingAttributes(at location: Int) {
+        let total = textStorage.length
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        if total > 0 {
+            let probe = max(0, min(location, total - 1))
+            let raw = textStorage.attributes(at: probe, effectiveRange: nil)
+            for key: NSAttributedString.Key in [
+                .font,
+                .foregroundColor,
+                .paragraphStyle,
+                .marginaliaBlock,
+                .marginaliaListItem
+            ] {
+                if let v = raw[key] { attrs[key] = v }
+            }
+            // Inline-only flags must NOT bleed into typed text.
+            attrs.removeValue(forKey: .marginaliaListMarker)
+            attrs.removeValue(forKey: .marginaliaInline)
+            attrs.removeValue(forKey: .attachment)
+            attrs.removeValue(forKey: .link)
+            attrs.removeValue(forKey: .marginaliaLink)
+            attrs.removeValue(forKey: .strikethroughStyle)
+        }
+        applyTypingAttributes(attrs)
     }
 
     @discardableResult
