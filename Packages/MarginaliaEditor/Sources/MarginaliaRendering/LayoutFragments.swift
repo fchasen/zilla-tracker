@@ -17,18 +17,26 @@ public final class BlockquoteLayoutFragment: NSTextLayoutFragment {
     public var barColor: PlatformColor = .blockquoteDefaultBar
     public var barWidth: CGFloat = 3
     public var barInset: CGFloat = 1
+    public var isFirstInRun: Bool = true
+    public var isLastInRun: Bool = true
 
     public override func draw(at point: CGPoint, in context: CGContext) {
         let lines = textLineFragments
-        let barRect: CGRect
-        if let first = lines.first, let last = lines.last {
-            let topY = first.typographicBounds.minY
-            let bottomY = last.typographicBounds.maxY
-            barRect = CGRect(x: barInset, y: topY, width: barWidth, height: bottomY - topY)
+        let bounds = layoutFragmentFrame
+        let topY: CGFloat
+        if isFirstInRun, let first = lines.first {
+            topY = first.typographicBounds.minY
         } else {
-            let bounds = layoutFragmentFrame
-            barRect = CGRect(x: barInset, y: 0, width: barWidth, height: bounds.height)
+            topY = 0
         }
+        let bottomY: CGFloat
+        if isLastInRun, let last = lines.last {
+            bottomY = last.typographicBounds.maxY
+        } else {
+            bottomY = bounds.height
+        }
+        let height = max(0, bottomY - topY)
+        let barRect = CGRect(x: barInset, y: topY, width: barWidth, height: height)
 
         context.saveGState()
         context.translateBy(x: point.x, y: point.y)
