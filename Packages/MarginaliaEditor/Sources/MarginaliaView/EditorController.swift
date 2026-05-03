@@ -267,6 +267,18 @@ public final class EditorController {
                 compiler: compiler, serializer: serializer,
                 dialect: dialect, mode: mode, theme: theme
             )
+        case .indent:
+            resulting = Operations.indent(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
+        case .outdent:
+            resulting = Operations.outdent(
+                in: textStorage, range: range,
+                compiler: compiler, serializer: serializer,
+                dialect: dialect, mode: mode, theme: theme
+            )
         }
         setHostSelection(resulting)
         return resulting

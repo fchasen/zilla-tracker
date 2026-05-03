@@ -13,6 +13,8 @@ public enum EditorAction: Sendable, Equatable {
     case codeBlock
     case link(url: String? = nil, label: String? = nil)
     case horizontalRule
+    case indent
+    case outdent
 
     public static let link: EditorAction = .link(url: nil, label: nil)
 }
@@ -32,6 +34,8 @@ extension EditorAction {
         case .codeBlock: return "codeBlock"
         case .link: return "link"
         case .horizontalRule: return "horizontalRule"
+        case .indent: return "indent"
+        case .outdent: return "outdent"
         }
     }
 }

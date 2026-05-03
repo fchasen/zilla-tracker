@@ -5,6 +5,9 @@ public extension NSAttributedString.Key {
     static let marginaliaListItem = NSAttributedString.Key("marginalia.listItem")
     static let marginaliaLink = NSAttributedString.Key("marginalia.link")
     static let marginaliaInline = NSAttributedString.Key("marginalia.inline")
+    /// Flag (Bool=true) on rendered list-marker characters (`•`, `1.`, etc.)
+    /// the compiler injects so they aren't part of the markdown round-trip.
+    static let marginaliaListMarker = NSAttributedString.Key("marginalia.listMarker")
 }
 
 public enum BlockTag: String, Sendable, Hashable, CaseIterable {

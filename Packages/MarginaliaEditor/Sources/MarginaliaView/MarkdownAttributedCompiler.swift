@@ -306,19 +306,41 @@ public final class MarkdownAttributedCompiler {
 
         let attributed = NSMutableAttributedString(string: content, attributes: paragraphAttrs)
 
-        // Task-list paragraphs render the bracket as a real checkbox glyph
-        // via an attachment. The marker text was stripped above; insert the
-        // attachment at the start of the paragraph.
-        if segment.tag == .taskListItem {
+        // Render list markers — bullet glyph, ordered number, or checkbox —
+        // at the start of the paragraph. The serializer skips runs flagged
+        // with `.marginaliaListMarker` (or `.attachment`), so these don't
+        // round-trip back into the markdown.
+        switch segment.tag {
+        case .taskListItem:
             let attachment = CheckboxAttachment()
             attachment.isChecked = segment.isChecked ?? false
             var attachmentAttrs = paragraphAttrs
             attachmentAttrs[.attachment] = attachment
-            let attachmentString = NSAttributedString(
-                string: "\u{FFFC}",
-                attributes: attachmentAttrs
+            attachmentAttrs[.marginaliaListMarker] = true
+            attributed.insert(
+                NSAttributedString(string: "\u{FFFC} ", attributes: attachmentAttrs),
+                at: 0
             )
-            attributed.insert(attachmentString, at: 0)
+        case .unorderedListItem:
+            let glyph = BulletAttachment.glyph(forLevel: segment.listLevel) + " "
+            var markerAttrs = paragraphAttrs
+            markerAttrs[.foregroundColor] = theme.markupColor
+            markerAttrs[.marginaliaListMarker] = true
+            attributed.insert(
+                NSAttributedString(string: glyph, attributes: markerAttrs),
+                at: 0
+            )
+        case .orderedListItem:
+            let n = segment.orderedIndex ?? 1
+            var markerAttrs = paragraphAttrs
+            markerAttrs[.foregroundColor] = theme.markupColor
+            markerAttrs[.marginaliaListMarker] = true
+            attributed.insert(
+                NSAttributedString(string: "\(n). ", attributes: markerAttrs),
+                at: 0
+            )
+        default:
+            break
         }
 
         // Layer style runs on top.

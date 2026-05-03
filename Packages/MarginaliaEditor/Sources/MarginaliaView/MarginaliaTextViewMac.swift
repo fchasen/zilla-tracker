@@ -246,6 +246,8 @@ final class MarginaliaNSTextView: NSTextView {
         case ("b", false): return .bold
         case ("i", false): return .italic
         case ("e", false): return .codeSpan
+        case ("]", false): return .indent
+        case ("[", false): return .outdent
         default: return nil
         }
     }

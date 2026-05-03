@@ -183,6 +183,42 @@ public enum Operations {
     }
 
     @discardableResult
+    public static func indent(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformIndent(md)
+        }
+    }
+
+    @discardableResult
+    public static func outdent(
+        in storage: NSTextStorage,
+        range: NSRange,
+        compiler: MarkdownAttributedCompiler,
+        serializer: AttributedMarkdownSerializer,
+        dialect: Dialect,
+        mode: Mode,
+        theme: MarginaliaTheme
+    ) -> NSRange {
+        mutateBlocks(
+            in: storage, range: range, compiler: compiler, serializer: serializer,
+            dialect: dialect, mode: mode, theme: theme
+        ) { md in
+            transformOutdent(md)
+        }
+    }
+
+    @discardableResult
     public static func insertHorizontalRule(
         in storage: NSTextStorage,
         range: NSRange,
@@ -309,6 +345,25 @@ public enum Operations {
         return lines.map { line -> String in
             line.isEmpty ? ">" : "> " + line
         }.joined(separator: "\n")
+    }
+
+    private static func transformIndent(_ md: String) -> String {
+        md.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                line.isEmpty ? String(line) : "  " + String(line)
+            }
+            .joined(separator: "\n")
+    }
+
+    private static func transformOutdent(_ md: String) -> String {
+        md.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                let s = String(line)
+                if s.hasPrefix("  ") { return String(s.dropFirst(2)) }
+                if s.hasPrefix("\t") { return String(s.dropFirst()) }
+                return s
+            }
+            .joined(separator: "\n")
     }
 
     private static func wrapInCodeFence(_ md: String) -> String {

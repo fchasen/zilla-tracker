@@ -149,6 +149,12 @@ public final class AttributedMarkdownSerializer {
         if attrs[.attachment] != nil {
             return ""
         }
+        // List markers (bullet glyph, ordered number) are rendered into
+        // storage so the user sees them; the block-level emit re-creates
+        // them in markdown form, so skip the visual run here.
+        if let flag = attrs[.marginaliaListMarker] as? Bool, flag {
+            return ""
+        }
 
         var content = text
         var prefix = ""

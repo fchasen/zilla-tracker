@@ -85,6 +85,8 @@ struct MarginaliaToolbar: View {
         case .codeBlock: return "curlybraces"
         case .link: return "link"
         case .horizontalRule: return "minus"
+        case .indent: return "increase.indent"
+        case .outdent: return "decrease.indent"
         }
     }
 
@@ -102,6 +104,8 @@ struct MarginaliaToolbar: View {
         case .codeBlock: return "Code block"
         case .link: return "Link (⌘K)"
         case .horizontalRule: return "Horizontal rule"
+        case .indent: return "Indent (⌘])"
+        case .outdent: return "Outdent (⌘[)"
         }
     }
 
