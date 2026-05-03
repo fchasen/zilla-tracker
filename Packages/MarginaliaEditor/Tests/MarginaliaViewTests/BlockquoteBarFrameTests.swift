@@ -11,21 +11,21 @@ import UIKit
 
 @Suite struct BlockquoteBarFrameTests {
 
-    @Test func blockquoteFragmentOriginIsAtContainerLeading() throws {
+    @Test func blockquoteFragmentIsOffsetByParagraphIndent() throws {
         let controller = try EditorController(initialMarkdown: "> hello\n")
         let lm = controller.layoutManager
         lm.ensureLayout(for: lm.documentRange)
 
-        var fragments: [NSTextLayoutFragment] = []
+        var first: NSTextLayoutFragment?
         lm.enumerateTextLayoutFragments(from: lm.documentRange.location, options: [.ensuresLayout]) { frag in
-            fragments.append(frag)
-            return true
+            first = frag
+            return false
         }
-        guard let first = fragments.first else {
-            Issue.record("no layout fragments")
-            return
-        }
-        let lineMinX = first.textLineFragments.first?.typographicBounds.minX ?? -1
-        print("layoutFragmentFrame=\(first.layoutFragmentFrame) lineMinX=\(lineMinX)")
+        let frame = try #require(first?.layoutFragmentFrame)
+        // TextKit 2 positions the fragment at the paragraph's leading edge,
+        // so origin.x is non-zero whenever firstLineHeadIndent or
+        // lineFragmentPadding is set. The blockquote bar painter relies on
+        // this to compensate, drawing at barInset - origin.x.
+        #expect(frame.origin.x > 0)
     }
 }
