@@ -213,6 +213,46 @@ import MarginaliaSyntax
         #expect(EditorController.taskToggleSourceLocation(from: url) == 42)
     }
 
+    // MARK: - undo through source
+
+    @Test func undoRevertsSourceEdit() throws {
+        let c = try EditorController(initialText: "hello")
+        c.applyEdit(replacing: NSRange(location: 5, length: 0), with: " world")
+        #expect(c.text == "hello world")
+        c.undoManager.undo()
+        #expect(c.text == "hello")
+    }
+
+    @Test func redoReappliesSourceEdit() throws {
+        let c = try EditorController(initialText: "hello")
+        c.applyEdit(replacing: NSRange(location: 5, length: 0), with: " world")
+        c.undoManager.undo()
+        c.undoManager.redo()
+        #expect(c.text == "hello world")
+    }
+
+    @Test func undoStackLayersMultipleEdits() throws {
+        let c = try EditorController(initialText: "")
+        c.applyEdit(replacing: NSRange(location: 0, length: 0), with: "a")
+        c.applyEdit(replacing: NSRange(location: 1, length: 0), with: "b")
+        c.applyEdit(replacing: NSRange(location: 2, length: 0), with: "c")
+        #expect(c.text == "abc")
+        c.undoManager.undo()
+        #expect(c.text == "ab")
+        c.undoManager.undo()
+        #expect(c.text == "a")
+        c.undoManager.undo()
+        #expect(c.text == "")
+    }
+
+    @Test func taskToggleIsUndoable() throws {
+        let c = try EditorController(initialText: "- [ ] task")
+        c.toggleTask(atSourceLocation: 2)
+        #expect(c.text == "- [x] task")
+        c.undoManager.undo()
+        #expect(c.text == "- [ ] task")
+    }
+
     @Test func imageRangeIsSubstitutedToObjectReplacement() throws {
         let c = try EditorController(initialText: "see ![alt](https://example.com/x.png) here\nbody")
         c.mode = .wysiwyg

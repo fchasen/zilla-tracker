@@ -68,6 +68,22 @@ public final class EditorController {
     /// view after replacing storage.
     public weak var hostTextView: AnyObject?
 
+    /// The undo manager all source mutations register inverses on. Vended to
+    /// the host text view via the `undoManager(for:)` delegate hook so Cmd-Z
+    /// goes through us rather than recording display-coord edits that don't
+    /// round-trip through the source/display mapping.
+    ///
+    /// `groupsByEvent` is off so each `mutateSource` call is its own undo
+    /// step — matches how typed characters are recorded in the source via
+    /// `applyDisplayEditToSource`, one per keystroke. Future enhancement:
+    /// coalesce consecutive single-char inserts into typing groups (the
+    /// default NSTextView behavior we lost when we disabled `allowsUndo`).
+    public let undoManager: UndoManager = {
+        let m = UndoManager()
+        m.groupsByEvent = false
+        return m
+    }()
+
     /// Hook the representable installs so storage edits invalidate the
     /// host view's intrinsic content size — that's how the editor grows
     /// with its content in `EditorSizing.fitsContent` mode.
@@ -116,9 +132,10 @@ public final class EditorController {
             // Only re-parse on character edits — attribute-only edits
             // (notably the focus-mode hide pass below) would otherwise drag
             // a full reparse along on every cursor move.
+            // `applyDisplayEditToSource` runs through `mutateSource`, which
+            // already calls `scheduleRefresh` — no need to schedule again.
             if self.textStorage.editedMask.contains(.editedCharacters) {
                 self.applyDisplayEditToSource()
-                self.scheduleRefresh()
             }
             self.intrinsicSizeInvalidator?()
         }
@@ -132,13 +149,11 @@ public final class EditorController {
         }
     }
 
-    /// Replace the entire text. Triggers a full re-parse + re-highlight.
+    /// Replace the entire text. Triggers a full re-parse + re-highlight and
+    /// registers an inverse on `undoManager` so Cmd-Z restores the prior text.
     public func setText(_ text: String) {
         let sourceRange = NSRange(location: 0, length: sourceStorage.length)
-        syncing = true
-        sourceStorage.replaceCharacters(in: sourceRange, with: text)
-        syncing = false
-        scheduleRefresh()
+        mutateSource(replacing: sourceRange, with: text)
     }
 
     public var text: String {
@@ -149,10 +164,35 @@ public final class EditorController {
     /// Apply a single edit in source coordinates. Caller is responsible for
     /// ensuring the edit's NSRange is valid against the current `text`.
     public func applyEdit(replacing range: NSRange, with replacement: String) {
+        mutateSource(replacing: range, with: replacement)
+    }
+
+    /// The single funnel for source mutations. Captures the inverse and
+    /// registers it on `undoManager` so undo replays the inverse, and so an
+    /// undo-during-an-undo (= redo) registers the *original* edit. The
+    /// `syncing` flag prevents the storage observer from re-mirroring the
+    /// just-applied edit back through the source/display sync.
+    @discardableResult
+    private func mutateSource(replacing range: NSRange, with replacement: String) -> NSRange {
+        let ns = sourceStorage.string as NSString
+        let safe = NSRange(
+            location: max(0, min(range.location, ns.length)),
+            length: max(0, min(range.length, ns.length - max(0, min(range.location, ns.length))))
+        )
+        let oldText = ns.substring(with: safe)
         syncing = true
-        sourceStorage.replaceCharacters(in: range, with: replacement)
+        sourceStorage.replaceCharacters(in: safe, with: replacement)
         syncing = false
+        let newRange = NSRange(location: safe.location, length: (replacement as NSString).length)
+        // `groupsByEvent` is off, so every registration has to live inside
+        // an explicit grouping pair — one mutation = one undo step.
+        undoManager.beginUndoGrouping()
+        undoManager.registerUndo(withTarget: self) { controller in
+            controller.mutateSource(replacing: newRange, with: oldText)
+        }
+        undoManager.endUndoGrouping()
         scheduleRefresh()
+        return newRange
     }
 
     /// Apply a toolbar-style edit: replace the entire text with `result.text`
@@ -534,13 +574,7 @@ public final class EditorController {
         } else {
             insertedText = ""
         }
-        let safeSourceRange = NSRange(
-            location: max(0, min(sourceDeleteRange.location, sourceStorage.length)),
-            length: max(0, min(sourceDeleteRange.length, sourceStorage.length - sourceDeleteRange.location))
-        )
-        syncing = true
-        sourceStorage.replaceCharacters(in: safeSourceRange, with: insertedText)
-        syncing = false
+        mutateSource(replacing: sourceDeleteRange, with: insertedText)
     }
 
 

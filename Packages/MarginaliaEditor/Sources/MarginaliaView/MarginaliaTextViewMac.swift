@@ -45,7 +45,11 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
         textView.isRichText = false
         textView.isEditable = true
         textView.isSelectable = true
-        textView.allowsUndo = true
+        // Auto-undo is off — `EditorController.undoManager` records source
+        // mutations and is vended via the `undoManager(for:)` delegate hook
+        // so Cmd-Z replays the inverse source edit (not a stale display edit
+        // recorded against an old mapping).
+        textView.allowsUndo = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -205,6 +209,10 @@ public struct MarginaliaTextViewMac: NSViewRepresentable {
             if parent.selection != sourceRange {
                 parent.selection = sourceRange
             }
+        }
+
+        public func undoManager(for view: NSTextView) -> UndoManager? {
+            parent.controller.undoManager
         }
 
         public func textView(_ textView: NSTextView,
