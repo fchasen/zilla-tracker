@@ -76,10 +76,57 @@ public final class EditorController {
         ) { [weak self] _ in
             guard let self, !self.applyingMarkdown else { return }
             if self.textStorage.editedMask.contains(.editedCharacters) {
+                self.demoteEmptyStyledLines()
                 self.resegment()
                 self.intrinsicSizeInvalidator?()
             }
         }
+    }
+
+    /// After a character edit, scan the edited paragraphs and reset any
+    /// non-paragraph block attribution on lines whose content text is now
+    /// empty. Without this, deleting all of a heading's text leaves the
+    /// heading block attribute on the trailing newline so the next
+    /// keystroke continues to render in heading style.
+    private func demoteEmptyStyledLines() {
+        let editedRange = textStorage.editedRange
+        let ns = textStorage.string as NSString
+        guard editedRange.length >= 0, editedRange.location >= 0 else { return }
+        let probeRange = NSRange(
+            location: max(0, min(editedRange.location, ns.length)),
+            length: 0
+        )
+        let lineRange = ns.paragraphRange(for: probeRange)
+        guard lineRange.length > 0 else { return }
+
+        // "Empty" means: the paragraph contains no characters other than the
+        // trailing newline (and any leading attachment glyph for a task-list
+        // item, which the user may have inserted intentionally).
+        let lineText = ns.substring(with: lineRange)
+        let stripped = lineText
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+        guard stripped.isEmpty else { return }
+
+        let probe = lineRange.location
+        guard probe < textStorage.length,
+              let block = textStorage.attribute(.marginaliaBlock, at: probe, effectiveRange: nil) as? BlockAttribute,
+              block.tag != .paragraph else { return }
+        // Avoid resetting list items if there's still a checkbox attachment
+        // — the user may want to preserve the empty task slot.
+        if textStorage.attribute(.marginaliaListItem, at: probe, effectiveRange: nil) != nil {
+            return
+        }
+
+        let plainAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        textStorage.beginEditing()
+        textStorage.addAttributes(plainAttrs, range: lineRange)
+        textStorage.endEditing()
     }
 
     deinit {
@@ -250,7 +297,7 @@ public final class EditorController {
     @discardableResult
     public func handleNewline() -> Bool {
         let cursor = currentSelection.location
-        guard let result = InsertNewline.handle(
+        if let result = InsertNewline.handle(
             in: textStorage,
             cursor: cursor,
             compiler: compiler,
@@ -258,8 +305,51 @@ public final class EditorController {
             dialect: dialect,
             mode: mode,
             theme: theme
-        ) else { return false }
-        setHostSelection(result)
+        ) {
+            setHostSelection(result)
+            return true
+        }
+        // Heading lines: a Return ends the heading. The new paragraph (and
+        // the trailing portion of the original line, if the user pressed
+        // Return mid-heading) drops back to plain paragraph styling so
+        // their typing isn't stuck in a giant bold font.
+        if isHeadingAt(location: cursor) {
+            return splitHeadingIntoParagraph(at: cursor)
+        }
+        return false
+    }
+
+    private func isHeadingAt(location: Int) -> Bool {
+        let total = textStorage.length
+        guard total > 0 else { return false }
+        let probe = max(0, min(location, total - 1))
+        guard let block = textStorage.attribute(
+            .marginaliaBlock, at: probe, effectiveRange: nil
+        ) as? BlockAttribute else { return false }
+        return block.tag == .heading
+    }
+
+    private func splitHeadingIntoParagraph(at cursor: Int) -> Bool {
+        let ns = textStorage.string as NSString
+        let lineRange = ns.paragraphRange(for: NSRange(location: cursor, length: 0))
+        let trailingLength = max(0, lineRange.location + lineRange.length - cursor)
+
+        let plainAttrs: [NSAttributedString.Key: Any] = [
+            .font: theme.bodyFont,
+            .foregroundColor: theme.foregroundColor,
+            .paragraphStyle: NSParagraphStyle(),
+            .marginaliaBlock: BlockAttribute(tag: .paragraph)
+        ]
+        let inserted = NSAttributedString(string: "\n", attributes: plainAttrs)
+
+        textStorage.beginEditing()
+        textStorage.replaceCharacters(in: NSRange(location: cursor, length: 0), with: inserted)
+        if trailingLength > 0 {
+            let trailingRange = NSRange(location: cursor + 1, length: trailingLength)
+            textStorage.addAttributes(plainAttrs, range: trailingRange)
+        }
+        textStorage.endEditing()
+        setHostSelection(NSRange(location: cursor + 1, length: 0))
         return true
     }
 
