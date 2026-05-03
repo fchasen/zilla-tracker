@@ -24,6 +24,8 @@ public struct FolioView: View {
     public let composerSlot: FolioComposerSlot?
     public let isExpandable: Bool
     public let roundsBottomCorners: Bool
+    public let editable: Bool
+    public let text: Binding<String>?
 
     @State private var isExpanded: Bool = true
     @State private var contextAbove: Int
@@ -65,7 +67,9 @@ public struct FolioView: View {
         composerSlot: FolioComposerSlot? = nil,
         isExpandable: Bool = true,
         contextLinesBelow: Int? = nil,
-        roundsBottomCorners: Bool = true
+        roundsBottomCorners: Bool = true,
+        editable: Bool = false,
+        text: Binding<String>? = nil
     ) {
         self.path = path
         self.content = content
@@ -85,6 +89,8 @@ public struct FolioView: View {
         self.composerSlot = composerSlot
         self.isExpandable = isExpandable
         self.roundsBottomCorners = roundsBottomCorners
+        self.editable = editable
+        self.text = text
         self._contextAbove = State(initialValue: contextLines)
         self._contextBelow = State(initialValue: contextLinesBelow ?? contextLines)
         self._isExpanded = State(initialValue: !showsHeader || true)
@@ -268,10 +274,35 @@ public struct FolioView: View {
             } else {
                 foldedDiffBody(diff: diff, mode: mode)
             }
-        case let (.code(code), .code):
-            codeBody(code: code)
+        case let (.code(code), .code(_, startLine)):
+            if editable {
+                editableCodeBody(startLine: startLine)
+            } else {
+                codeBody(code: code)
+            }
         default:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func editableCodeBody(startLine: Int) -> some View {
+        if let text {
+            CodeBlockView(
+                text: text,
+                language: CodeLanguageRegistry.detect(path: path),
+                startLine: startLine,
+                theme: theme,
+                showsLineNumbers: true
+            )
+        } else {
+            #if DEBUG
+            Color.clear.onAppear {
+                assertionFailure("FolioView(editable: true) requires text: Binding<String>")
+            }
+            #else
+            EmptyView()
+            #endif
         }
     }
 

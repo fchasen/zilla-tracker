@@ -2,9 +2,11 @@ import Foundation
 #if canImport(AppKit) && os(macOS)
 import AppKit
 public typealias PlatformColor = NSColor
+public typealias PlatformFont = NSFont
 #elseif canImport(UIKit)
 import UIKit
 public typealias PlatformColor = UIColor
+public typealias PlatformFont = UIFont
 #endif
 
 public struct HighlightTheme: Sendable {
