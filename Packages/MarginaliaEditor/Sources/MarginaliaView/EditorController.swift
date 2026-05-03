@@ -302,7 +302,9 @@ public final class EditorController {
         var hi = 0
         for step in transaction.steps {
             switch step {
-            case .replaceText(let range, _), .setSpec(let range, _):
+            case .replaceText(let range, _),
+                 .setSpec(let range, _),
+                 .toggleInlineMark(let range, _):
                 lo = min(lo, range.location)
                 hi = max(hi, range.location + range.length)
             }

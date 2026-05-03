@@ -29,9 +29,17 @@ public struct StepEnvironment {
     }
 }
 
+public enum InlineMark: Equatable, Sendable {
+    case bold
+    case italic
+    case strikethrough
+    case codeSpan
+}
+
 public enum Step {
     case replaceText(range: NSRange, with: NSAttributedString)
     case setSpec(lineRange: NSRange, BlockSpec)
+    case toggleInlineMark(range: NSRange, InlineMark)
 
     public func apply(to storage: NSTextStorage, env: StepEnvironment) -> AppliedStep {
         switch self {
@@ -39,7 +47,34 @@ public enum Step {
             return applyReplaceText(in: storage, range: range, attributed: attributed)
         case .setSpec(let lineRange, let spec):
             return applySetSpec(in: storage, lineRange: lineRange, spec: spec, env: env)
+        case .toggleInlineMark(let range, let mark):
+            return applyToggleInlineMark(in: storage, range: range, mark: mark, env: env)
         }
+    }
+
+    private func applyToggleInlineMark(
+        in storage: NSTextStorage,
+        range: NSRange,
+        mark: InlineMark,
+        env: StepEnvironment
+    ) -> AppliedStep {
+        let safe = clamp(range, in: storage.length)
+        let prior = storage.attributedSubstring(from: safe)
+        let resulting: NSRange
+        switch mark {
+        case .bold:
+            resulting = Operations.toggleBold(in: storage, range: range, theme: env.theme)
+        case .italic:
+            resulting = Operations.toggleItalic(in: storage, range: range, theme: env.theme)
+        case .strikethrough:
+            resulting = Operations.toggleStrikethrough(in: storage, range: range, theme: env.theme)
+        case .codeSpan:
+            resulting = Operations.toggleCodeSpan(in: storage, range: range, theme: env.theme)
+        }
+        let after = storage.attributedSubstring(from: clamp(resulting, in: storage.length))
+        let inverse = Step.replaceText(range: clamp(resulting, in: storage.length), with: prior)
+        _ = after
+        return AppliedStep(inverse: inverse, mappedRange: resulting, affectedLineRange: resulting)
     }
 
     private func applyReplaceText(

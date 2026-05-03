@@ -150,6 +150,27 @@ Inline widgets (bullets, checkboxes, ordered marker) **stay** as NSTextAttachmen
 - Public `EditorController.apply(_ transaction:)`.
 - Public `Step` constructors. `Operations.toggleBold(...)` etc. become `Step.toggleInlineMark`.
 
+## Status
+
+Implemented in commits fbcbcaf, eb05903, d7731e4, 2a2d362, e81d771,
+and the current HEAD. 177 tests pass; Zilla app target builds.
+
+### Public API for embedders
+
+```swift
+let controller = try EditorController(initialMarkdown: "...")
+controller.onDiagnostic = { diag in /* surface to telemetry */ }
+
+controller.apply(Transaction(steps: [
+    .setSpec(lineRange: range, BlockSpec(kind: .heading(level: 2))),
+    .toggleInlineMark(range: selection, .bold)
+]))
+```
+
+Embedders that need custom decorations (search highlights, lint marks)
+implement `DecorationProvider` and assign it to
+`controller.layoutDelegate.decorationProvider`.
+
 ## Files
 
 **New:**
