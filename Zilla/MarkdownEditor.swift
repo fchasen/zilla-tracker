@@ -1,35 +1,72 @@
 import SwiftUI
 import BugzillaKit
-import MarginaliaEditor
+import SwiftProse
 import PhabricatorKit
 import SearchfoxKit
+import FolioCodeView
+import FolioHighlight
 #if canImport(UIKit)
 import UIKit
 #endif
+
+enum MarkdownEditorMode: String, CaseIterable {
+    case rich
+    case source
+}
 
 struct MarkdownEditor: View {
     @Binding var text: String
     var minHeight: CGFloat = 96
     var isDisabled: Bool = false
-    var dialect: Dialect = .commonMark
     var bordered: Bool = true
     var showToolbar: Bool = true
     var autoFocus: Bool = false
 
     @Environment(\.zillaFontScale) private var fontScale
+    @Environment(\.colorScheme) private var colorScheme
+
+    @AppStorage("zilla.markdown.mode") private var mode: MarkdownEditorMode = .rich
 
     @State private var controller: EditorController?
     @State private var showingLinkPicker = false
     @State private var showingSearchfoxPicker = false
     @State private var showingLinkInsert = false
     @State private var didAutoFocus = false
+    @State private var pendingInsertionSelection: NSRange?
 
     var body: some View {
-        Marginalia(text: $text)
-            .dialect(dialect)
+        Group {
+            switch mode {
+            case .rich:
+                richEditor
+            case .source:
+                sourceEditor
+            }
+        }
+        .disabled(isDisabled)
+        .sheet(isPresented: $showingLinkPicker) {
+            QuickSearchSheet(
+                onPickBug: { bugID in insertBugLink(bugID) },
+                onPickUser: { user in insertUserMention(user) }
+            )
+        }
+        .sheet(isPresented: $showingSearchfoxPicker) {
+            SearchfoxPickerSheet { hit, symbol in
+                insertSearchfoxLink(hit, symbol: symbol)
+            }
+        }
+        .sheet(isPresented: $showingLinkInsert) {
+            LinkInsertSheet { label, url in
+                insertMarkdownLink(label: label, url: url)
+            }
+        }
+    }
+
+    private var richEditor: some View {
+        SwiftProseEditor(text: $text)
             .theme(.default(fontScale: fontScale))
-            .configuration(Marginalia.Configuration(toolbar: showToolbar ? toolbar : [], minHeight: minHeight))
-            .onMarginaliaControllerReady { c in
+            .configuration(SwiftProseEditor.Configuration(toolbar: showToolbar ? richToolbar : [], minHeight: minHeight))
+            .onProseControllerReady { c in
                 controller = c
                 if autoFocus { focusHostTextView() }
             }
@@ -40,34 +77,80 @@ struct MarkdownEditor: View {
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 }
             }
-            .disabled(isDisabled)
-            .sheet(isPresented: $showingLinkPicker) {
-                QuickSearchSheet(
-                    onPickBug: { bugID in insertBugLink(bugID) },
-                    onPickUser: { user in insertUserMention(user) }
-                )
-            }
-            .sheet(isPresented: $showingSearchfoxPicker) {
-                SearchfoxPickerSheet { hit, symbol in
-                    insertSearchfoxLink(hit, symbol: symbol)
-                }
-            }
-            .sheet(isPresented: $showingLinkInsert) {
-                LinkInsertSheet { label, url in
-                    insertMarkdownLink(label: label, url: url)
-                }
-            }
     }
 
-    private var toolbar: [Marginalia.ToolbarItem] {
-        let leading: [Marginalia.ToolbarItem] = [
+    private var sourceEditor: some View {
+        VStack(spacing: 0) {
+            if showToolbar {
+                HStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        ControlGroup {
+                            Button {
+                                mode = .rich
+                            } label: {
+                                Image(systemName: "eye")
+                                    .frame(width: toolbarButtonWidth, height: toolbarButtonHeight)
+                            }
+                            .help("Switch to rich editor")
+                        }
+                        .fixedSize()
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                }
+                .padding(6)
+            }
+            CodeEditorRepresentable(
+                text: $text,
+                language: .markdown,
+                theme: colorScheme == .dark ? .dark : .light,
+                font: sourceFont,
+                fitsContent: true,
+                minHeight: minHeight
+            )
+        }
+        .overlay {
+            if bordered {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+            }
+        }
+    }
+
+    private var toolbarButtonWidth: CGFloat {
+        #if os(iOS)
+        return 36
+        #else
+        return 28
+        #endif
+    }
+
+    private var toolbarButtonHeight: CGFloat {
+        #if os(iOS)
+        return 32
+        #else
+        return 24
+        #endif
+    }
+
+    private var sourceFont: PlatformFont {
+        let size = PlatformFont.systemFontSize * max(fontScale, 0.1)
+        return PlatformFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    private var richToolbar: [SwiftProseEditor.ToolbarItem] {
+        let leading: [SwiftProseEditor.ToolbarItem] = [
             .custom(
                 id: "searchfoxPicker",
                 label: "Searchfox",
                 systemImage: "magnifyingglass",
                 shortcut: KeyboardShortcut("f", modifiers: .command),
                 topLevel: true,
-                action: { showingSearchfoxPicker = true }
+                action: {
+                    capturePendingSelection()
+                    showingSearchfoxPicker = true
+                }
             ),
             .custom(
                 id: "bugPicker",
@@ -75,32 +158,57 @@ struct MarkdownEditor: View {
                 systemImage: "ant",
                 shortcut: KeyboardShortcut("k", modifiers: .command),
                 topLevel: true,
-                action: { showingLinkPicker = true }
+                action: {
+                    capturePendingSelection()
+                    showingLinkPicker = true
+                }
             ),
             .divider,
         ]
 
-        let linkInsert: Marginalia.ToolbarItem = .custom(
+        let linkInsert: SwiftProseEditor.ToolbarItem = .custom(
             id: "linkInsert",
             label: "Insert Link",
             systemImage: "link",
-            action: { showingLinkInsert = true }
+            action: {
+                capturePendingSelection()
+                showingLinkInsert = true
+            }
         )
 
-        return leading + Marginalia.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
+        let modeToggle: SwiftProseEditor.ToolbarItem = .custom(
+            id: "modeToggle",
+            label: "Source",
+            systemImage: "chevron.left.forwardslash.chevron.right",
+            topLevel: true,
+            action: {
+                if let md = controller?.markdown() { text = md }
+                mode = .source
+            }
+        )
+
+        return leading
+            + SwiftProseEditor.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
+            + [.spacer, modeToggle]
     }
 
     private func insertBugLink(_ bugID: Bug.ID) {
         let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)"
+        restorePendingSelection()
         controller?.insertLink(label: "bug \(bugID)", url: url)
+        pushMarkdownToBinding()
     }
 
     private func insertMarkdownLink(label: String, url: String) {
+        restorePendingSelection()
         controller?.insertLink(label: label, url: url)
+        pushMarkdownToBinding()
     }
 
     private func insertUserMention(_ user: User) {
+        restorePendingSelection()
         controller?.insert(text: ":\(mentionHandle(for: user))")
+        pushMarkdownToBinding()
     }
 
     private func mentionHandle(for user: User) -> String {
@@ -134,6 +242,23 @@ struct MarkdownEditor: View {
         } else {
             label = hit.path
         }
+        restorePendingSelection()
         controller?.insertLink(label: label, url: hit.url)
+        pushMarkdownToBinding()
+    }
+
+    private func capturePendingSelection() {
+        pendingInsertionSelection = controller?.currentSelection
+    }
+
+    private func restorePendingSelection() {
+        guard let selection = pendingInsertionSelection else { return }
+        controller?.setSelection(selection)
+        pendingInsertionSelection = nil
+    }
+
+    private func pushMarkdownToBinding() {
+        guard let md = controller?.markdown(), md != text else { return }
+        text = md
     }
 }
