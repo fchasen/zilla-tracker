@@ -1,5 +1,4 @@
 import SwiftUI
-import MarginaliaEditor
 import PhabricatorKit
 
 struct RevisionActionSheetState: Identifiable, Equatable {
@@ -21,8 +20,7 @@ struct RevisionActionSheet: View {
                 Section {
                     MarkdownEditor(
                         text: $commentBody,
-                        isDisabled: isSubmitting,
-                        dialect: .remarkup
+                        isDisabled: isSubmitting
                     )
                     .frame(minHeight: 140)
                 } header: {

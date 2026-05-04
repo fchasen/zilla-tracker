@@ -1,6 +1,5 @@
 import SwiftUI
 import PhabricatorKit
-import MarginaliaEditor
 
 struct InlineThreadView: View {
     let thread: [InlineComment]

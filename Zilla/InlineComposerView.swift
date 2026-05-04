@@ -1,7 +1,5 @@
 import SwiftUI
 import PhabricatorKit
-import MarginaliaEditor
-import MarginaliaView
 
 struct InlineComposerView: View {
     @Binding var text: String
@@ -50,7 +48,6 @@ struct InlineComposerView: View {
                 text: $text,
                 minHeight: 36,
                 isDisabled: isPosting,
-                dialect: .remarkup,
                 bordered: bordered,
                 showToolbar: showToolbar
             )

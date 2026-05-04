@@ -2,7 +2,6 @@
 import SwiftUI
 import SwiftData
 import PhabricatorKit
-import MarginaliaEditor
 
 struct InlineComposerSheet: View {
     let path: String
@@ -73,7 +72,6 @@ struct InlineComposerSheet: View {
                     text: $text,
                     minHeight: 240,
                     isDisabled: isPosting,
-                    dialect: .remarkup,
                     bordered: false,
                     autoFocus: true
                 )

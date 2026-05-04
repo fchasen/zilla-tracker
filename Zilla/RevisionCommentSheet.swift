@@ -1,7 +1,6 @@
 #if os(iOS)
 import SwiftUI
 import PhabricatorKit
-import MarginaliaEditor
 
 struct RevisionCommentSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -35,7 +34,6 @@ struct RevisionCommentSheet: View {
                     text: draftBinding,
                     minHeight: 240,
                     isDisabled: isPosting,
-                    dialect: .remarkup,
                     bordered: false,
                     autoFocus: true
                 )
