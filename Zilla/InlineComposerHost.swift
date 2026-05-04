@@ -81,7 +81,7 @@ struct InlineComposerHost: View {
         if let buffer = modelContext.loadInlineDraft(key) {
             text = buffer.content
         } else if let initialContent {
-            text = initialContent
+            text = Remarkup.toCommonMark(initialContent)
         } else {
             text = ""
         }
