@@ -473,11 +473,13 @@ private struct BugHeader: View {
 
                 StatusPill(bug: bug)
 
-                if let priority = displayPriority {
+                if bug.type?.lowercased() == "defect" {
+                    MetaPill(
+                        label: displaySeverity ?? "S?",
+                        color: displaySeverity == nil ? .secondary : severityColor(bug.severity)
+                    )
+                } else if let priority = displayPriority {
                     MetaPill(label: priority, color: priorityColor(bug.priority))
-                }
-                if let severity = displaySeverity {
-                    MetaPill(label: severity, color: severityColor(bug.severity))
                 }
 
                 if didCopy {
