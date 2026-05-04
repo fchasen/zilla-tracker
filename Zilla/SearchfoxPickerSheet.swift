@@ -42,7 +42,7 @@ struct SearchfoxPickerSheet: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 600, minHeight: 520)
+        .frame(width: 640, height: 520)
         #endif
         .task(id: query) { await debounce() }
         .task(id: debouncedQuery) { await runSearch() }

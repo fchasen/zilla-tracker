@@ -237,10 +237,8 @@ struct MarkdownEditor: View {
         let label: String
         if let symbol, !symbol.isEmpty {
             label = symbol
-        } else if hit.lineNumber > 0 {
-            label = "\(hit.path)#L\(hit.lineNumber)"
         } else {
-            label = hit.path
+            label = (hit.path as NSString).lastPathComponent
         }
         restorePendingSelection()
         controller?.insertLink(label: label, url: hit.url)
