@@ -19,14 +19,36 @@ func bugzillaBugID(from url: URL) -> Int? {
     return nil
 }
 
+private struct OpenExternalURLKey: EnvironmentKey {
+    static let defaultValue: OpenURLAction = OpenURLAction { _ in .systemAction }
+}
+
+extension EnvironmentValues {
+    var openExternalURL: OpenURLAction {
+        get { self[OpenExternalURLKey.self] }
+        set { self[OpenExternalURLKey.self] = newValue }
+    }
+}
+
+private struct MozillaLinkInterceptor: ViewModifier {
+    let workspace: Workspace
+    @Environment(\.openURL) private var outerOpenURL
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.openExternalURL, outerOpenURL)
+            .environment(\.openURL, OpenURLAction { url in
+                if let id = bugzillaBugID(from: url) {
+                    workspace.navigate(to: .bug(id))
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+}
+
 extension View {
     func interceptingMozillaLinks(workspace: Workspace) -> some View {
-        environment(\.openURL, OpenURLAction { url in
-            if let id = bugzillaBugID(from: url) {
-                workspace.navigate(to: .bug(id))
-                return .handled
-            }
-            return .systemAction
-        })
+        modifier(MozillaLinkInterceptor(workspace: workspace))
     }
 }

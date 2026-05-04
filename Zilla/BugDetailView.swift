@@ -430,7 +430,7 @@ private func attachmentURL(_ attachment: BugzillaKit.Attachment) -> URL? {
 private struct BugHeader: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
-    @Environment(\.openURL) private var openURL
+    @Environment(\.openExternalURL) private var openExternalURL
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
     @State private var didCopy = false
@@ -456,7 +456,7 @@ private struct BugHeader: View {
 
                 if let url = bmoURL {
                     Button {
-                        openURL(url)
+                        openExternalURL(url)
                     } label: {
                         Image(systemName: "arrow.up.forward.square")
                             .foregroundStyle(.secondary)
