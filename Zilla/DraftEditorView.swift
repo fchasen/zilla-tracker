@@ -155,35 +155,14 @@ struct DraftEditorView: View {
 
         do {
             let newID = try await auth.client.createBug(payload)
-            let destination = postSubmitDestination(for: draft)
-            let metaToOpen = draft.blocks.first
             modelContext.delete(draft)
             workspace.selectedDraftID = nil
-            workspace.sidebarSelection = destination
-            if metaToOpen == nil {
-                workspace.selectedBugID = newID
-            }
+            workspace.sidebarSelection = .smart(.reported)
+            workspace.selectedBugID = newID
             workspace.bugListRefreshToken = UUID()
         } catch {
             submitError = error.localizedDescription
         }
-    }
-
-    private func postSubmitDestination(for draft: BugDraft) -> SidebarSelection {
-        if let metaID = draft.blocks.first {
-            return .metaBug(metaID)
-        }
-        if let ref = draft.componentRef, isFollowedComponent(ref) {
-            return .component(ref)
-        }
-        return .smart(.myBugs)
-    }
-
-    private func isFollowedComponent(_ ref: ComponentRef) -> Bool {
-        let descriptor = FetchDescriptor<FollowedComponent>(
-            predicate: #Predicate { $0.product == ref.product && $0.componentName == ref.component }
-        )
-        return ((try? modelContext.fetch(descriptor)) ?? []).isEmpty == false
     }
 
     private func discard(_ draft: BugDraft) {
