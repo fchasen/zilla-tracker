@@ -6,20 +6,42 @@ import AppKit
 import UIKit
 #endif
 
-struct CodeEditorRepresentable: View {
+public struct CodeEditorRepresentable: View {
     @Binding var text: String
     let language: CodeLanguage
     let theme: HighlightTheme
     let font: PlatformFont
+    let fitsContent: Bool
+    let minHeight: CGFloat
     let onLayoutManagerReady: (NSTextLayoutManager) -> Void
 
-    var body: some View {
+    public init(
+        text: Binding<String>,
+        language: CodeLanguage,
+        theme: HighlightTheme,
+        font: PlatformFont,
+        fitsContent: Bool = false,
+        minHeight: CGFloat = 0,
+        onLayoutManagerReady: @escaping (NSTextLayoutManager) -> Void = { _ in }
+    ) {
+        self._text = text
+        self.language = language
+        self.theme = theme
+        self.font = font
+        self.fitsContent = fitsContent
+        self.minHeight = minHeight
+        self.onLayoutManagerReady = onLayoutManagerReady
+    }
+
+    public var body: some View {
         #if os(macOS)
         MacRepresentable(
             text: $text,
             language: language,
             theme: theme,
             font: font,
+            fitsContent: fitsContent,
+            minHeight: minHeight,
             onLayoutManagerReady: onLayoutManagerReady
         )
         #elseif canImport(UIKit)
@@ -28,6 +50,8 @@ struct CodeEditorRepresentable: View {
             language: language,
             theme: theme,
             font: font,
+            fitsContent: fitsContent,
+            minHeight: minHeight,
             onLayoutManagerReady: onLayoutManagerReady
         )
         #else
@@ -43,6 +67,8 @@ private struct MacRepresentable: NSViewRepresentable {
     let language: CodeLanguage
     let theme: HighlightTheme
     let font: PlatformFont
+    let fitsContent: Bool
+    let minHeight: CGFloat
     let onLayoutManagerReady: (NSTextLayoutManager) -> Void
 
     func makeCoordinator() -> EditorCoordinator {
@@ -50,7 +76,7 @@ private struct MacRepresentable: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let textView = NSTextView(usingTextLayoutManager: true)
+        let textView = IntrinsicCodeNSTextView(usingTextLayoutManager: true)
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.isEditable = true
@@ -74,6 +100,8 @@ private struct MacRepresentable: NSViewRepresentable {
         )
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.fitsContent = fitsContent
+        textView.minimumIntrinsicHeight = minHeight
 
         if let storage = textView.textContentStorage?.textStorage {
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
@@ -93,6 +121,9 @@ private struct MacRepresentable: NSViewRepresentable {
                 text.wrappedValue = newText
             }
         }
+        context.coordinator.invalidateIntrinsic = { [weak textView] in
+            textView?.invalidateIntrinsicContentSize()
+        }
         if let layoutManager = textView.textLayoutManager {
             onLayoutManagerReady(layoutManager)
         }
@@ -100,21 +131,70 @@ private struct MacRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let textView = nsView as? NSTextView else { return }
+        guard let textView = nsView as? IntrinsicCodeNSTextView else { return }
         context.coordinator.theme = theme
         context.coordinator.font = font
         context.coordinator.language = language
         if textView.font != font {
             textView.font = font
         }
+        if textView.fitsContent != fitsContent {
+            textView.fitsContent = fitsContent
+        }
+        if textView.minimumIntrinsicHeight != minHeight {
+            textView.minimumIntrinsicHeight = minHeight
+        }
         context.coordinator.propagateText = { [text = self.$text] newText in
             if text.wrappedValue != newText {
                 text.wrappedValue = newText
             }
         }
+        context.coordinator.invalidateIntrinsic = { [weak textView] in
+            textView?.invalidateIntrinsicContentSize()
+        }
         if text != context.coordinator.lastAppliedText {
             context.coordinator.applyExternalText(text, to: textView)
         }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        guard fitsContent, let textView = nsView as? NSTextView else { return nil }
+        if let proposedWidth = proposal.width, proposedWidth > 0 {
+            let inset = textView.textContainerInset
+            let containerWidth = max(0, proposedWidth - inset.width * 2)
+            textView.textContainer?.size = NSSize(
+                width: containerWidth,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+        let intrinsic = textView.intrinsicContentSize
+        let width = proposal.width ?? intrinsic.width
+        return CGSize(width: width, height: max(intrinsic.height, minHeight))
+    }
+}
+
+final class IntrinsicCodeNSTextView: NSTextView {
+    var fitsContent: Bool = false {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+    var minimumIntrinsicHeight: CGFloat = 0 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard fitsContent else { return super.intrinsicContentSize }
+        guard let layoutManager = textLayoutManager else { return super.intrinsicContentSize }
+        layoutManager.ensureLayout(for: layoutManager.documentRange)
+        let used = layoutManager.usageBoundsForTextContainer
+        let inset = textContainerInset
+        let contentHeight = used.height + inset.height * 2
+        let floor = max(minimumIntrinsicHeight, font?.boundingRectForFont.height ?? 16)
+        return NSSize(width: NSView.noIntrinsicMetric, height: max(contentHeight, floor))
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        if fitsContent { invalidateIntrinsicContentSize() }
     }
 }
 
@@ -134,6 +214,8 @@ private struct IOSRepresentable: UIViewRepresentable {
     let language: CodeLanguage
     let theme: HighlightTheme
     let font: PlatformFont
+    let fitsContent: Bool
+    let minHeight: CGFloat
     let onLayoutManagerReady: (NSTextLayoutManager) -> Void
 
     func makeCoordinator() -> EditorCoordinator {
@@ -153,6 +235,7 @@ private struct IOSRepresentable: UIViewRepresentable {
         textView.spellCheckingType = .no
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
         textView.textContainer.widthTracksTextView = true
+        textView.isScrollEnabled = !fitsContent
 
         if let storage = uiTextStorage(textView) {
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
@@ -172,6 +255,9 @@ private struct IOSRepresentable: UIViewRepresentable {
                 text.wrappedValue = newText
             }
         }
+        context.coordinator.invalidateIntrinsic = { [weak textView] in
+            textView?.invalidateIntrinsicContentSize()
+        }
         if let layoutManager = textView.textLayoutManager {
             onLayoutManagerReady(layoutManager)
         }
@@ -185,14 +271,35 @@ private struct IOSRepresentable: UIViewRepresentable {
         if textView.font != font {
             textView.font = font
         }
+        if textView.isScrollEnabled == fitsContent {
+            textView.isScrollEnabled = !fitsContent
+        }
         context.coordinator.propagateText = { [text = self.$text] newText in
             if text.wrappedValue != newText {
                 text.wrappedValue = newText
             }
         }
+        context.coordinator.invalidateIntrinsic = { [weak textView] in
+            textView?.invalidateIntrinsicContentSize()
+        }
         if text != context.coordinator.lastAppliedText {
             context.coordinator.applyExternalText(text, to: textView)
         }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        guard fitsContent else { return nil }
+        if let proposedWidth = proposal.width, proposedWidth > 0 {
+            let inset = uiView.textContainerInset
+            let containerWidth = max(0, proposedWidth - inset.left - inset.right)
+            uiView.textContainer.size = CGSize(
+                width: containerWidth,
+                height: .greatestFiniteMagnitude
+            )
+        }
+        let intrinsic = uiView.intrinsicContentSize
+        let width = proposal.width ?? intrinsic.width
+        return CGSize(width: width, height: max(intrinsic.height, minHeight))
     }
 }
 #endif
@@ -209,6 +316,7 @@ final class EditorCoordinator: NSObject {
     }
     var lastAppliedText: String = ""
     var propagateText: (String) -> Void = { _ in }
+    var invalidateIntrinsic: () -> Void = {}
 
     private var isApplyingExternal: Bool = false
     private weak var observedStorage: NSTextStorage?
@@ -274,6 +382,7 @@ final class EditorCoordinator: NSObject {
         highlighter.applyEditAttributes(to: storage, edit: edit, font: font)
         lastAppliedText = newText
         propagateText(newText)
+        invalidateIntrinsic()
     }
 
     #if os(macOS)
@@ -300,6 +409,7 @@ final class EditorCoordinator: NSObject {
             font: font
         )
         lastAppliedText = text
+        invalidateIntrinsic()
     }
 }
 
