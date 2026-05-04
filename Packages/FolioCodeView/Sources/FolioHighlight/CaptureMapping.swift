@@ -20,6 +20,14 @@ enum CaptureMapping {
         case "operator": return theme.punctuation
         case "property": return theme.variable
         case "label": return theme.attribute
+        case "text":
+            switch captureName {
+            case "text.title": return theme.keyword
+            case "text.literal": return theme.string
+            case "text.uri": return theme.attribute
+            case "text.reference": return theme.function
+            default: return theme.attribute
+            }
         default: return nil
         }
     }
