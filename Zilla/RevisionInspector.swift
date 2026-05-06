@@ -203,6 +203,9 @@ struct RevisionInspector: View {
             Text(project.name)
                 .scaledFont(.caption, weight: .medium)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 160, alignment: .leading)
+                .help(project.name)
             if phab.isSignedIn {
                 Button {
                     Task { await removeTag(project) }

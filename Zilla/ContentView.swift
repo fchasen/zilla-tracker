@@ -1582,7 +1582,10 @@ private struct DraftMetadata: View {
 struct Sidebar: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AuthStore.self) private var auth
+    @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(Workspace.self) private var workspace
+    @Environment(ResourceCache.self) private var cache
+    @Environment(ViewedRevisionsStore.self) private var viewedRevisions
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
@@ -1627,8 +1630,23 @@ struct Sidebar: View {
 
                 Section(isExpanded: $reviewExpanded) {
                     ForEach(ReviewList.allCases) { item in
-                        Label(item.title, systemImage: item.systemImage)
+                        if item == .review {
+                            Label {
+                                HStack {
+                                    Text(item.title)
+                                    Spacer()
+                                    if unseenReviewCount > 0 {
+                                        UnseenReviewBadge(count: unseenReviewCount)
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: item.systemImage)
+                            }
                             .tag(SidebarSelection.review(item))
+                        } else {
+                            Label(item.title, systemImage: item.systemImage)
+                                .tag(SidebarSelection.review(item))
+                        }
                     }
                 } header: {
                     Text("Review")
@@ -1677,6 +1695,54 @@ struct Sidebar: View {
         .sheet(isPresented: $showAddComponent) {
             ComponentPickerSheet()
         }
+        .task(id: reviewBadgeKey) {
+            await loadReviewBadge(force: false)
+        }
+        .task(id: workspace.revisionListRefreshToken) {
+            await loadReviewBadge(force: true)
+        }
+        #if os(macOS)
+        .onChange(of: unseenReviewCount, initial: true) { _, new in
+            NSApplication.shared.dockTile.badgeLabel = new > 0 ? "\(new)" : nil
+        }
+        #endif
+    }
+
+    private var reviewQuery: RevisionQuery? {
+        guard let phid = phab.currentUser?.phid else { return nil }
+        return .reviewing(responsiblePHID: phid, statuses: nil)
+    }
+
+    private struct ReviewBadgeKey: Hashable {
+        let signedIn: Bool
+        let phid: String?
+    }
+
+    private var reviewBadgeKey: ReviewBadgeKey {
+        ReviewBadgeKey(
+            signedIn: phab.isSignedIn,
+            phid: phab.currentUser?.phid
+        )
+    }
+
+    private var unseenReviewCount: Int {
+        guard let query = reviewQuery,
+              let result: RevisionSearchResult = cache.get(.revisionSearch(query)) else {
+            return 0
+        }
+        let viewerPHID = phab.currentUser?.phid
+        var count = 0
+        for revision in result.data {
+            if revision.fields.authorPHID == viewerPHID { continue }
+            if viewedRevisions.contains(revision.id) { continue }
+            count += 1
+        }
+        return count
+    }
+
+    private func loadReviewBadge(force: Bool) async {
+        guard phab.isSignedIn, let query = reviewQuery else { return }
+        _ = try? await cache.revisionSearch(query, force: force, using: phab.client)
     }
 
     private func moveComponents(from source: IndexSet, to destination: Int) {
@@ -1972,6 +2038,20 @@ private struct TodoSidebarRow: View {
                 }
                 return inserted
             } isTargeted: { isDropTarget = $0 }
+    }
+}
+
+private struct UnseenReviewBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count)")
+            .font(.caption2.monospacedDigit().weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Color.blue, in: Capsule())
+            .accessibilityLabel("\(count) unseen revisions waiting for review")
     }
 }
 
