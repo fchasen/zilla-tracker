@@ -53,6 +53,8 @@ struct FolioRenderArtifact: Sendable, Equatable {
 }
 
 enum FolioRenderArtifactBuilder {
+    static let highlightUTF16Limit = 250_000
+
     static func skeleton(
         content: FolioContent,
         marks: [FolioCommentMark],
@@ -155,11 +157,19 @@ enum FolioRenderArtifactBuilder {
         let highlighter = FolioHighlighter(theme: theme)
         switch content {
         case let .diff(hunk, _, _):
+            guard diffTextLength(hunk.lines) <= highlightUTF16Limit else { return [] }
             let corpus = hunk.lines.map(\.text).joined(separator: "\n")
             return highlighter.runs(for: corpus, language: language)
         case let .code(text, _):
+            guard (text as NSString).length <= highlightUTF16Limit else { return [] }
             return highlighter.runs(for: text, language: language)
         }
+    }
+
+    private static func diffTextLength(_ lines: [DiffLine]) -> Int {
+        guard !lines.isEmpty else { return 0 }
+        let textLength = lines.reduce(0) { $0 + ($1.text as NSString).length }
+        return textLength + lines.count - 1
     }
 
     private static func makeLineRanges(for lines: [DiffLine]) -> [NSRange] {

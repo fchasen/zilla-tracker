@@ -77,6 +77,52 @@ final class FolioRenderArtifactTests: XCTestCase {
         XCTAssertTrue(diff.runsByLine.allSatisfy(\.isEmpty))
     }
 
+    func testLargeCodeArtifactSkipsHighlightRuns() {
+        let text = String(repeating: "let value = 1;\n", count: FolioRenderArtifactBuilder.highlightUTF16Limit / 14 + 1)
+        let artifact = FolioRenderArtifactBuilder.full(
+            content: .code(text, startLine: 1),
+            marks: [],
+            contextLines: 3,
+            path: "large.js",
+            theme: .light
+        )
+
+        guard case let .code(code) = artifact.kind else {
+            return XCTFail("Expected code artifact")
+        }
+
+        XCTAssertTrue(artifact.runs.isEmpty)
+        XCTAssertEqual(code.runsByLine.count, code.lineRanges.count)
+        XCTAssertTrue(code.runsByLine.allSatisfy(\.isEmpty))
+    }
+
+    func testLargeDiffArtifactSkipsHighlightRuns() {
+        let line = String(repeating: "x", count: FolioRenderArtifactBuilder.highlightUTF16Limit + 1)
+        let hunk = DiffHunk(
+            oldStart: 1,
+            newStart: 1,
+            lines: [
+                DiffLine(kind: .addition, oldNumber: nil, newNumber: 1, text: line)
+            ]
+        )
+
+        let artifact = FolioRenderArtifactBuilder.full(
+            content: .diff(hunk, anchor: nil, mode: .unified),
+            marks: [],
+            contextLines: 3,
+            path: "large.js",
+            theme: .light
+        )
+
+        guard case let .diff(diff) = artifact.kind else {
+            return XCTFail("Expected diff artifact")
+        }
+
+        XCTAssertTrue(artifact.runs.isEmpty)
+        XCTAssertEqual(diff.runsByLine.count, diff.lineRanges.count)
+        XCTAssertTrue(diff.runsByLine.allSatisfy(\.isEmpty))
+    }
+
     private func assertRunsIntersectTheirLines(
         runsByLine: [[FolioHighlighter.Run]],
         lineRanges: [NSRange],
