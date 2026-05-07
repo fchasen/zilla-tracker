@@ -1,6 +1,9 @@
 import SwiftUI
 import FolioModel
 import FolioHighlight
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct SplitFolioRow: View {
     let row: SplitRow
@@ -90,6 +93,12 @@ struct SplitFolioRow: View {
         .onHover { hovering in
             if side == .left { isLeftHovered = hovering }
             else { isRightHovered = hovering }
+        }
+        #else
+        .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 10) {
+            guard let onCreate else { return }
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onCreate()
         }
         #endif
         .reportingFolioCell(

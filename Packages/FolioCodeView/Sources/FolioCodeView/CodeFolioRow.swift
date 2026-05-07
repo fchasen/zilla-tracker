@@ -1,6 +1,9 @@
 import SwiftUI
 import FolioModel
 import FolioHighlight
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct CodeFolioRow: View {
     let lineNumber: Int
@@ -58,6 +61,12 @@ struct CodeFolioRow: View {
         .fixedSize(horizontal: false, vertical: true)
         #if os(macOS)
         .onHover { isHovered = $0 }
+        #else
+        .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 10) {
+            guard let onCreateComment else { return }
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onCreateComment()
+        }
         #endif
         .reportingFolioCell(
             id: "code-\(lineNumber)",

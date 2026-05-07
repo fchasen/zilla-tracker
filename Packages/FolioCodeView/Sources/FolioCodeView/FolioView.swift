@@ -1,9 +1,6 @@
 import SwiftUI
 import FolioModel
 import FolioHighlight
-#if canImport(UIKit)
-import UIKit
-#endif
 
 public struct FolioView: View {
     public let path: String
@@ -35,9 +32,6 @@ public struct FolioView: View {
     @State private var gapStates: [Int: GapRevealState] = [:]
     @State private var artifact: FolioRenderArtifact
     @State private var capExpanded: Bool = false
-    #if os(iOS)
-    @State private var iosSelecting: Bool = false
-    #endif
 
     private let expandStep: Int = 10
     private let gapExpandStep: Int = 20
@@ -114,8 +108,6 @@ public struct FolioView: View {
                     .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
                     #if os(macOS)
                     .gesture(selectionDragGesture)
-                    #else
-                    .simultaneousGesture(iosLongPressDragGesture)
                     #endif
                     .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
                         selectionCells = cells
@@ -824,45 +816,6 @@ public struct FolioView: View {
                 onLineSelectionChange?(final)
             }
     }
-
-    #if os(iOS)
-    private var iosLongPressDragGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.4, maximumDistance: 10)
-            .sequenced(before: DragGesture(
-                minimumDistance: 0,
-                coordinateSpace: .named(FolioSelectionMath.coordinateSpaceName)
-            ))
-            .onChanged { value in
-                guard case .second(true, let drag) = value else { return }
-                if !iosSelecting {
-                    iosSelecting = true
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                }
-                guard let drag else { return }
-                let updated = FolioSelectionMath.selection(
-                    from: drag.startLocation,
-                    to: drag.location,
-                    cells: selectionCells
-                )
-                draftSelection = updated
-            }
-            .onEnded { value in
-                defer { iosSelecting = false }
-                guard case .second(true, let drag?) = value else { return }
-                let final = FolioSelectionMath.selection(
-                    from: drag.startLocation,
-                    to: drag.location,
-                    cells: selectionCells
-                )
-                selection?.wrappedValue = final
-                if let final {
-                    onLineSelectionChange?(final)
-                    onCreateComment?(final.startLine, final.side)
-                }
-                draftSelection = nil
-            }
-    }
-    #endif
 
     private func isLineSelected(_ line: Int?, side: AnchorRange.Side) -> Bool {
         guard let line, let sel = effectiveSelection, sel.side == side else { return false }

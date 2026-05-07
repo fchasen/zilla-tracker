@@ -32,8 +32,32 @@ final class IntralineDiffTests: XCTestCase {
 
     func testReplacementInMiddle() {
         let r = IntralineDiff.compute(old: "phase:mid", new: "phase:end")
-        XCTAssertEqual(r.oldRanges, [NSRange(location: 6, length: 2)])
-        XCTAssertEqual(r.newRanges, [NSRange(location: 6, length: 2)])
+        XCTAssertEqual(r.oldRanges, [NSRange(location: 6, length: 3)])
+        XCTAssertEqual(r.newRanges, [NSRange(location: 6, length: 3)])
+    }
+
+    func testWordBoundaryNotPerCharacter() {
+        let r = IntralineDiff.compute(old: "let foo = 1", new: "let bar = 2")
+        XCTAssertEqual(r.oldRanges, [
+            NSRange(location: 4, length: 3),
+            NSRange(location: 10, length: 1)
+        ])
+        XCTAssertEqual(r.newRanges, [
+            NSRange(location: 4, length: 3),
+            NSRange(location: 10, length: 1)
+        ])
+    }
+
+    func testIdentifierTreatedAsSingleToken() {
+        let r = IntralineDiff.compute(old: "callFoo(x)", new: "callBar(x)")
+        XCTAssertEqual(r.oldRanges, [NSRange(location: 0, length: 7)])
+        XCTAssertEqual(r.newRanges, [NSRange(location: 0, length: 7)])
+    }
+
+    func testWhitespaceCollapsesIntoSingleToken() {
+        let r = IntralineDiff.compute(old: "a  b", new: "a   b")
+        XCTAssertEqual(r.oldRanges, [NSRange(location: 1, length: 2)])
+        XCTAssertEqual(r.newRanges, [NSRange(location: 1, length: 3)])
     }
 
     func testInsertionPlusReplacement() {

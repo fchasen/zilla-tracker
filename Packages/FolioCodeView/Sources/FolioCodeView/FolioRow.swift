@@ -1,6 +1,9 @@
 import SwiftUI
 import FolioModel
 import FolioHighlight
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct FolioRow: View {
     let line: DiffLine
@@ -60,6 +63,12 @@ struct FolioRow: View {
         .fixedSize(horizontal: false, vertical: true)
         #if os(macOS)
         .onHover { isHovered = $0 }
+        #else
+        .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 10) {
+            guard let onCreateComment else { return }
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onCreateComment()
+        }
         #endif
         .reportingFolioCell(
             id: "u-\(line.kind)-\(line.oldNumber ?? -1)-\(line.newNumber ?? -1)",
