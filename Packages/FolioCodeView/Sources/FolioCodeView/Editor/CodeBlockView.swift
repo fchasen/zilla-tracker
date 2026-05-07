@@ -23,8 +23,7 @@ struct CodeBlockView: View {
                     layoutManager: layoutManager,
                     startLine: startLine,
                     theme: theme,
-                    font: editorFont,
-                    editVersion: text.hashValue
+                    font: editorFont
                 )
                 .frame(width: gutterWidth + 8)
             }
@@ -47,7 +46,7 @@ struct CodeBlockView: View {
     }
 
     private var lineCount: Int {
-        max(1, text.components(separatedBy: "\n").count)
+        FolioTextMetrics.lineCount(in: text)
     }
 
     private var gutterWidth: CGFloat {

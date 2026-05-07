@@ -11,7 +11,6 @@ struct EditorGutterView: View {
     let startLine: Int
     let theme: HighlightTheme
     let font: PlatformFont
-    let editVersion: Int
 
     var body: some View {
         #if os(macOS)
@@ -19,16 +18,14 @@ struct EditorGutterView: View {
             layoutManager: layoutManager,
             startLine: startLine,
             theme: theme,
-            font: font,
-            editVersion: editVersion
+            font: font
         )
         #elseif canImport(UIKit)
         IOSGutter(
             layoutManager: layoutManager,
             startLine: startLine,
             theme: theme,
-            font: font,
-            editVersion: editVersion
+            font: font
         )
         #else
         EmptyView()
@@ -43,7 +40,6 @@ private struct MacGutter: NSViewRepresentable {
     let startLine: Int
     let theme: HighlightTheme
     let font: PlatformFont
-    let editVersion: Int
 
     func makeNSView(context: Context) -> GutterNSView {
         let view = GutterNSView()
@@ -112,7 +108,6 @@ private struct IOSGutter: UIViewRepresentable {
     let startLine: Int
     let theme: HighlightTheme
     let font: PlatformFont
-    let editVersion: Int
 
     func makeUIView(context: Context) -> GutterUIView {
         let view = GutterUIView()
