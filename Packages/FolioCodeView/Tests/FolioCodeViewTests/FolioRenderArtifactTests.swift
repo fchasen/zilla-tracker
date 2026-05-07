@@ -16,7 +16,6 @@ final class FolioRenderArtifactTests: XCTestCase {
 
         let artifact = FolioRenderArtifactBuilder.full(
             content: .diff(hunk, anchor: nil, mode: .unified),
-            marks: [],
             contextLines: 3,
             path: "example.js",
             theme: .light
@@ -36,7 +35,6 @@ final class FolioRenderArtifactTests: XCTestCase {
     func testCodeArtifactIndexesRunsByLine() {
         let artifact = FolioRenderArtifactBuilder.full(
             content: .code("let first = 1;\nconst second = 2;", startLine: 10),
-            marks: [],
             contextLines: 3,
             path: "example.js",
             theme: .light
@@ -65,7 +63,6 @@ final class FolioRenderArtifactTests: XCTestCase {
 
         let artifact = FolioRenderArtifactBuilder.skeleton(
             content: .diff(hunk, anchor: nil, mode: .unified),
-            marks: [],
             contextLines: 3
         )
 
@@ -81,7 +78,6 @@ final class FolioRenderArtifactTests: XCTestCase {
         let text = String(repeating: "let value = 1;\n", count: FolioRenderArtifactBuilder.highlightUTF16Limit / 14 + 1)
         let artifact = FolioRenderArtifactBuilder.full(
             content: .code(text, startLine: 1),
-            marks: [],
             contextLines: 3,
             path: "large.js",
             theme: .light
@@ -108,7 +104,6 @@ final class FolioRenderArtifactTests: XCTestCase {
 
         let artifact = FolioRenderArtifactBuilder.full(
             content: .diff(hunk, anchor: nil, mode: .unified),
-            marks: [],
             contextLines: 3,
             path: "large.js",
             theme: .light

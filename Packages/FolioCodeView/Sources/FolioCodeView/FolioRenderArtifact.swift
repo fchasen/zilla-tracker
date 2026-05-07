@@ -33,13 +33,11 @@ struct FolioRenderArtifact: Sendable, Equatable {
 
     let kind: Kind
     var runs: [FolioHighlighter.Run]
-    let commentMarksByLine: [AnchorRange.Side: [Int: FolioCommentMark]]
     let gutterWidth: CGFloat
 
     static let empty = FolioRenderArtifact(
         kind: .empty,
         runs: [],
-        commentMarksByLine: [:],
         gutterWidth: 30
     )
 
@@ -57,10 +55,8 @@ enum FolioRenderArtifactBuilder {
 
     static func skeleton(
         content: FolioContent,
-        marks: [FolioCommentMark],
         contextLines: Int
     ) -> FolioRenderArtifact {
-        let marksByLine = makeMarksByLine(marks)
         switch content {
         case let .diff(hunk, _, _):
             let lineRanges = makeLineRanges(for: hunk.lines)
@@ -77,7 +73,6 @@ enum FolioRenderArtifactBuilder {
                     foldedContextLines: contextLines
                 )),
                 runs: [],
-                commentMarksByLine: marksByLine,
                 gutterWidth: gutter
             )
         case let .code(text, startLine):
@@ -92,7 +87,6 @@ enum FolioRenderArtifactBuilder {
                     startLine: startLine
                 )),
                 runs: [],
-                commentMarksByLine: marksByLine,
                 gutterWidth: gutter
             )
         }
@@ -100,12 +94,10 @@ enum FolioRenderArtifactBuilder {
 
     static func full(
         content: FolioContent,
-        marks: [FolioCommentMark],
         contextLines: Int,
         path: String,
         theme: HighlightTheme
     ) -> FolioRenderArtifact {
-        let marksByLine = makeMarksByLine(marks)
         switch content {
         case let .diff(hunk, _, _):
             let lineRanges = makeLineRanges(for: hunk.lines)
@@ -125,7 +117,6 @@ enum FolioRenderArtifactBuilder {
                     foldedContextLines: contextLines
                 )),
                 runs: runs,
-                commentMarksByLine: marksByLine,
                 gutterWidth: gutter
             )
         case let .code(text, startLine):
@@ -141,7 +132,6 @@ enum FolioRenderArtifactBuilder {
                     startLine: startLine
                 )),
                 runs: runs,
-                commentMarksByLine: marksByLine,
                 gutterWidth: gutter
             )
         }
@@ -294,16 +284,6 @@ enum FolioRenderArtifactBuilder {
         }
         flush()
         return result
-    }
-
-    private static func makeMarksByLine(
-        _ marks: [FolioCommentMark]
-    ) -> [AnchorRange.Side: [Int: FolioCommentMark]] {
-        var byLine: [AnchorRange.Side: [Int: FolioCommentMark]] = [:]
-        for mark in marks {
-            byLine[mark.side, default: [:]][mark.line] = mark
-        }
-        return byLine
     }
 
     private static func makeGutterWidth(for visible: ArraySlice<DiffLine>) -> CGFloat {

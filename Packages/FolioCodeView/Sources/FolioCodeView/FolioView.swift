@@ -31,6 +31,7 @@ public struct FolioView: View {
     @State private var draftSelection: FolioLineSelection?
     @State private var gapStates: [Int: GapRevealState] = [:]
     @State private var artifact: FolioRenderArtifact
+    @State private var commentMarkIndex: FolioCommentMarkIndex
     @State private var capExpanded: Bool = false
 
     private let expandStep: Int = 10
@@ -90,9 +91,9 @@ public struct FolioView: View {
         self._isExpanded = State(initialValue: !showsHeader || true)
         self._artifact = State(initialValue: FolioRenderArtifactBuilder.skeleton(
             content: content,
-            marks: commentMarks,
             contextLines: contextLines
         ))
+        self._commentMarkIndex = State(initialValue: FolioCommentMarkIndex(commentMarks))
     }
 
     public var body: some View {
@@ -114,6 +115,9 @@ public struct FolioView: View {
         .clipShape(folioShape)
         .task(id: artifactKey) {
             await refreshArtifact()
+        }
+        .onChange(of: commentMarks) { _, marks in
+            commentMarkIndex = FolioCommentMarkIndex(marks)
         }
     }
 
@@ -150,17 +154,6 @@ public struct FolioView: View {
             hasher.combine(text.last)
             hasher.combine(startLine)
         }
-        hasher.combine(commentMarks.count)
-        if let first = commentMarks.first {
-            hasher.combine(first.id)
-            hasher.combine(first.line)
-            hasher.combine(first.count)
-        }
-        if commentMarks.count > 1, let last = commentMarks.last {
-            hasher.combine(last.id)
-            hasher.combine(last.line)
-            hasher.combine(last.count)
-        }
         return hasher.finalize()
     }
 
@@ -169,13 +162,11 @@ public struct FolioView: View {
         let path = self.path
         let content = self.content
         let theme = self.theme
-        let marks = self.commentMarks
         let contextLines = self.initialContextLines
 
         let full = await Task.detached(priority: .userInitiated) {
             FolioRenderArtifactBuilder.full(
                 content: content,
-                marks: marks,
                 contextLines: contextLines,
                 path: path,
                 theme: theme
@@ -827,7 +818,7 @@ public struct FolioView: View {
     }
 
     private func findMark(side: AnchorRange.Side, line: Int) -> FolioCommentMark? {
-        artifact.commentMarksByLine[side]?[line]
+        commentMarkIndex.mark(side: side, line: line)
     }
 
     private func createCommentClosure(line: Int?, side: AnchorRange.Side) -> (() -> Void)? {
