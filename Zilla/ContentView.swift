@@ -490,6 +490,7 @@ final class Workspace {
     private(set) var loadedRevisionInlines: [InlineComment] = []
     private(set) var revisionUserDirectory: [String: PhabricatorUser] = [:]
     private(set) var revisionProjectDirectory: [String: PhabricatorProject] = [:]
+    private(set) var testingTagPHIDs: [TestingTag: String] = [:]
     private(set) var changesetContent: [Int: ChangesetContentSource] = [:]
     private(set) var isLoadingRevision = false
     private(set) var revisionLoadError: String?
@@ -848,6 +849,32 @@ final class Workspace {
     func cacheProjects(_ projects: [PhabricatorProject]) {
         for project in projects {
             revisionProjectDirectory[project.phid] = project
+            if let slug = project.slug, let tag = TestingTag(rawValue: slug) {
+                testingTagPHIDs[tag] = project.phid
+            }
+        }
+    }
+
+    @MainActor
+    func loadTestingTagDirectory(using client: PhabricatorClient) async {
+        let needed = TestingTag.allCases.filter { testingTagPHIDs[$0] == nil }
+        guard !needed.isEmpty else { return }
+        let slugs = needed.map(\.rawValue)
+        do {
+            let result = try await client.searchProjects(
+                ProjectQuery(
+                    constraints: ProjectQuery.Constraints(slugs: slugs),
+                    limit: slugs.count
+                )
+            )
+            for project in result.data {
+                revisionProjectDirectory[project.phid] = project
+                if let slug = project.slug, let tag = TestingTag(rawValue: slug) {
+                    testingTagPHIDs[tag] = project.phid
+                }
+            }
+        } catch {
+            revisionLog.error("Testing tag lookup failed: \(String(describing: error))")
         }
     }
 

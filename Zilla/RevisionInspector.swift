@@ -158,9 +158,15 @@ struct RevisionInspector: View {
     }
 
     private var sortedCurrentTags: [PhabricatorProject] {
-        let phids = workspace.loadedRevision?.attachments?.projects?.projectPHIDs ?? []
+        guard let revision = workspace.loadedRevision else { return [] }
+        let phids = revision.attachments?.projects?.projectPHIDs ?? []
+        let hidesTestingChips = isViewerReviewer(revision: revision)
         return phids
             .compactMap { workspace.revisionProjectDirectory[$0] }
+            .filter { project in
+                guard hidesTestingChips, let slug = project.slug else { return true }
+                return TestingTag(rawValue: slug) == nil
+            }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -179,7 +185,7 @@ struct RevisionInspector: View {
                 Text("No tags")
                     .scaledFont(.callout)
                     .foregroundStyle(.secondary)
-            } else {
+            } else if !sortedCurrentTags.isEmpty || unresolved > 0 {
                 FlowLayout(spacing: 6) {
                     ForEach(sortedCurrentTags) { project in
                         tagChip(project)
@@ -191,8 +197,142 @@ struct RevisionInspector: View {
                     }
                 }
             }
+            if isViewerReviewer(revision: revision) {
+                testingTagPicker(revision: revision)
+            }
         }
         .disabled(workspace.isUpdatingRevision)
+    }
+
+    private func isViewerReviewer(revision: Revision) -> Bool {
+        guard phab.isSignedIn else { return false }
+        let myPHID = phab.currentUser?.phid
+        let projectPHIDs = phab.viewerProjectPHIDs
+        return revision.attachments?.reviewers?.reviewers.contains { reviewer in
+            if let myPHID, reviewer.reviewerPHID == myPHID { return true }
+            return projectPHIDs.contains(reviewer.reviewerPHID)
+        } ?? false
+    }
+
+    private func appliedTestingTag(revision: Revision) -> TestingTag? {
+        let phids = revision.attachments?.projects?.projectPHIDs ?? []
+        for phid in phids {
+            if let project = workspace.revisionProjectDirectory[phid],
+               let slug = project.slug,
+               let tag = TestingTag(rawValue: slug) {
+                return tag
+            }
+        }
+        return nil
+    }
+
+    private func appliedTestingTagPHIDs(revision: Revision) -> [String] {
+        let phids = revision.attachments?.projects?.projectPHIDs ?? []
+        return phids.filter { phid in
+            guard let project = workspace.revisionProjectDirectory[phid],
+                  let slug = project.slug else { return false }
+            return TestingTag(rawValue: slug) != nil
+        }
+    }
+
+    @ViewBuilder
+    private func testingTagPicker(revision: Revision) -> some View {
+        let current = appliedTestingTag(revision: revision)
+        Menu {
+            ForEach(TestingTag.allCases) { tag in
+                Button {
+                    Task { await setTestingTag(tag) }
+                } label: {
+                    Label(tag.title, systemImage: tag.systemImage)
+                }
+                .disabled(tag == current)
+            }
+            if current != nil {
+                Divider()
+                Button(role: .destructive) {
+                    Task { await clearTestingTag() }
+                } label: {
+                    Label("Clear", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: current?.systemImage ?? "testtube.2")
+                    .foregroundStyle(current?.tint ?? Color.secondary)
+                    .scaledFont(.callout)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(current?.title ?? "Set testing status")
+                        .scaledFont(.callout, weight: .medium)
+                        .foregroundStyle(.primary)
+                    if let current {
+                        Text(current.detail)
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    } else {
+                        Text("As a reviewer, mark this revision's testing status.")
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .scaledFont(.caption2, weight: .semibold)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke((current?.tint ?? Color.primary).opacity(0.18), lineWidth: 1)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .task { await workspace.loadTestingTagDirectory(using: phab.client) }
+    }
+
+    @MainActor
+    private func setTestingTag(_ tag: TestingTag) async {
+        guard let revision = workspace.loadedRevision else { return }
+        if workspace.testingTagPHIDs[tag] == nil {
+            await workspace.loadTestingTagDirectory(using: phab.client)
+        }
+        guard let newPHID = workspace.testingTagPHIDs[tag] else {
+            workspace.lastUpdateError = "Couldn't resolve #\(tag.rawValue) in Phabricator."
+            return
+        }
+        let toRemove = appliedTestingTagPHIDs(revision: revision).filter { $0 != newPHID }
+        if toRemove.isEmpty, appliedTestingTagPHIDs(revision: revision).contains(newPHID) {
+            return
+        }
+        var transactions: [RevisionEditTransaction] = []
+        if !toRemove.isEmpty {
+            transactions.append(.projectsRemove(toRemove))
+        }
+        transactions.append(.projectsAdd([newPHID]))
+        if let error = await workspace.applyRevisionEdit(
+            transactions: transactions,
+            using: phab.client
+        ) {
+            workspace.lastUpdateError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func clearTestingTag() async {
+        guard let revision = workspace.loadedRevision else { return }
+        let toRemove = appliedTestingTagPHIDs(revision: revision)
+        guard !toRemove.isEmpty else { return }
+        if let error = await workspace.applyRevisionEdit(
+            transactions: [.projectsRemove(toRemove)],
+            using: phab.client
+        ) {
+            workspace.lastUpdateError = error.localizedDescription
+        }
     }
 
     @ViewBuilder
