@@ -17,6 +17,7 @@ struct FolioRenderArtifact: Sendable, Equatable {
     struct Diff: Sendable, Equatable {
         let hunk: DiffHunk
         let lineRanges: [NSRange]
+        let runsByLine: [[FolioHighlighter.Run]]
         let intralineDiffByText: [FolioTextPair: IntralineDiff.Result]
         let unifiedIntralineByHunkIdx: [Int: [NSRange]]
         let foldedSections: [FoldedDiff.Section]
@@ -26,6 +27,7 @@ struct FolioRenderArtifact: Sendable, Equatable {
     struct Code: Sendable, Equatable {
         let lines: [String]
         let lineRanges: [NSRange]
+        let runsByLine: [[FolioHighlighter.Run]]
         let startLine: Int
     }
 
@@ -66,6 +68,7 @@ enum FolioRenderArtifactBuilder {
                 kind: .diff(.init(
                     hunk: hunk,
                     lineRanges: lineRanges,
+                    runsByLine: Array(repeating: [], count: lineRanges.count),
                     intralineDiffByText: [:],
                     unifiedIntralineByHunkIdx: [:],
                     foldedSections: folded,
@@ -83,6 +86,7 @@ enum FolioRenderArtifactBuilder {
                 kind: .code(.init(
                     lines: lines,
                     lineRanges: lineRanges,
+                    runsByLine: Array(repeating: [], count: lineRanges.count),
                     startLine: startLine
                 )),
                 runs: [],
@@ -107,16 +111,18 @@ enum FolioRenderArtifactBuilder {
             let unifiedIntraline = makeUnifiedIntralineByHunkIdx(for: hunk.lines, cache: intralineCache)
             let folded = DiffFolder.fold(hunk, contextLines: contextLines).sections
             let gutter = makeGutterWidth(for: hunk.lines[...])
+            let runs = computeRuns(path: path, content: content, theme: theme)
             return FolioRenderArtifact(
                 kind: .diff(.init(
                     hunk: hunk,
                     lineRanges: lineRanges,
+                    runsByLine: makeRunsByLine(runs: runs, lineRanges: lineRanges),
                     intralineDiffByText: intralineCache,
                     unifiedIntralineByHunkIdx: unifiedIntraline,
                     foldedSections: folded,
                     foldedContextLines: contextLines
                 )),
-                runs: computeRuns(path: path, content: content, theme: theme),
+                runs: runs,
                 commentMarksByLine: marksByLine,
                 gutterWidth: gutter
             )
@@ -124,13 +130,15 @@ enum FolioRenderArtifactBuilder {
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             let lineRanges = makeCodeLineRanges(lines: lines)
             let gutter = makeCodeGutterWidth(lineCount: lines.count, startLine: startLine)
+            let runs = computeRuns(path: path, content: content, theme: theme)
             return FolioRenderArtifact(
                 kind: .code(.init(
                     lines: lines,
                     lineRanges: lineRanges,
+                    runsByLine: makeRunsByLine(runs: runs, lineRanges: lineRanges),
                     startLine: startLine
                 )),
-                runs: computeRuns(path: path, content: content, theme: theme),
+                runs: runs,
                 commentMarksByLine: marksByLine,
                 gutterWidth: gutter
             )
@@ -176,6 +184,45 @@ enum FolioRenderArtifactBuilder {
             cursor += length + 1
         }
         return ranges
+    }
+
+    private static func makeRunsByLine(
+        runs: [FolioHighlighter.Run],
+        lineRanges: [NSRange]
+    ) -> [[FolioHighlighter.Run]] {
+        var runsByLine = Array(repeating: [FolioHighlighter.Run](), count: lineRanges.count)
+        guard !runs.isEmpty, !lineRanges.isEmpty else { return runsByLine }
+
+        let sortedRuns = runs.sorted {
+            if $0.range.location == $1.range.location {
+                return $0.range.length < $1.range.length
+            }
+            return $0.range.location < $1.range.location
+        }
+        var lineIndex = 0
+
+        for run in sortedRuns {
+            let runStart = run.range.location
+            let runEnd = run.range.location + run.range.length
+            while lineIndex < lineRanges.count {
+                let lineRange = lineRanges[lineIndex]
+                let lineEnd = lineRange.location + lineRange.length
+                if lineEnd > runStart { break }
+                lineIndex += 1
+            }
+
+            var idx = lineIndex
+            while idx < lineRanges.count {
+                let lineRange = lineRanges[idx]
+                if lineRange.location >= runEnd { break }
+                if NSIntersectionRange(run.range, lineRange).length > 0 {
+                    runsByLine[idx].append(run)
+                }
+                idx += 1
+            }
+        }
+
+        return runsByLine
     }
 
     private static func makeIntralineCache(for lines: [DiffLine]) -> [FolioTextPair: IntralineDiff.Result] {

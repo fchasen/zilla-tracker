@@ -575,7 +575,7 @@ public struct FolioView: View {
                     FolioRow(
                         line: line,
                         lineRange: diff.lineRanges[absIdx],
-                        runs: artifact.runs,
+                        runs: lineRuns(in: diff, index: absIdx),
                         theme: theme,
                         gutterWidth: artifact.gutterWidth,
                         commentMark: lookup.mark,
@@ -613,7 +613,7 @@ public struct FolioView: View {
                         row: row,
                         leftLineRange: leftLineRange,
                         rightLineRange: rightLineRange,
-                        runs: artifact.runs,
+                        runs: splitRuns(in: diff, left: leftAbs, right: rightAbs),
                         theme: theme,
                         gutterWidth: artifact.gutterWidth,
                         leftMark: leftMark,
@@ -634,6 +634,29 @@ public struct FolioView: View {
                 }
             }
         }
+    }
+
+    private func lineRuns(
+        in diff: FolioRenderArtifact.Diff,
+        index: Int?
+    ) -> [FolioHighlighter.Run] {
+        guard let index,
+              index >= 0,
+              index < diff.runsByLine.count else {
+            return []
+        }
+        return diff.runsByLine[index]
+    }
+
+    private func splitRuns(
+        in diff: FolioRenderArtifact.Diff,
+        left: Int?,
+        right: Int?
+    ) -> [FolioHighlighter.Run] {
+        if left == right {
+            return lineRuns(in: diff, index: left)
+        }
+        return lineRuns(in: diff, index: left) + lineRuns(in: diff, index: right)
     }
 
     @ViewBuilder
@@ -732,7 +755,7 @@ public struct FolioView: View {
                     lineNumber: lineNum,
                     text: lineText,
                     lineRange: code.lineRanges[index],
-                    runs: artifact.runs,
+                    runs: code.runsByLine[index],
                     theme: theme,
                     gutterWidth: artifact.gutterWidth,
                     commentMark: mark,
