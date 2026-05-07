@@ -849,7 +849,7 @@ final class Workspace {
     func cacheProjects(_ projects: [PhabricatorProject]) {
         for project in projects {
             revisionProjectDirectory[project.phid] = project
-            if let slug = project.slug, let tag = TestingTag(rawValue: slug) {
+            if let tag = TestingTag.match(project) {
                 testingTagPHIDs[tag] = project.phid
             }
         }
@@ -869,7 +869,7 @@ final class Workspace {
             )
             for project in result.data {
                 revisionProjectDirectory[project.phid] = project
-                if let slug = project.slug, let tag = TestingTag(rawValue: slug) {
+                if let tag = TestingTag.match(project) {
                     testingTagPHIDs[tag] = project.phid
                 }
             }

@@ -1,4 +1,5 @@
 import SwiftUI
+import PhabricatorKit
 
 enum TestingTag: String, CaseIterable, Identifiable, Hashable {
     case approved = "testing-approved"
@@ -44,5 +45,18 @@ enum TestingTag: String, CaseIterable, Identifiable, Hashable {
         case .approved: return .green
         default: return .orange
         }
+    }
+
+    static func match(_ project: PhabricatorProject) -> TestingTag? {
+        for tag in TestingTag.allCases {
+            let raw = tag.rawValue
+            if project.name == raw || project.name.hasPrefix(raw + " ") {
+                return tag
+            }
+            if let slug = project.slug, slug == raw || slug.hasPrefix(raw + "_") {
+                return tag
+            }
+        }
+        return nil
     }
 }

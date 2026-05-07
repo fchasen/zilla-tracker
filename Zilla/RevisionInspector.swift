@@ -164,8 +164,8 @@ struct RevisionInspector: View {
         return phids
             .compactMap { workspace.revisionProjectDirectory[$0] }
             .filter { project in
-                guard hidesTestingChips, let slug = project.slug else { return true }
-                return TestingTag(rawValue: slug) == nil
+                guard hidesTestingChips else { return true }
+                return TestingTag.match(project) == nil
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
@@ -218,8 +218,7 @@ struct RevisionInspector: View {
         let phids = revision.attachments?.projects?.projectPHIDs ?? []
         for phid in phids {
             if let project = workspace.revisionProjectDirectory[phid],
-               let slug = project.slug,
-               let tag = TestingTag(rawValue: slug) {
+               let tag = TestingTag.match(project) {
                 return tag
             }
         }
@@ -229,9 +228,8 @@ struct RevisionInspector: View {
     private func appliedTestingTagPHIDs(revision: Revision) -> [String] {
         let phids = revision.attachments?.projects?.projectPHIDs ?? []
         return phids.filter { phid in
-            guard let project = workspace.revisionProjectDirectory[phid],
-                  let slug = project.slug else { return false }
-            return TestingTag(rawValue: slug) != nil
+            guard let project = workspace.revisionProjectDirectory[phid] else { return false }
+            return TestingTag.match(project) != nil
         }
     }
 
@@ -256,41 +254,29 @@ struct RevisionInspector: View {
                 }
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: current?.systemImage ?? "testtube.2")
                     .foregroundStyle(current?.tint ?? Color.secondary)
-                    .scaledFont(.callout)
-                VStack(alignment: .leading, spacing: 1) {
+                    .scaledFont(.title3)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(current?.title ?? "Set testing status")
                         .scaledFont(.callout, weight: .medium)
                         .foregroundStyle(.primary)
-                    if let current {
-                        Text(current.detail)
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    } else {
-                        Text("As a reviewer, mark this revision's testing status.")
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+                    Text(current?.detail ?? "Mark this revision's testing status.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.down")
                     .scaledFont(.caption2, weight: .semibold)
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke((current?.tint ?? Color.primary).opacity(0.18), lineWidth: 1)
-            )
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .task { await workspace.loadTestingTagDirectory(using: phab.client) }
     }
