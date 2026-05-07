@@ -138,15 +138,13 @@ public struct FolioView: View {
         hasher.combine(theme.paletteSignature)
         hasher.combine(initialContextLines)
         switch content {
-        case let .diff(hunk, anchor, mode):
+        case let .diff(hunk, _, _):
             hasher.combine(0)
             hasher.combine(hunk.oldStart)
             hasher.combine(hunk.newStart)
             hasher.combine(hunk.lines.count)
             hasher.combine(hunk.lines.first?.text)
             hasher.combine(hunk.lines.last?.text)
-            hasher.combine(anchor)
-            hasher.combine(mode)
         case let .code(text, startLine):
             hasher.combine(1)
             hasher.combine(text.count)
@@ -165,12 +163,23 @@ public struct FolioView: View {
         let contextLines = self.initialContextLines
 
         let full = await Task.detached(priority: .userInitiated) {
-            FolioRenderArtifactBuilder.full(
+            let key = FolioRenderArtifactCacheKey(
+                content: content,
+                path: path,
+                theme: theme,
+                contextLines: contextLines
+            )
+            if let cached = await FolioRenderArtifactCache.shared.artifact(for: key) {
+                return cached
+            }
+            let artifact = FolioRenderArtifactBuilder.full(
                 content: content,
                 contextLines: contextLines,
                 path: path,
                 theme: theme
             )
+            await FolioRenderArtifactCache.shared.store(artifact, for: key)
+            return artifact
         }.value
         guard !Task.isCancelled else { return }
         artifact = full
