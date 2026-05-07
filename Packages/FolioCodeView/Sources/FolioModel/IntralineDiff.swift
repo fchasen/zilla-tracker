@@ -50,21 +50,21 @@ public enum IntralineDiff {
     }
 
     private static func tokenize(_ s: String) -> [Token] {
-        let units = Array(s.utf16)
+        let nsString = s as NSString
         var tokens: [Token] = []
         var i = 0
-        while i < units.count {
+        let count = nsString.length
+        while i < count {
             let start = i
-            let u = units[i]
+            let u = nsString.character(at: i)
             if isWordUnit(u) {
-                while i < units.count, isWordUnit(units[i]) { i += 1 }
+                while i < count, isWordUnit(nsString.character(at: i)) { i += 1 }
             } else if isWhitespaceUnit(u) {
-                while i < units.count, isWhitespaceUnit(units[i]) { i += 1 }
+                while i < count, isWhitespaceUnit(nsString.character(at: i)) { i += 1 }
             } else {
                 i += 1
             }
-            let slice = Array(units[start..<i])
-            let text = String(decoding: slice, as: UTF16.self)
+            let text = nsString.substring(with: NSRange(location: start, length: i - start))
             tokens.append(Token(text: text, location: start, length: i - start))
         }
         return tokens

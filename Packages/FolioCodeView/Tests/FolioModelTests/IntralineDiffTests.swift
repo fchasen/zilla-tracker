@@ -54,6 +54,12 @@ final class IntralineDiffTests: XCTestCase {
         XCTAssertEqual(r.newRanges, [NSRange(location: 0, length: 7)])
     }
 
+    func testNonASCIIWordUsesUTF16Ranges() {
+        let r = IntralineDiff.compute(old: "let café = 1", new: "let cafe = 1")
+        XCTAssertEqual(r.oldRanges, [NSRange(location: 4, length: 4)])
+        XCTAssertEqual(r.newRanges, [NSRange(location: 4, length: 4)])
+    }
+
     func testWhitespaceCollapsesIntoSingleToken() {
         let r = IntralineDiff.compute(old: "a  b", new: "a   b")
         XCTAssertEqual(r.oldRanges, [NSRange(location: 1, length: 2)])
