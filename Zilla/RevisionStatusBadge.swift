@@ -13,7 +13,9 @@ struct StatusBadge: View {
             .foregroundStyle(color)
     }
 
-    var color: Color {
+    var color: Color { Self.color(for: status) }
+
+    static func color(for status: RevisionStatus) -> Color {
         switch status.value {
         case RevisionStatus.Value.needsReview: return .orange
         case RevisionStatus.Value.needsRevision: return .red

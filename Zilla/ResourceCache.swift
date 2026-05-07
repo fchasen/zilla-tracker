@@ -19,6 +19,7 @@ enum CacheKey: Hashable, Sendable {
     case revision(Int)
     case revisionDiff(Int)
     case revisionTransactions(Int)
+    case revisionStack(Int)
     case phabricatorUser(String)
     case fileContent(repositoryPHID: String, commit: String, path: String)
 }
@@ -29,9 +30,9 @@ extension CacheKey {
         // User identity rarely changes within a session.
         case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
             return 6 * 60 * 60
-        // Revision detail (header/transactions/diff) — keep cached longer
+        // Revision detail (header/transactions/diff/stack) — keep cached longer
         // so flipping between recently-opened revisions is instant.
-        case .revision, .revisionDiff, .revisionTransactions:
+        case .revision, .revisionDiff, .revisionTransactions, .revisionStack:
             return 5 * 60
         // Bug / list searches — tighter freshness because list contents
         // change as the user works elsewhere.
@@ -48,7 +49,7 @@ extension CacheKey {
         switch self {
         case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
             return 7 * 24 * 60 * 60
-        case .revision, .revisionDiff, .revisionTransactions:
+        case .revision, .revisionDiff, .revisionTransactions, .revisionStack:
             return 60 * 60
         case .bug, .comments, .bugSearch, .revisionSearch:
             return 10 * 60
@@ -124,7 +125,8 @@ final class ResourceCache {
         for key in [
             CacheKey.revision(id),
             .revisionDiff(id),
-            .revisionTransactions(id)
+            .revisionTransactions(id),
+            .revisionStack(id)
         ] {
             cancelInflight(for: key)
             if entries.removeValue(forKey: key) != nil { changed = true }
@@ -424,5 +426,128 @@ extension ResourceCache {
             )
             store(meta, for: .dependencyMeta(bug.id))
         }
+    }
+}
+
+struct RevisionStackGraph: Sendable, Equatable {
+    struct Node: Sendable, Equatable {
+        let id: Int
+        let phid: String
+        let title: String
+        let status: RevisionStatus
+        let authorPHID: String
+    }
+
+    var ordered: [Node]
+    var focalID: Int
+    var truncatedAtBranch: Bool
+
+    var focalNode: Node? {
+        ordered.first { $0.id == focalID }
+    }
+}
+
+extension ResourceCache {
+    func revisionStack(
+        revisionID: Int,
+        revisionPHID: String,
+        force: Bool = false,
+        using client: PhabricatorClient,
+        onRefresh: ((RevisionStackGraph) -> Void)? = nil
+    ) async throws -> RevisionStackGraph {
+        try await fetch(key: .revisionStack(revisionID), force: force, onRefresh: onRefresh) { [weak self] in
+            try await Self.computeRevisionStack(
+                focalID: revisionID,
+                focalPHID: revisionPHID,
+                client: client,
+                cache: self
+            )
+        }
+    }
+
+    @MainActor
+    private static func computeRevisionStack(
+        focalID: Int,
+        focalPHID: String,
+        client: PhabricatorClient,
+        cache: ResourceCache?
+    ) async throws -> RevisionStackGraph {
+        let maxDepth = 32
+
+        var ancestorChain: [String] = []
+        var truncated = false
+        var visited: Set<String> = [focalPHID]
+        var cursor = focalPHID
+        for _ in 0..<maxDepth {
+            let edges = try await client.searchEdges(
+                EdgeQuery(sourcePHIDs: [cursor], types: [.parentsOfSource])
+            ).data
+            if edges.isEmpty { break }
+            if edges.count > 1 { truncated = true }
+            let nextPHID = edges[0].destinationPHID
+            if visited.contains(nextPHID) { break }
+            visited.insert(nextPHID)
+            ancestorChain.append(nextPHID)
+            cursor = nextPHID
+        }
+
+        var descendantChain: [String] = []
+        cursor = focalPHID
+        for _ in 0..<maxDepth {
+            let edges = try await client.searchEdges(
+                EdgeQuery(sourcePHIDs: [cursor], types: [.childrenOfSource])
+            ).data
+            if edges.isEmpty { break }
+            if edges.count > 1 { truncated = true }
+            let nextPHID = edges[0].destinationPHID
+            if visited.contains(nextPHID) { break }
+            visited.insert(nextPHID)
+            descendantChain.append(nextPHID)
+            cursor = nextPHID
+        }
+
+        let orderedPHIDs = ancestorChain.reversed() + [focalPHID] + descendantChain
+        let allPHIDs = Array(orderedPHIDs)
+
+        if allPHIDs.count == 1 {
+            return RevisionStackGraph(ordered: [], focalID: focalID, truncatedAtBranch: false)
+        }
+
+        let revisionsResult = try await client.searchRevisions(
+            RevisionQuery(
+                constraints: RevisionQuery.Constraints(phids: allPHIDs),
+                attachments: RevisionQuery.Attachments(
+                    reviewers: true,
+                    reviewersExtra: true,
+                    subscribers: true,
+                    projects: true
+                )
+            )
+        )
+
+        var byPHID: [String: Revision] = [:]
+        for revision in revisionsResult.data {
+            byPHID[revision.phid] = revision
+            // Pre-warm only matches the .revision(id) loader's expected shape
+            // (full attachments) — see ResourceCache.revision(id:).
+            cache?.store(revision, for: .revision(revision.id))
+        }
+
+        let nodes: [RevisionStackGraph.Node] = allPHIDs.compactMap { phid in
+            guard let rev = byPHID[phid] else { return nil }
+            return RevisionStackGraph.Node(
+                id: rev.id,
+                phid: rev.phid,
+                title: rev.fields.title,
+                status: rev.fields.status,
+                authorPHID: rev.fields.authorPHID
+            )
+        }
+
+        return RevisionStackGraph(
+            ordered: nodes,
+            focalID: focalID,
+            truncatedAtBranch: truncated
+        )
     }
 }

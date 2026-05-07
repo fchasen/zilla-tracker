@@ -22,6 +22,10 @@ struct RevisionInspector: View {
                         Divider()
                         reviewersSection(revision: revision)
                     }
+                    if let graph = workspace.loadedRevisionStack, !graph.ordered.isEmpty {
+                        Divider()
+                        stackSection(graph: graph)
+                    }
                     Divider()
                     tagsSection(revision: revision)
                     Divider()
@@ -495,4 +499,102 @@ struct RevisionInspector: View {
             return AnyView(Image(systemName: "circle").foregroundStyle(.secondary))
         }
     }
+
+    @ViewBuilder
+    private func stackSection(graph: RevisionStackGraph) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            InspectorSectionHeader(
+                title: "Stack",
+                trailing: graph.ordered.count > 1 ? "\(graph.ordered.count)" : nil
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(graph.ordered, id: \.id) { node in
+                    RevisionStackRow(
+                        node: node,
+                        isFocal: node.id == graph.focalID,
+                        authorDisplayName: stackAuthorDisplay(for: node.authorPHID),
+                        onOpen: { workspace.navigate(to: .revision($0)) }
+                    )
+                }
+            }
+            if graph.truncatedAtBranch {
+                Text("Stack has branches; showing one path")
+                    .scaledFont(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func stackAuthorDisplay(for phid: String) -> String? {
+        guard let user = workspace.revisionUserDirectory[phid] else { return nil }
+        if let real = user.realName, !real.isEmpty { return real }
+        return user.userName
+    }
+}
+
+private struct RevisionStackRow: View {
+    let node: RevisionStackGraph.Node
+    let isFocal: Bool
+    let authorDisplayName: String?
+    let onOpen: (Int) -> Void
+
+    var body: some View {
+        if isFocal {
+            rowContent
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+            let button = Button {
+                onOpen(node.id)
+            } label: {
+                rowContent
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(node.title)
+
+            #if os(macOS)
+            button.pointerStyle(.link)
+            #else
+            button
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: isFocal ? "arrowtriangle.right.fill" : "circle.fill")
+                .scaledFont(.caption2)
+                .foregroundStyle(isFocal ? Color.accentColor : StatusBadge.color(for: node.status))
+                .frame(width: 12)
+            Text(verbatim: "D\(node.id)")
+                .scaledFont(.caption, design: .monospaced)
+                .foregroundStyle(isFocal ? .primary : .secondary)
+                .fixedSize()
+            VStack(alignment: .leading, spacing: 1) {
+                Text(node.title)
+                    .scaledFont(.callout, weight: isFocal ? .semibold : .regular)
+                    .foregroundStyle(node.status.closed ? Color.secondary : Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let author = authorDisplayName, !author.isEmpty {
+                    Text(author)
+                        .scaledFont(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            if !isFocal {
+                Image(systemName: "chevron.right")
+                    .scaledFont(.caption2, weight: .semibold)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
 }

@@ -16,6 +16,7 @@ struct RevisionDetailView: View {
     @State private var diffSnapshot: DiffDetail?
     @State private var transactionsSnapshot: [RevisionTransaction] = []
     @State private var inlinesSnapshot: [InlineComment] = []
+    @State private var stackSnapshot: RevisionStackGraph?
 
     #if os(iOS)
     @State private var isPresentingCommentSheet: Bool = false
@@ -93,6 +94,7 @@ struct RevisionDetailView: View {
                     diffSnapshot = workspace.loadedRevisionDiff
                     transactionsSnapshot = workspace.loadedRevisionTransactions
                     inlinesSnapshot = workspace.loadedRevisionInlines
+                    stackSnapshot = workspace.loadedRevisionStack
                 }
             }
         }
@@ -103,6 +105,11 @@ struct RevisionDetailView: View {
             diffSnapshot = workspace.loadedRevisionDiff
             transactionsSnapshot = workspace.loadedRevisionTransactions
             inlinesSnapshot = workspace.loadedRevisionInlines
+            stackSnapshot = workspace.loadedRevisionStack
+        }
+        .onChange(of: workspace.loadedRevisionStack?.focalID) { _, newFocal in
+            guard newFocal == revisionID else { return }
+            stackSnapshot = workspace.loadedRevisionStack
         }
         .sheet(item: $actionSheet) { state in
             RevisionActionSheet(state: state) { transactions in
@@ -125,7 +132,8 @@ struct RevisionDetailView: View {
             revisionSnapshot,
             diff: diffSnapshot,
             transactions: transactionsSnapshot,
-            inlines: inlinesSnapshot
+            inlines: inlinesSnapshot,
+            stack: stackSnapshot
         )
     }
 

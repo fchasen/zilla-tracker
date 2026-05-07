@@ -117,6 +117,10 @@ public extension PhabricatorClient {
         try await call(method: "differential.revision.search", params: query)
     }
 
+    func searchEdges(_ query: EdgeQuery) async throws -> EdgeSearchResult {
+        try await call(method: "edge.search", params: query)
+    }
+
     func searchDiffs(_ query: DiffQuery) async throws -> DiffSearchResult {
         try await call(method: "differential.diff.search", params: query)
     }
