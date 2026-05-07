@@ -162,7 +162,7 @@ public struct FolioView: View {
         let theme = self.theme
         let contextLines = self.initialContextLines
 
-        let full = await Task.detached(priority: .userInitiated) {
+        let artifactTask = Task.detached(priority: .userInitiated) {
             let key = FolioRenderArtifactCacheKey(
                 content: content,
                 path: path,
@@ -172,15 +172,23 @@ public struct FolioView: View {
             if let cached = await FolioRenderArtifactCache.shared.artifact(for: key) {
                 return cached
             }
+            guard !Task.isCancelled else { return FolioRenderArtifact.empty }
             let artifact = FolioRenderArtifactBuilder.full(
                 content: content,
                 contextLines: contextLines,
                 path: path,
                 theme: theme
             )
-            await FolioRenderArtifactCache.shared.store(artifact, for: key)
+            if !Task.isCancelled {
+                await FolioRenderArtifactCache.shared.store(artifact, for: key)
+            }
             return artifact
-        }.value
+        }
+        let full = await withTaskCancellationHandler {
+            await artifactTask.value
+        } onCancel: {
+            artifactTask.cancel()
+        }
         guard !Task.isCancelled else { return }
         artifact = full
     }
