@@ -312,13 +312,21 @@ final class Workspace {
     private(set) var isLoadingProducts = false
     private(set) var loadError: String?
 
-    var sidebarSelection: SidebarSelection? = .smart(.myBugs) {
+    var sidebarSelection: SidebarSelection? = Workspace.defaultSidebarSelection {
         didSet {
             if oldValue != sidebarSelection {
                 activeRevisionID = nil
                 detailPath = []
             }
         }
+    }
+
+    static var defaultSidebarSelection: SidebarSelection? {
+        #if os(macOS)
+        return .smart(.myBugs)
+        #else
+        return nil
+        #endif
     }
     var selectedBugID: Bug.ID? {
         didSet {
@@ -548,7 +556,7 @@ final class Workspace {
     func reset() {
         products = []
         loadError = nil
-        sidebarSelection = .smart(.myBugs)
+        sidebarSelection = Workspace.defaultSidebarSelection
         selectedBugID = nil
         selectedDraftID = nil
         activeRevisionID = nil
@@ -1243,9 +1251,7 @@ struct ContentView: View {
             message: { Text(workspace.lastUpdateError ?? "") }
         )
         .task(id: auth.isSignedIn) {
-            if auth.isSignedIn, workspace.products.isEmpty {
-                await workspace.loadProducts(using: auth.client)
-            } else if !auth.isSignedIn {
+            if !auth.isSignedIn {
                 workspace.bugzillaSettingsPresented = true
             }
         }
