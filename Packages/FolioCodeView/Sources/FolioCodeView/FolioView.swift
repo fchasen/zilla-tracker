@@ -104,14 +104,7 @@ public struct FolioView: View {
                 }
             }
             if isExpanded || !showsHeader {
-                rows
-                    .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
-                    #if os(macOS)
-                    .gesture(selectionDragGesture)
-                    #endif
-                    .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
-                        selectionCells = cells
-                    }
+                rowContainer
             }
         }
         .background(Color(theme.contextRow.withAlpha(1)))
@@ -223,6 +216,10 @@ public struct FolioView: View {
         return true
     }
 
+    private var selectionReportingEnabled: Bool {
+        selection != nil || onLineSelectionChange != nil
+    }
+
     @ViewBuilder
     private var pathButton: some View {
         if let onPathTap {
@@ -274,6 +271,29 @@ public struct FolioView: View {
             }
         default:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var rowContainer: some View {
+        if selectionReportingEnabled {
+            #if os(macOS)
+            rows
+                .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
+                .gesture(selectionDragGesture)
+                .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
+                    selectionCells = cells
+                }
+            #else
+            rows
+                .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
+                .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
+                    selectionCells = cells
+                }
+            #endif
+        } else {
+            rows
+                .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
         }
     }
 
@@ -585,6 +605,7 @@ public struct FolioView: View {
                         onCreateComment: createCommentClosure(line: lookup.lineNum, side: lookup.side),
                         isInSelection: isLineSelected(lookup.lineNum, side: lookup.side),
                         coordinateSpace: FolioSelectionMath.coordinateSpaceName,
+                        reportsSelection: selectionReportingEnabled,
                         intralineRanges: diff.unifiedIntralineByHunkIdx[absIdx] ?? []
                     )
                     unifiedSlots(for: line)
@@ -628,7 +649,8 @@ public struct FolioView: View {
                         onCreateRightComment: createCommentClosure(line: rightLineNum, side: .newFile),
                         isLeftInSelection: isLineSelected(leftLineNum, side: .oldFile),
                         isRightInSelection: isLineSelected(rightLineNum, side: .newFile),
-                        coordinateSpace: FolioSelectionMath.coordinateSpaceName
+                        coordinateSpace: FolioSelectionMath.coordinateSpaceName,
+                        reportsSelection: selectionReportingEnabled
                     )
                     splitSlots(for: row)
                 }
@@ -764,7 +786,8 @@ public struct FolioView: View {
                     },
                     onCreateComment: createCommentClosure(line: lineNum, side: .newFile),
                     isInSelection: isLineSelected(lineNum, side: .newFile),
-                    coordinateSpace: FolioSelectionMath.coordinateSpaceName
+                    coordinateSpace: FolioSelectionMath.coordinateSpaceName,
+                    reportsSelection: selectionReportingEnabled
                 )
             }
         }

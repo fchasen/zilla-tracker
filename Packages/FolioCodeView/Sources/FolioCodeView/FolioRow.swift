@@ -16,6 +16,7 @@ struct FolioRow: View {
     let onCreateComment: (() -> Void)?
     let isInSelection: Bool
     let coordinateSpace: String
+    let reportsSelection: Bool
     let intralineRanges: [NSRange]
 
     @State private var isHovered: Bool = false
@@ -74,7 +75,8 @@ struct FolioRow: View {
             id: "u-\(line.kind)-\(line.oldNumber ?? -1)-\(line.newNumber ?? -1)",
             line: selectionLine,
             side: selectionSide,
-            in: coordinateSpace
+            in: coordinateSpace,
+            enabled: reportsSelection
         )
     }
 

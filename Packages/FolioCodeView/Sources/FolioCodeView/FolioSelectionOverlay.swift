@@ -16,17 +16,29 @@ struct FolioSelectableCellsPreference: PreferenceKey {
 }
 
 extension View {
-    func reportingFolioCell(id: String, line: Int?, side: AnchorRange.Side, in space: String) -> some View {
-        self.background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: FolioSelectableCellsPreference.self,
-                    value: line.map { ln in
-                        [FolioSelectableCell(id: id, line: ln, side: side, frame: proxy.frame(in: .named(space)))]
-                    } ?? []
+    func reportingFolioCell(
+        id: String,
+        line: Int?,
+        side: AnchorRange.Side,
+        in space: String,
+        enabled: Bool = true
+    ) -> some View {
+        Group {
+            if enabled {
+                self.background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: FolioSelectableCellsPreference.self,
+                            value: line.map { ln in
+                                [FolioSelectableCell(id: id, line: ln, side: side, frame: proxy.frame(in: .named(space)))]
+                            } ?? []
+                        )
+                    }
                 )
+            } else {
+                self
             }
-        )
+        }
     }
 }
 

@@ -21,6 +21,7 @@ struct SplitFolioRow: View {
     let isLeftInSelection: Bool
     let isRightInSelection: Bool
     let coordinateSpace: String
+    let reportsSelection: Bool
 
     @State private var isLeftHovered: Bool = false
     @State private var isRightHovered: Bool = false
@@ -107,7 +108,8 @@ struct SplitFolioRow: View {
                 : "split-r-\(row.right?.newNumber ?? -1)",
             line: side == .left ? row.left?.oldNumber : row.right?.newNumber,
             side: side == .left ? .oldFile : .newFile,
-            in: coordinateSpace
+            in: coordinateSpace,
+            enabled: reportsSelection
         )
     }
 

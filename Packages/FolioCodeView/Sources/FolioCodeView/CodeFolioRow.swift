@@ -17,6 +17,7 @@ struct CodeFolioRow: View {
     let onCreateComment: (() -> Void)?
     let isInSelection: Bool
     let coordinateSpace: String
+    let reportsSelection: Bool
 
     @State private var isHovered: Bool = false
 
@@ -72,7 +73,8 @@ struct CodeFolioRow: View {
             id: "code-\(lineNumber)",
             line: lineNumber,
             side: .newFile,
-            in: coordinateSpace
+            in: coordinateSpace,
+            enabled: reportsSelection
         )
     }
 
