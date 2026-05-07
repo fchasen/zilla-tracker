@@ -53,6 +53,9 @@ public struct RevisionTransaction: Decodable, Sendable, Hashable, Identifiable {
     public struct TransactionFields: Decodable, Sendable, Hashable {
         public let oldValue: String?
         public let newValue: String?
+        public let oldPHIDs: [String]?
+        public let newPHIDs: [String]?
+        public let operations: [Operation]?
 
         public let diffID: Int?
         public let diffPHID: String?
@@ -62,6 +65,41 @@ public struct RevisionTransaction: Decodable, Sendable, Hashable, Identifiable {
         public let replyToCommentPHID: String?
         public let isNewFile: Bool?
         public let isDone: Bool?
+
+        public struct Operation: Decodable, Sendable, Hashable {
+            public let operation: String?
+            public let phid: String?
+            public let oldStatus: String?
+            public let newStatus: String?
+            public let isBlocking: Bool?
+
+            public init(operation: String?, phid: String?, oldStatus: String?, newStatus: String?, isBlocking: Bool?) {
+                self.operation = operation
+                self.phid = phid
+                self.oldStatus = oldStatus
+                self.newStatus = newStatus
+                self.isBlocking = isBlocking
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case operation, phid, oldStatus, newStatus, isBlocking
+            }
+
+            public init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.operation = try? c.decodeIfPresent(String.self, forKey: .operation)
+                self.phid = try? c.decodeIfPresent(String.self, forKey: .phid)
+                self.oldStatus = try? c.decodeIfPresent(String.self, forKey: .oldStatus)
+                self.newStatus = try? c.decodeIfPresent(String.self, forKey: .newStatus)
+                if let b = try? c.decodeIfPresent(Bool.self, forKey: .isBlocking) {
+                    self.isBlocking = b
+                } else if let i = try? c.decodeIfPresent(Int.self, forKey: .isBlocking) {
+                    self.isBlocking = i != 0
+                } else {
+                    self.isBlocking = nil
+                }
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
             case oldValue = "old"
@@ -73,6 +111,7 @@ public struct RevisionTransaction: Decodable, Sendable, Hashable, Identifiable {
             case replyToCommentPHID
             case isNewFile
             case isDone
+            case operations
         }
 
         struct DiffKeys: CodingKey {
@@ -88,6 +127,9 @@ public struct RevisionTransaction: Decodable, Sendable, Hashable, Identifiable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.oldValue = Self.decodeStringish(c, key: .oldValue)
             self.newValue = Self.decodeStringish(c, key: .newValue)
+            self.oldPHIDs = try? c.decodeIfPresent([String].self, forKey: .oldValue)
+            self.newPHIDs = try? c.decodeIfPresent([String].self, forKey: .newValue)
+            self.operations = try? c.decodeIfPresent([Operation].self, forKey: .operations)
             // `diff` may arrive as a nested object {id, phid}, as a bare int,
             // or as a numeric string. Try each shape.
             if let diffContainer = try? c.nestedContainer(keyedBy: DiffKeys.self, forKey: .diff) {
@@ -165,6 +207,9 @@ extension RevisionTransaction.TransactionFields {
     init(empty: Void) {
         self.oldValue = nil
         self.newValue = nil
+        self.oldPHIDs = nil
+        self.newPHIDs = nil
+        self.operations = nil
         self.diffID = nil
         self.diffPHID = nil
         self.path = nil
@@ -230,6 +275,165 @@ public extension RevisionTransaction {
             dateCreated: dateCreated,
             dateModified: dateModified
         )
+    }
+}
+
+public extension RevisionTransaction {
+    /// Structured classification of a transaction's payload — for UI rendering.
+    /// Falls back to `.verb` for purely lifecycle-style changes that have no
+    /// extra payload, and `.unknown` for transaction types we don't recognize.
+    enum Kind: Sendable, Hashable {
+        case comment
+        case inline
+        case titleChange(old: String?, new: String?)
+        case summaryChange(old: String?, new: String?)
+        case testPlanChange(old: String?, new: String?)
+        case statusChange(old: String?, new: String?)
+        case bugIDChange(old: String?, new: String?)
+        case diffUpdate(diffID: Int?, diffPHID: String?)
+        case reviewersChanged(operations: [TransactionFields.Operation])
+        case subscribersChanged(adds: [String], removes: [String])
+        case projectsChanged(adds: [String], removes: [String])
+        case columnsChanged
+        case buildStatus(old: String?, new: String?)
+        case verb(Verb)
+        case unknown(rawType: String?)
+
+        public enum Verb: Sendable, Hashable {
+            case accept
+            case reject
+            case requestChanges
+            case abandon
+            case reclaim
+            case reopen
+            case close
+            case planChanges
+            case requestReview
+            case resign
+            case create
+            case commandeer
+            case mfaConfirmed
+        }
+    }
+
+    var kind: Kind {
+        if isComment {
+            return (fields.path != nil && fields.line != nil) ? .inline : .comment
+        }
+        switch type {
+        case "title":
+            return .titleChange(old: fields.oldValue, new: fields.newValue)
+        case "summary":
+            return .summaryChange(old: fields.oldValue, new: fields.newValue)
+        case "test-plan", "differential.test-plan":
+            return .testPlanChange(old: fields.oldValue, new: fields.newValue)
+        case "status", "differential:status":
+            return .statusChange(old: fields.oldValue, new: fields.newValue)
+        case "bugzilla.bug-id":
+            return .bugIDChange(old: fields.oldValue, new: fields.newValue)
+        case "update", "differential.diff", "differential:diff":
+            return .diffUpdate(diffID: fields.diffID, diffPHID: fields.diffPHID)
+        case "reviewers.add", "reviewers.remove", "reviewers.set", "reviewers.update", "reviewer", "reviewers":
+            return .reviewersChanged(operations: reviewerOperations())
+        case "subscribers.add", "subscribers.remove", "subscribers.set", "subscriber":
+            let (adds, removes) = subscriberDeltas()
+            return .subscribersChanged(adds: adds, removes: removes)
+        case "projects.add", "projects.remove", "projects.set":
+            let (adds, removes) = projectDeltas()
+            return .projectsChanged(adds: adds, removes: removes)
+        case "core:columns":
+            return .columnsChanged
+        case "harbormaster:buildable", "harbormaster:status", "harbormaster:build",
+             "harbormaster.buildable.create", "harbormaster.build.status":
+            return .buildStatus(old: fields.oldValue, new: fields.newValue)
+        case "accept": return .verb(.accept)
+        case "reject": return .verb(.reject)
+        case "request-changes": return .verb(.requestChanges)
+        case "abandon": return .verb(.abandon)
+        case "reclaim": return .verb(.reclaim)
+        case "reopen": return .verb(.reopen)
+        case "close": return .verb(.close)
+        case "plan-changes": return .verb(.planChanges)
+        case "request-review": return .verb(.requestReview)
+        case "resign": return .verb(.resign)
+        case "create": return .verb(.create)
+        case "commandeer": return .verb(.commandeer)
+        case "mfa": return .verb(.mfaConfirmed)
+        default:
+            if isHarbormasterAuthored || (type?.lowercased().contains("harbormaster") ?? false) {
+                return .buildStatus(old: fields.oldValue, new: fields.newValue)
+            }
+            return .unknown(rawType: type)
+        }
+    }
+
+    private var isHarbormasterAuthored: Bool {
+        authorPHID == "PHID-APPS-PhabricatorHarbormasterApplication"
+    }
+
+    private func reviewerOperations() -> [TransactionFields.Operation] {
+        if let ops = fields.operations, !ops.isEmpty { return ops }
+        // Fallback: synthesize from `new` PHID array when `operations` absent
+        // (older Phabricator forks emitted `reviewers.set` with `new: [phid,...]`).
+        if let news = fields.newPHIDs {
+            let olds = Set(fields.oldPHIDs ?? [])
+            let nowSet = Set(news)
+            let added = news.filter { !olds.contains($0) }.map {
+                TransactionFields.Operation(operation: "add", phid: $0, oldStatus: nil, newStatus: nil, isBlocking: nil)
+            }
+            let removed = (fields.oldPHIDs ?? []).filter { !nowSet.contains($0) }.map {
+                TransactionFields.Operation(operation: "remove", phid: $0, oldStatus: nil, newStatus: nil, isBlocking: nil)
+            }
+            return added + removed
+        }
+        return []
+    }
+
+    private func subscriberDeltas() -> (adds: [String], removes: [String]) {
+        if let ops = fields.operations, !ops.isEmpty {
+            let adds = ops.filter { $0.operation == "add" }.compactMap(\.phid)
+            let removes = ops.filter { $0.operation == "remove" }.compactMap(\.phid)
+            return (adds, removes)
+        }
+        let olds = Set(fields.oldPHIDs ?? [])
+        let news = Set(fields.newPHIDs ?? [])
+        return (Array(news.subtracting(olds)), Array(olds.subtracting(news)))
+    }
+
+    private func projectDeltas() -> (adds: [String], removes: [String]) {
+        if let ops = fields.operations, !ops.isEmpty {
+            let adds = ops.filter { $0.operation == "add" }.compactMap(\.phid)
+            let removes = ops.filter { $0.operation == "remove" }.compactMap(\.phid)
+            return (adds, removes)
+        }
+        let olds = Set(fields.oldPHIDs ?? [])
+        let news = Set(fields.newPHIDs ?? [])
+        return (Array(news.subtracting(olds)), Array(olds.subtracting(news)))
+    }
+
+    /// PHIDs referenced inside `fields` (operations, old/new PHID arrays).
+    /// Use to extend user/project directories so chips can show names.
+    var referencedPHIDs: [String] {
+        var out: [String] = []
+        if let ops = fields.operations {
+            for op in ops { if let p = op.phid { out.append(p) } }
+        }
+        if let arr = fields.oldPHIDs { out.append(contentsOf: arr) }
+        if let arr = fields.newPHIDs { out.append(contentsOf: arr) }
+        return out
+    }
+}
+
+/// Friendly names for the system "application" actors that appear as
+/// `authorPHID` on automated transactions (Herald rules, Harbormaster builds,
+/// Diffusion commits, etc.). These never resolve through `user.search` because
+/// they aren't users — they're the apps acting on the revision's behalf.
+public enum SystemActor {
+    public static func displayName(forPHID phid: String) -> String? {
+        guard phid.hasPrefix("PHID-APPS-Phabricator") else { return nil }
+        let stripped = phid.replacingOccurrences(of: "PHID-APPS-Phabricator", with: "")
+            .replacingOccurrences(of: "Application", with: "")
+        return stripped.isEmpty ? nil : stripped
     }
 }
 

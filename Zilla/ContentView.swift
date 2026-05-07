@@ -488,6 +488,7 @@ final class Workspace {
     private(set) var loadedRevisionDiff: DiffDetail?
     private(set) var loadedRevisionTransactions: [RevisionTransaction] = []
     private(set) var loadedRevisionInlines: [InlineComment] = []
+    private(set) var loadedRevisionStack: RevisionStackGraph?
     private(set) var revisionUserDirectory: [String: PhabricatorUser] = [:]
     private(set) var revisionProjectDirectory: [String: PhabricatorProject] = [:]
     private(set) var testingTagPHIDs: [TestingTag: String] = [:]
@@ -710,12 +711,14 @@ final class Workspace {
         _ revision: Revision,
         diff: DiffDetail?,
         transactions: [RevisionTransaction],
-        inlines: [InlineComment]
+        inlines: [InlineComment],
+        stack: RevisionStackGraph? = nil
     ) {
         loadedRevision = revision
         loadedRevisionDiff = diff
         loadedRevisionTransactions = transactions
         loadedRevisionInlines = inlines
+        loadedRevisionStack = stack
         revisionLoadError = nil
     }
 
@@ -724,6 +727,7 @@ final class Workspace {
         loadedRevisionDiff = nil
         loadedRevisionTransactions = []
         loadedRevisionInlines = []
+        loadedRevisionStack = nil
         revisionUserDirectory = [:]
         revisionProjectDirectory = [:]
         changesetContent = [:]
@@ -820,8 +824,25 @@ final class Workspace {
             }
         }()
 
+        async let stackOpt: RevisionStackGraph? = {
+            guard let cache else { return nil }
+            do {
+                return try await cache.revisionStack(
+                    revisionID: revision.id,
+                    revisionPHID: revision.phid,
+                    using: client
+                )
+            } catch is CancellationError {
+                return nil
+            } catch {
+                revisionLog.error("Stack load failed: \(String(describing: error))")
+                return nil
+            }
+        }()
+
         let resolvedDiff = await diffOpt
         let resolvedTransactions = await transactions
+        let resolvedStack = await stackOpt
         let resolvedInlines = PhabricatorClient.inlineComments(from: resolvedTransactions)
 
         let typeCounts = Dictionary(
@@ -839,6 +860,7 @@ final class Workspace {
         loadedRevisionDiff = resolvedDiff
         loadedRevisionTransactions = resolvedTransactions
         loadedRevisionInlines = resolvedInlines
+        loadedRevisionStack = resolvedStack
 
         await resolveUserDirectory(using: client)
         await resolveProjectDirectory(using: client)
@@ -889,6 +911,11 @@ final class Workspace {
                 phids.insert(reviewer.reviewerPHID)
             }
         }
+        for transaction in loadedRevisionTransactions {
+            for phid in transaction.referencedPHIDs where phid.hasPrefix("PHID-PROJ-") {
+                phids.insert(phid)
+            }
+        }
         let missing = phids.filter { revisionProjectDirectory[$0] == nil }
         guard !missing.isEmpty else { return }
         do {
@@ -912,9 +939,15 @@ final class Workspace {
         }
         for transaction in loadedRevisionTransactions {
             if let phid = transaction.authorPHID { phids.insert(phid) }
+            for referenced in transaction.referencedPHIDs {
+                phids.insert(referenced)
+            }
         }
         for inline in loadedRevisionInlines {
             if let phid = inline.authorPHID { phids.insert(phid) }
+        }
+        for node in loadedRevisionStack?.ordered ?? [] {
+            phids.insert(node.authorPHID)
         }
         let userPHIDs = phids.filter { $0.hasPrefix("PHID-USER-") }
         if let cache {
