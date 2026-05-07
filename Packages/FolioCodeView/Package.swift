@@ -178,6 +178,10 @@ let package = Package(
         .testTarget(
             name: "FolioHighlightTests",
             dependencies: ["FolioHighlight"]
+        ),
+        .testTarget(
+            name: "FolioCodeViewTests",
+            dependencies: ["FolioCodeView"]
         )
     ]
 )
