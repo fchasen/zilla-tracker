@@ -117,7 +117,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .myBugs: return "person.crop.circle"
+        case .myBugs: return "ladybug"
         case .reported: return "tray.and.arrow.up"
         case .needsReview: return "flag"
         case .recentlyChanged: return "clock"
