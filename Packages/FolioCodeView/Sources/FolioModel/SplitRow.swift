@@ -24,11 +24,22 @@ public struct SplitRow: Sendable, Hashable {
 
 public enum SplitRowBuilder {
     public static func build(_ lines: [DiffLine]) -> [SplitRow] {
+        build(lines[...]) { old, new in IntralineDiff.compute(old: old, new: new) }
+    }
+
+    public static func build(_ lines: ArraySlice<DiffLine>) -> [SplitRow] {
         build(lines) { old, new in IntralineDiff.compute(old: old, new: new) }
     }
 
     public static func build(
         _ lines: [DiffLine],
+        intralineDiffProvider: (String, String) -> IntralineDiff.Result?
+    ) -> [SplitRow] {
+        build(lines[...], intralineDiffProvider: intralineDiffProvider)
+    }
+
+    public static func build(
+        _ lines: ArraySlice<DiffLine>,
         intralineDiffProvider: (String, String) -> IntralineDiff.Result?
     ) -> [SplitRow] {
         var rows: [SplitRow] = []
@@ -55,7 +66,8 @@ public enum SplitRowBuilder {
             pendingAdditions.removeAll(keepingCapacity: true)
         }
 
-        for (i, line) in lines.enumerated() {
+        for i in lines.indices {
+            let line = lines[i]
             switch line.kind {
             case .deletion:
                 pendingDeletions.append((i, line))

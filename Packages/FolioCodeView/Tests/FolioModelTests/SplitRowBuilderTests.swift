@@ -139,6 +139,21 @@ final class SplitRowBuilderTests: XCTestCase {
         XCTAssertEqual(rows[2].rightIndex, 3)
     }
 
+    func testSliceIndicesPreserveOriginalPositions() {
+        let lines = [
+            DiffLine(kind: .context, oldNumber: 1, newNumber: 1, text: "before"),
+            DiffLine(kind: .deletion, oldNumber: 2, newNumber: nil, text: "old1"),
+            DiffLine(kind: .addition, oldNumber: nil, newNumber: 2, text: "new1"),
+            DiffLine(kind: .context, oldNumber: 3, newNumber: 3, text: "after")
+        ]
+
+        let rows = SplitRowBuilder.build(lines[1...2])
+
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].leftIndex, 1)
+        XCTAssertEqual(rows[0].rightIndex, 2)
+    }
+
     func testProviderClosureReceivesPairedTexts() {
         let lines = [
             DiffLine(kind: .deletion, oldNumber: 1, newNumber: nil, text: "alpha"),

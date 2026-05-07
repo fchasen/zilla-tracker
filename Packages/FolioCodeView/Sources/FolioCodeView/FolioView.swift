@@ -612,14 +612,12 @@ public struct FolioView: View {
                 }
             case .split:
                 let cache = diff.intralineDiffByText
-                let visible = Array(hunk.lines[range])
-                let baseIndex = range.lowerBound
-                let splitRows = SplitRowBuilder.build(visible) { old, new in
+                let splitRows = SplitRowBuilder.build(hunk.lines[range]) { old, new in
                     cache[FolioTextPair(old: old, new: new)]
                 }
                 ForEach(Array(splitRows.enumerated()), id: \.offset) { _, row in
-                    let leftAbs = row.leftIndex.map { baseIndex + $0 }
-                    let rightAbs = row.rightIndex.map { baseIndex + $0 }
+                    let leftAbs = row.leftIndex
+                    let rightAbs = row.rightIndex
                     let leftLineRange = leftAbs.flatMap { i -> NSRange? in
                         i < diff.lineRanges.count ? diff.lineRanges[i] : nil
                     }
