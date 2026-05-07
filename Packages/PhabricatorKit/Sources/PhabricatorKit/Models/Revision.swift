@@ -14,6 +14,7 @@ public struct Revision: Decodable, Sendable, Hashable, Identifiable {
         public let authorPHID: String
         public let status: RevisionStatus
         public let summary: String?
+        public let testPlan: String?
         public let isDraft: Bool
         public let dateCreated: Date
         public let dateModified: Date
@@ -28,7 +29,7 @@ public struct Revision: Decodable, Sendable, Hashable, Identifiable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case title, uri, authorPHID, status, summary, isDraft
+            case title, uri, authorPHID, status, summary, testPlan, isDraft
             case dateCreated, dateModified
             case bugzillaBugID = "bugzilla.bug-id"
             case repositoryPHID
@@ -43,6 +44,7 @@ public struct Revision: Decodable, Sendable, Hashable, Identifiable {
             self.authorPHID = try c.decode(String.self, forKey: .authorPHID)
             self.status = try c.decode(RevisionStatus.self, forKey: .status)
             self.summary = try c.decodeIfPresent(String.self, forKey: .summary)
+            self.testPlan = try c.decodeIfPresent(String.self, forKey: .testPlan)
             self.isDraft = try c.decode(Bool.self, forKey: .isDraft)
             self.dateCreated = try c.decode(Date.self, forKey: .dateCreated)
             self.dateModified = try c.decode(Date.self, forKey: .dateModified)

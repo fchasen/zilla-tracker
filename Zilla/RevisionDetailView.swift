@@ -149,6 +149,17 @@ struct RevisionDetailView: View {
                         RemarkupText(source: summary)
                             .textSelection(.enabled)
                     }
+                    if let testPlan = revision.fields.testPlan, !testPlan.isEmpty {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Test Plan")
+                                .scaledFont(.caption, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+                            RemarkupText(source: testPlan)
+                                .textSelection(.enabled)
+                        }
+                    }
                     Divider()
                     RevisionActivityView()
                     Divider()
