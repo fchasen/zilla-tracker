@@ -20,8 +20,26 @@ struct FolioRenderArtifact: Sendable, Equatable {
         let runsByLine: [[FolioHighlighter.Run]]
         let intralineDiffByText: [FolioTextPair: IntralineDiff.Result]
         let unifiedIntralineByHunkIdx: [Int: [NSRange]]
+        let splitRows: [SplitRowDescriptor]
         let foldedSections: [FoldedDiff.Section]
         let foldedContextLines: Int
+    }
+
+    struct SplitRowDescriptor: Sendable, Equatable {
+        let leftIndex: Int?
+        let rightIndex: Int?
+        let intralineDiff: IntralineDiff.Result?
+
+        func clipped(to range: ClosedRange<Int>) -> SplitRowDescriptor? {
+            let clippedLeft = leftIndex.flatMap { range.contains($0) ? $0 : nil }
+            let clippedRight = rightIndex.flatMap { range.contains($0) ? $0 : nil }
+            guard clippedLeft != nil || clippedRight != nil else { return nil }
+            return SplitRowDescriptor(
+                leftIndex: clippedLeft,
+                rightIndex: clippedRight,
+                intralineDiff: clippedLeft != nil && clippedRight != nil ? intralineDiff : nil
+            )
+        }
     }
 
     struct Code: Sendable, Equatable {
@@ -61,6 +79,7 @@ struct FolioRenderArtifact: Sendable, Equatable {
                 + estimatedCost(of: diff.runsByLine)
                 + estimatedCost(of: diff.intralineDiffByText)
                 + estimatedCost(of: diff.unifiedIntralineByHunkIdx)
+                + estimatedCost(of: diff.splitRows)
                 + diff.foldedSections.count * 32
         case let .code(code):
             return 128
@@ -110,6 +129,16 @@ private func estimatedCost(of intralineByIndex: [Int: [NSRange]]) -> Int {
     }
 }
 
+private func estimatedCost(of splitRows: [FolioRenderArtifact.SplitRowDescriptor]) -> Int {
+    splitRows.reduce(24) { total, row in
+        total
+            + 32
+            + (row.intralineDiff.map {
+                estimatedCost(of: $0.oldRanges) + estimatedCost(of: $0.newRanges)
+            } ?? 0)
+    }
+}
+
 enum FolioRenderArtifactBuilder {
     static let highlightUTF16Limit = 250_000
 
@@ -129,6 +158,7 @@ enum FolioRenderArtifactBuilder {
                     runsByLine: Array(repeating: [], count: lineRanges.count),
                     intralineDiffByText: [:],
                     unifiedIntralineByHunkIdx: [:],
+                    splitRows: makeSplitRows(for: hunk.lines, cache: [:]),
                     foldedSections: folded,
                     foldedContextLines: contextLines
                 )),
@@ -170,6 +200,7 @@ enum FolioRenderArtifactBuilder {
                     runsByLine: makeRunsByLine(runs: runs, lineRanges: lineRanges),
                     intralineDiffByText: intralineCache,
                     unifiedIntralineByHunkIdx: unifiedIntraline,
+                    splitRows: makeSplitRows(for: hunk.lines, cache: intralineCache),
                     foldedSections: folded,
                     foldedContextLines: contextLines
                 )),
@@ -344,6 +375,57 @@ enum FolioRenderArtifactBuilder {
         }
         flush()
         return result
+    }
+
+    private static func makeSplitRows(
+        for lines: [DiffLine],
+        cache: [FolioTextPair: IntralineDiff.Result]
+    ) -> [FolioRenderArtifact.SplitRowDescriptor] {
+        var rows: [FolioRenderArtifact.SplitRowDescriptor] = []
+        var pendingDeletions: [Int] = []
+        var pendingAdditions: [Int] = []
+
+        func flush() {
+            let pairs = max(pendingDeletions.count, pendingAdditions.count)
+            for i in 0..<pairs {
+                let leftIndex = i < pendingDeletions.count ? pendingDeletions[i] : nil
+                let rightIndex = i < pendingAdditions.count ? pendingAdditions[i] : nil
+                let diff: IntralineDiff.Result?
+                if let leftIndex, let rightIndex {
+                    diff = cache[FolioTextPair(
+                        old: lines[leftIndex].text,
+                        new: lines[rightIndex].text
+                    )]
+                } else {
+                    diff = nil
+                }
+                rows.append(FolioRenderArtifact.SplitRowDescriptor(
+                    leftIndex: leftIndex,
+                    rightIndex: rightIndex,
+                    intralineDiff: diff
+                ))
+            }
+            pendingDeletions.removeAll(keepingCapacity: true)
+            pendingAdditions.removeAll(keepingCapacity: true)
+        }
+
+        for (idx, line) in lines.enumerated() {
+            switch line.kind {
+            case .deletion:
+                pendingDeletions.append(idx)
+            case .addition:
+                pendingAdditions.append(idx)
+            case .context, .noNewline:
+                flush()
+                rows.append(FolioRenderArtifact.SplitRowDescriptor(
+                    leftIndex: idx,
+                    rightIndex: idx,
+                    intralineDiff: nil
+                ))
+            }
+        }
+        flush()
+        return rows
     }
 
     private static func makeGutterWidth(for visible: ArraySlice<DiffLine>) -> CGFloat {

@@ -601,28 +601,35 @@ public struct FolioView: View {
                     unifiedSlots(for: line)
                 }
             case .split:
-                let cache = diff.intralineDiffByText
-                let splitRows = SplitRowBuilder.build(hunk.lines[range]) { old, new in
-                    cache[FolioTextPair(old: old, new: new)]
-                }
-                ForEach(Array(splitRows.enumerated()), id: \.offset) { _, row in
+                let splitRows = splitRows(in: range, diff: diff)
+                ForEach(splitRows.indices, id: \.self) { rowIndex in
+                    let row = splitRows[rowIndex]
                     let leftAbs = row.leftIndex
                     let rightAbs = row.rightIndex
+                    let leftLine = leftAbs.flatMap { i -> DiffLine? in
+                        i < hunk.lines.count ? hunk.lines[i] : nil
+                    }
+                    let rightLine = rightAbs.flatMap { i -> DiffLine? in
+                        i < hunk.lines.count ? hunk.lines[i] : nil
+                    }
                     let leftLineRange = leftAbs.flatMap { i -> NSRange? in
                         i < diff.lineRanges.count ? diff.lineRanges[i] : nil
                     }
                     let rightLineRange = rightAbs.flatMap { i -> NSRange? in
                         i < diff.lineRanges.count ? diff.lineRanges[i] : nil
                     }
-                    let leftLineNum = row.left?.oldNumber
-                    let rightLineNum = row.right?.newNumber
+                    let leftLineNum = leftLine?.oldNumber
+                    let rightLineNum = rightLine?.newNumber
                     let leftMark = leftLineNum.flatMap { findMark(side: .oldFile, line: $0) }
                     let rightMark = rightLineNum.flatMap { findMark(side: .newFile, line: $0) }
                     SplitFolioRow(
                         row: row,
+                        leftLine: leftLine,
+                        rightLine: rightLine,
                         leftLineRange: leftLineRange,
                         rightLineRange: rightLineRange,
-                        runs: splitRuns(in: diff, left: leftAbs, right: rightAbs),
+                        leftRuns: lineRuns(in: diff, index: leftAbs),
+                        rightRuns: lineRuns(in: diff, index: rightAbs),
                         theme: theme,
                         gutterWidth: artifact.gutterWidth,
                         leftMark: leftMark,
@@ -640,10 +647,17 @@ public struct FolioView: View {
                         coordinateSpace: FolioSelectionMath.coordinateSpaceName,
                         reportsSelection: selectionReportingEnabled
                     )
-                    splitSlots(for: row)
+                    splitSlots(leftLine: leftLine, rightLine: rightLine)
                 }
             }
         }
+    }
+
+    private func splitRows(
+        in range: ClosedRange<Int>,
+        diff: FolioRenderArtifact.Diff
+    ) -> [FolioRenderArtifact.SplitRowDescriptor] {
+        diff.splitRows.compactMap { $0.clipped(to: range) }
     }
 
     private func lineRuns(
@@ -656,17 +670,6 @@ public struct FolioView: View {
             return []
         }
         return diff.runsByLine[index]
-    }
-
-    private func splitRuns(
-        in diff: FolioRenderArtifact.Diff,
-        left: Int?,
-        right: Int?
-    ) -> [FolioHighlighter.Run] {
-        if left == right {
-            return lineRuns(in: diff, index: left)
-        }
-        return lineRuns(in: diff, index: left) + lineRuns(in: diff, index: right)
     }
 
     @ViewBuilder
@@ -693,14 +696,14 @@ public struct FolioView: View {
     }
 
     @ViewBuilder
-    private func splitSlots(for row: SplitRow) -> some View {
-        let leftLine = row.left?.oldNumber
-        let rightLine = row.right?.newNumber
-        if hasSlot(side: .oldFile, line: leftLine) || hasSlot(side: .newFile, line: rightLine) {
+    private func splitSlots(leftLine: DiffLine?, rightLine: DiffLine?) -> some View {
+        let leftLineNum = leftLine?.oldNumber
+        let rightLineNum = rightLine?.newNumber
+        if hasSlot(side: .oldFile, line: leftLineNum) || hasSlot(side: .newFile, line: rightLineNum) {
             HStack(alignment: .top, spacing: 0) {
                 HStack(spacing: 0) {
-                    if let leftLine, hasSlot(side: .oldFile, line: leftLine) {
-                        slotsAt(side: .oldFile, line: leftLine)
+                    if let leftLineNum, hasSlot(side: .oldFile, line: leftLineNum) {
+                        slotsAt(side: .oldFile, line: leftLineNum)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -708,8 +711,8 @@ public struct FolioView: View {
                 Color.clear.frame(width: 1)
 
                 HStack(spacing: 0) {
-                    if let rightLine, hasSlot(side: .newFile, line: rightLine) {
-                        slotsAt(side: .newFile, line: rightLine)
+                    if let rightLineNum, hasSlot(side: .newFile, line: rightLineNum) {
+                        slotsAt(side: .newFile, line: rightLineNum)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

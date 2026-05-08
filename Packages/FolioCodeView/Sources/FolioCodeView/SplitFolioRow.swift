@@ -6,10 +6,13 @@ import UIKit
 #endif
 
 struct SplitFolioRow: View {
-    let row: SplitRow
+    let row: FolioRenderArtifact.SplitRowDescriptor
+    let leftLine: DiffLine?
+    let rightLine: DiffLine?
     let leftLineRange: NSRange?
     let rightLineRange: NSRange?
-    let runs: [FolioHighlighter.Run]
+    let leftRuns: [FolioHighlighter.Run]
+    let rightRuns: [FolioHighlighter.Run]
     let theme: HighlightTheme
     let gutterWidth: CGFloat
     let leftMark: FolioCommentMark?
@@ -43,7 +46,7 @@ struct SplitFolioRow: View {
 
     @ViewBuilder
     private func cell(side: CellSide) -> some View {
-        let line = side == .left ? row.left : row.right
+        let line = side == .left ? leftLine : rightLine
         let lineRange = side == .left ? leftLineRange : rightLineRange
         let number = side == .left ? line?.oldNumber : line?.newNumber
         let mark = side == .left ? leftMark : rightMark
@@ -51,6 +54,7 @@ struct SplitFolioRow: View {
         let onCreate = side == .left ? onCreateLeftComment : onCreateRightComment
         let inSelection = side == .left ? isLeftInSelection : isRightInSelection
         let isHovered = side == .left ? isLeftHovered : isRightHovered
+        let runs = side == .left ? leftRuns : rightRuns
 
         HStack(alignment: .top, spacing: 0) {
             gutter(text: number.map(String.init) ?? "", line: line)
@@ -62,7 +66,7 @@ struct SplitFolioRow: View {
                 onMarkTap: onMarkTap,
                 onCreate: onCreate
             )
-            code(line: line, lineRange: lineRange, side: side)
+            code(line: line, lineRange: lineRange, runs: runs, side: side)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
@@ -104,9 +108,9 @@ struct SplitFolioRow: View {
         #endif
         .reportingFolioCell(
             id: side == .left
-                ? "split-l-\(row.left?.oldNumber ?? -1)"
-                : "split-r-\(row.right?.newNumber ?? -1)",
-            line: side == .left ? row.left?.oldNumber : row.right?.newNumber,
+                ? "split-l-\(leftLine?.oldNumber ?? -1)"
+                : "split-r-\(rightLine?.newNumber ?? -1)",
+            line: side == .left ? leftLine?.oldNumber : rightLine?.newNumber,
             side: side == .left ? .oldFile : .newFile,
             in: coordinateSpace,
             enabled: reportsSelection
@@ -133,8 +137,13 @@ struct SplitFolioRow: View {
             .padding(.vertical, 1)
     }
 
-    private func code(line: DiffLine?, lineRange: NSRange?, side: CellSide) -> some View {
-        Text(highlighted(line: line, lineRange: lineRange, side: side))
+    private func code(
+        line: DiffLine?,
+        lineRange: NSRange?,
+        runs: [FolioHighlighter.Run],
+        side: CellSide
+    ) -> some View {
+        Text(highlighted(line: line, lineRange: lineRange, runs: runs, side: side))
             .foregroundColor(Color(theme.foreground))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 4)
@@ -143,7 +152,12 @@ struct SplitFolioRow: View {
             .textSelection(.enabled)
     }
 
-    private func highlighted(line: DiffLine?, lineRange: NSRange?, side: CellSide) -> AttributedString {
+    private func highlighted(
+        line: DiffLine?,
+        lineRange: NSRange?,
+        runs: [FolioHighlighter.Run],
+        side: CellSide
+    ) -> AttributedString {
         guard let line, let lineRange else { return AttributedString("") }
         var attr = FolioHighlighter.attributed(
             text: line.text,

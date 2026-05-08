@@ -31,6 +31,37 @@ final class FolioRenderArtifactTests: XCTestCase {
         assertRunsIntersectTheirLines(runsByLine: diff.runsByLine, lineRanges: diff.lineRanges)
     }
 
+    func testDiffArtifactPrecomputesSplitRows() {
+        let hunk = DiffHunk(
+            oldStart: 1,
+            newStart: 1,
+            lines: [
+                DiffLine(kind: .deletion, oldNumber: 1, newNumber: nil, text: "let value = 1;"),
+                DiffLine(kind: .addition, oldNumber: nil, newNumber: 1, text: "let value = 2;"),
+                DiffLine(kind: .context, oldNumber: 2, newNumber: 2, text: "let next = 3;")
+            ]
+        )
+
+        let artifact = FolioRenderArtifactBuilder.full(
+            content: .diff(hunk, anchor: nil, mode: .split),
+            contextLines: 3,
+            path: "example.js",
+            theme: .light
+        )
+
+        guard case let .diff(diff) = artifact.kind else {
+            return XCTFail("Expected diff artifact")
+        }
+
+        XCTAssertEqual(diff.splitRows.count, 2)
+        XCTAssertEqual(diff.splitRows[0].leftIndex, 0)
+        XCTAssertEqual(diff.splitRows[0].rightIndex, 1)
+        XCTAssertNotNil(diff.splitRows[0].intralineDiff)
+        XCTAssertEqual(diff.splitRows[1].leftIndex, 2)
+        XCTAssertEqual(diff.splitRows[1].rightIndex, 2)
+        XCTAssertNil(diff.splitRows[1].intralineDiff)
+    }
+
     func testCodeArtifactIndexesRunsByLine() {
         let artifact = FolioRenderArtifactBuilder.full(
             content: .code("let first = 1;\nconst second = 2;", startLine: 10),
