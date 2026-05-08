@@ -71,9 +71,10 @@ struct ActivityRow: View {
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(\.colorScheme) private var colorScheme
     let transaction: RevisionTransaction
-    @State private var rowWidth: CGFloat = 800
+    @State private var isNarrowLayout: Bool?
 
     private static let narrowThreshold: CGFloat = 560
+    private static let narrowLayoutHysteresis: CGFloat = 16
 
     var body: some View {
         Group {
@@ -103,7 +104,19 @@ struct ActivityRow: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { newValue in
-            rowWidth = newValue
+            let shouldUseNarrowLayout: Bool
+            if let isNarrowLayout {
+                if isNarrowLayout {
+                    shouldUseNarrowLayout = newValue < Self.narrowThreshold + Self.narrowLayoutHysteresis
+                } else {
+                    shouldUseNarrowLayout = newValue < Self.narrowThreshold - Self.narrowLayoutHysteresis
+                }
+            } else {
+                shouldUseNarrowLayout = newValue < Self.narrowThreshold
+            }
+            if isNarrowLayout != shouldUseNarrowLayout {
+                isNarrowLayout = shouldUseNarrowLayout
+            }
         }
     }
 
@@ -119,7 +132,7 @@ struct ActivityRow: View {
     }
 
     private var isNarrow: Bool {
-        rowWidth < Self.narrowThreshold
+        isNarrowLayout ?? false
     }
 
     private var expandedRow: some View {

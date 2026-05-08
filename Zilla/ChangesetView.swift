@@ -15,7 +15,7 @@ struct ChangesetView: View {
     let changeset: Changeset
     let latestDiffID: Int
 
-    @State private var containerWidth: CGFloat = 800
+    @State private var usesSplitLayout: Bool?
     @State private var showAllHunks: Bool = false
     @State private var lineSelection: FolioLineSelection?
     @State private var parsedHunks = ParsedChangesetHunkCache()
@@ -38,6 +38,7 @@ struct ChangesetView: View {
     }
 
     private static let splitWidthThreshold: CGFloat = 720
+    private static let splitWidthHysteresis: CGFloat = 24
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -60,7 +61,19 @@ struct ChangesetView: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { newValue in
-            containerWidth = newValue
+            let shouldUseSplitLayout: Bool
+            if let usesSplitLayout {
+                if usesSplitLayout {
+                    shouldUseSplitLayout = newValue >= Self.splitWidthThreshold - Self.splitWidthHysteresis
+                } else {
+                    shouldUseSplitLayout = newValue >= Self.splitWidthThreshold + Self.splitWidthHysteresis
+                }
+            } else {
+                shouldUseSplitLayout = newValue >= Self.splitWidthThreshold
+            }
+            if usesSplitLayout != shouldUseSplitLayout {
+                usesSplitLayout = shouldUseSplitLayout
+            }
         }
     }
 
@@ -135,7 +148,7 @@ struct ChangesetView: View {
         let visibleHunks = changeset.hunks.prefix(visibleCount).map { hunk in
             parsedHunks.hunk(for: hunk)
         }
-        let mode: DiffViewMode = (containerWidth >= Self.splitWidthThreshold) ? .split : .unified
+        let mode: DiffViewMode = (usesSplitLayout ?? true) ? .split : .unified
         let theme: HighlightTheme = (colorScheme == .dark) ? .dark : .light
         let visibleInlines = visibleInlineComments()
         let threadsByRoot = threads(in: visibleInlines)

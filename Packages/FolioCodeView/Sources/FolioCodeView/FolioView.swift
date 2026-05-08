@@ -272,13 +272,13 @@ public struct FolioView: View {
                 .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
                 .gesture(selectionDragGesture)
                 .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
-                    selectionCells = cells
+                    updateSelectionCells(cells)
                 }
             #else
             rows
                 .coordinateSpace(name: FolioSelectionMath.coordinateSpaceName)
                 .onPreferenceChange(FolioSelectableCellsPreference.self) { cells in
-                    selectionCells = cells
+                    updateSelectionCells(cells)
                 }
             #endif
         } else {
@@ -852,6 +852,12 @@ public struct FolioView: View {
                 selection?.wrappedValue = final
                 onLineSelectionChange?(final)
             }
+    }
+
+    private func updateSelectionCells(_ cells: [FolioSelectableCell]) {
+        if selectionCells != cells {
+            selectionCells = cells
+        }
     }
 
     private func isLineSelected(_ line: Int?, side: AnchorRange.Side) -> Bool {
