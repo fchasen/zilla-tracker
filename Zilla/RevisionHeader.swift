@@ -2,10 +2,10 @@ import SwiftUI
 import PhabricatorKit
 
 struct RevisionHeader: View {
-    @Environment(\.openURL) private var openURL
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(Workspace.self) private var workspace
     let revision: Revision
+    @State private var didCopy = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -14,19 +14,20 @@ struct RevisionHeader: View {
                     .scaledFont(.caption)
                     .foregroundStyle(revision.fields.isViewRestricted ? Color.orange : .secondary)
                     .help(revision.fields.isViewRestricted ? "Restricted view policy" : "Public view policy")
-                Text(revision.revisionLabel)
-                    .scaledFont(.headline, design: .monospaced)
-                    .foregroundStyle(.secondary)
-                if let url = revision.fields.uri {
-                    Button {
-                        openURL(url)
-                    } label: {
-                        Image(systemName: "arrow.up.right.square")
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
+                Button(action: copyRevision) {
+                    Text(revision.revisionLabel)
+                        .scaledFont(.headline, design: .monospaced)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(didCopy ? "Copied" : "Click to copy revision")
+                .contextMenu {
+                    Button("Copy Revision") {
+                        copyRevision()
                     }
-                    .buttonStyle(.borderless)
-                    .help("Open D\(String(revision.id)) in browser")
+                    Button("Copy Link") {
+                        copyToPasteboard(revisionURL.absoluteString)
+                    }
                 }
                 StatusBadge(status: revision.fields.status)
                 if revision.fields.isDraft {
@@ -39,6 +40,12 @@ struct RevisionHeader: View {
                         .padding(.vertical, 3)
                         .background(myStateColor.opacity(0.18), in: Capsule())
                         .foregroundStyle(myStateColor)
+                }
+                if didCopy {
+                    Text("Copied")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
                 }
                 Spacer()
             }
@@ -66,6 +73,19 @@ struct RevisionHeader: View {
             return user.realName ?? user.userName
         }
         return nil
+    }
+
+    private var revisionURL: URL {
+        revision.fields.uri ?? URL(string: "https://phabricator.services.mozilla.com/D\(revision.id)")!
+    }
+
+    private func copyRevision() {
+        copyToPasteboard(revision.revisionLabel)
+        withAnimation { didCopy = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation { didCopy = false }
+        }
     }
 
     private var myReviewerStatus: String? {

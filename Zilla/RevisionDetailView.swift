@@ -62,6 +62,16 @@ struct RevisionDetailView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
+                if let revision, isAuthor(revision) {
+                    Button {
+                        openURL(landoURL(for: revision))
+                    } label: {
+                        Label("Lando", systemImage: "bird")
+                    }
+                    .help("Open D\(String(revision.id)) in Lando")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
                 if let revision, let url = revision.fields.uri {
                     Button {
                         openURL(url)
@@ -116,6 +126,15 @@ struct RevisionDetailView: View {
     private func restoreCachedRevisionIfNeeded() {
         guard workspace.loadedRevision?.id != revisionID else { return }
         _ = workspace.restoreCachedRevision(id: revisionID)
+    }
+
+    private func isAuthor(_ revision: Revision) -> Bool {
+        guard let myPHID = phab.currentUser?.phid else { return false }
+        return revision.fields.authorPHID == myPHID
+    }
+
+    private func landoURL(for revision: Revision) -> URL {
+        URL(string: "https://lando.moz.tools/D\(revision.id)/")!
     }
 
     @ViewBuilder

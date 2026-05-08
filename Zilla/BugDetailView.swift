@@ -53,6 +53,7 @@ struct BugDetailView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(Workspace.self) private var workspace
     @Environment(ViewedBugsStore.self) private var viewedBugs
+    @Environment(\.openExternalURL) private var openExternalURL
     let bugID: Bug.ID?
 
     @State private var isPostingComment = false
@@ -132,6 +133,14 @@ struct BugDetailView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     resolveMenu(for: bug)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        openExternalURL(bugzillaURL(for: bug.id))
+                    } label: {
+                        Label("Open in Bugzilla", systemImage: "arrow.up.right.square")
+                    }
+                    .help("Open bug \(bug.id) in Bugzilla")
                 }
             } else if workspace.isUpdatingBug || isLoading {
                 ToolbarItem(placement: .primaryAction) {
@@ -441,10 +450,13 @@ private func attachmentURL(_ attachment: BugzillaKit.Attachment) -> URL? {
     URL(string: "https://bugzilla.mozilla.org/attachment.cgi?id=\(attachment.id)")
 }
 
+private func bugzillaURL(for id: Bug.ID) -> URL {
+    URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(id)")!
+}
+
 private struct BugHeader: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
-    @Environment(\.openExternalURL) private var openExternalURL
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
     @State private var didCopy = false
@@ -467,21 +479,12 @@ private struct BugHeader: View {
                 }
                 .buttonStyle(.plain)
                 .help(didCopy ? "Copied" : "Click to copy bug number")
-
-                if let url = bmoURL {
-                    Button {
-                        openExternalURL(url)
-                    } label: {
-                        Image(systemName: "arrow.up.forward.square")
-                            .foregroundStyle(.secondary)
+                .contextMenu {
+                    Button("Copy Bug") {
+                        copyID()
                     }
-                    .buttonStyle(.plain)
-                    .linkPointerStyle()
-                    .help("Open in Bugzilla")
-                    .contextMenu {
-                        Button("Copy Link") {
-                            copyToPasteboard(url.absoluteString)
-                        }
+                    Button("Copy Link") {
+                        copyToPasteboard(bugzillaURL(for: bug.id).absoluteString)
                     }
                 }
 
@@ -593,10 +596,6 @@ private struct BugHeader: View {
         case "S2", "MAJOR": return .orange
         default: return .secondary
         }
-    }
-
-    private var bmoURL: URL? {
-        URL(string: "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bug.id)")
     }
 
     private func copyID() {
@@ -1771,12 +1770,13 @@ private struct CommentBlock: View {
     @State private var isEditing = false
     @State private var editedText = ""
     @State private var saveError: String?
-    @State private var rowWidth: CGFloat = 800
+    @State private var isNarrowLayout: Bool?
 
     private static let narrowThreshold: CGFloat = 560
+    private static let narrowLayoutHysteresis: CGFloat = 16
 
     private var isNarrow: Bool {
-        rowWidth < Self.narrowThreshold
+        isNarrowLayout ?? false
     }
 
     var body: some View {
@@ -1797,7 +1797,19 @@ private struct CommentBlock: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { newValue in
-            rowWidth = newValue
+            let shouldUseNarrowLayout: Bool
+            if let isNarrowLayout {
+                if isNarrowLayout {
+                    shouldUseNarrowLayout = newValue < Self.narrowThreshold + Self.narrowLayoutHysteresis
+                } else {
+                    shouldUseNarrowLayout = newValue < Self.narrowThreshold - Self.narrowLayoutHysteresis
+                }
+            } else {
+                shouldUseNarrowLayout = newValue < Self.narrowThreshold
+            }
+            if isNarrowLayout != shouldUseNarrowLayout {
+                isNarrowLayout = shouldUseNarrowLayout
+            }
         }
         .contextMenu {
             if !stripped.isEmpty {
