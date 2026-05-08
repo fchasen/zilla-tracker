@@ -25,7 +25,31 @@ enum CacheKey: Hashable, Sendable {
     case fileContent(repositoryPHID: String, commit: String, path: String)
 }
 
+enum CacheRetentionGroup: Hashable {
+    case comments
+    case revisionDiff
+    case revisionTransactions
+    case fileContent
+}
+
 extension CacheKey {
+    var retentionGroup: CacheRetentionGroup? {
+        switch self {
+        case .comments:
+            return .comments
+        case .revisionDiff:
+            return .revisionDiff
+        case .revisionTransactions:
+            return .revisionTransactions
+        case .fileContent:
+            return .fileContent
+        case .whoami, .selectableProducts, .bug, .bugSearch, .bugCount,
+             .dependencyMeta, .phabUser, .revisionSearch, .revision,
+             .revisionStack, .phabricatorUser:
+            return nil
+        }
+    }
+
     var freshTTL: TimeInterval {
         switch self {
         // User identity rarely changes within a session.
@@ -72,6 +96,7 @@ final class ResourceCache {
     private struct Entry {
         let value: Any
         let storedAt: Date
+        var lastAccessed: Date
     }
 
     enum Freshness {
@@ -83,6 +108,21 @@ final class ResourceCache {
     private var inflight: [CacheKey: Task<Any, Error>] = [:]
     private var inflightToken: [CacheKey: UUID] = [:]
     private var revalidationListeners: [CacheKey: Task<Void, Never>] = [:]
+    private let maxEntryCount: Int
+    private let groupLimits: [CacheRetentionGroup: Int]
+
+    init(
+        maxEntryCount: Int = 120,
+        groupLimits: [CacheRetentionGroup: Int]? = nil
+    ) {
+        self.maxEntryCount = max(1, maxEntryCount)
+        self.groupLimits = (groupLimits ?? [
+            .comments: 20,
+            .revisionDiff: 4,
+            .revisionTransactions: 8,
+            .fileContent: 16
+        ]).mapValues { max(0, $0) }
+    }
 
     func freshness(for key: CacheKey, now: Date = .now) -> Freshness {
         guard let entry = entries[key] else { return .missing }
@@ -93,15 +133,20 @@ final class ResourceCache {
     }
 
     func get<V>(_ key: CacheKey, as: V.Type = V.self) -> V? {
-        entries[key]?.value as? V
+        guard var entry = entries[key],
+              let value = entry.value as? V else { return nil }
+        entry.lastAccessed = .now
+        entries[key] = entry
+        return value
     }
 
     func storedAt(_ key: CacheKey) -> Date? {
         entries[key]?.storedAt
     }
 
-    func store<V>(_ value: V, for key: CacheKey) {
-        entries[key] = Entry(value: value, storedAt: .now)
+    func store<V>(_ value: V, for key: CacheKey, storedAt: Date = .now) {
+        entries[key] = Entry(value: value, storedAt: storedAt, lastAccessed: storedAt)
+        _ = trim(now: storedAt)
         version &+= 1
     }
 
@@ -156,6 +201,50 @@ final class ResourceCache {
             listener.cancel()
         }
     }
+
+    @discardableResult
+    private func trim(now: Date = .now) -> Bool {
+        var changed = removeExpiredEntries(now: now)
+        for (group, limit) in groupLimits {
+            let groupKeys = entries.keys.filter { $0.retentionGroup == group }
+            changed = removeLeastRecentlyAccessed(from: groupKeys, keeping: limit) || changed
+        }
+        changed = removeLeastRecentlyAccessed(from: Array(entries.keys), keeping: maxEntryCount) || changed
+        return changed
+    }
+
+    @discardableResult
+    private func removeExpiredEntries(now: Date) -> Bool {
+        let expired = entries.compactMap { key, entry -> CacheKey? in
+            now.timeIntervalSince(entry.storedAt) >= key.hardTTL ? key : nil
+        }
+        for key in expired {
+            entries.removeValue(forKey: key)
+        }
+        return !expired.isEmpty
+    }
+
+    @discardableResult
+    private func removeLeastRecentlyAccessed(from keys: [CacheKey], keeping limit: Int) -> Bool {
+        guard keys.count > limit else { return false }
+        let overflow = keys.count - limit
+        let orderedKeys = keys
+            .compactMap { key -> (CacheKey, Date)? in
+                entries[key].map { (key, $0.lastAccessed) }
+            }
+            .sorted { lhs, rhs in
+                if lhs.1 == rhs.1 {
+                    return String(describing: lhs.0) < String(describing: rhs.0)
+                }
+                return lhs.1 < rhs.1
+            }
+            .prefix(overflow)
+            .map(\.0)
+        for key in orderedKeys {
+            entries.removeValue(forKey: key)
+        }
+        return !orderedKeys.isEmpty
+    }
 }
 
 extension ResourceCache {
@@ -198,8 +287,7 @@ extension ResourceCache {
             do {
                 let value = try await provider()
                 if let self, self.inflightToken[key] == token {
-                    self.entries[key] = Entry(value: value, storedAt: .now)
-                    self.version &+= 1
+                    self.store(value, for: key)
                     self.inflight.removeValue(forKey: key)
                     self.inflightToken.removeValue(forKey: key)
                 }

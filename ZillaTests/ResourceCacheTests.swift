@@ -109,6 +109,45 @@ struct ResourceCacheTests {
         #expect(cache.get(CacheKey.bug(2), as: Int.self) == nil)
     }
 
+    @Test func storePrunesExpiredEntries() async throws {
+        let cache = ResourceCache()
+        let expiredKey = CacheKey.bug(1)
+        cache.store(1, for: expiredKey, storedAt: .now.addingTimeInterval(-expiredKey.hardTTL - 1))
+        cache.store(2, for: CacheKey.bug(2))
+        #expect(cache.get(expiredKey, as: Int.self) == nil)
+        #expect(cache.get(CacheKey.bug(2), as: Int.self) == 2)
+    }
+
+    @Test func storeEvictsLeastRecentlyAccessedEntryPastMaxCount() async throws {
+        let cache = ResourceCache(maxEntryCount: 2, groupLimits: [:])
+        let base = Date(timeIntervalSince1970: 1_000)
+        let first = CacheKey.bug(1)
+        let second = CacheKey.bug(2)
+        let third = CacheKey.bug(3)
+        cache.store(1, for: first, storedAt: base)
+        cache.store(2, for: second, storedAt: base.addingTimeInterval(1))
+        #expect(cache.get(first, as: Int.self) == 1)
+        cache.store(3, for: third, storedAt: .now)
+        #expect(cache.get(first, as: Int.self) == 1)
+        #expect(cache.get(second, as: Int.self) == nil)
+        #expect(cache.get(third, as: Int.self) == 3)
+    }
+
+    @Test func storeAppliesGroupLimit() async throws {
+        let cache = ResourceCache(maxEntryCount: 10, groupLimits: [.comments: 2])
+        let base = Date(timeIntervalSince1970: 1_000)
+        let first = CacheKey.comments(bugID: 1)
+        let second = CacheKey.comments(bugID: 2)
+        let third = CacheKey.comments(bugID: 3)
+        cache.store(1, for: first, storedAt: base)
+        cache.store(2, for: second, storedAt: base.addingTimeInterval(1))
+        #expect(cache.get(first, as: Int.self) == 1)
+        cache.store(3, for: third, storedAt: .now)
+        #expect(cache.get(first, as: Int.self) == 1)
+        #expect(cache.get(second, as: Int.self) == nil)
+        #expect(cache.get(third, as: Int.self) == 3)
+    }
+
     @Test func versionBumpsOnStore() async throws {
         let cache = ResourceCache()
         let initial = cache.version
