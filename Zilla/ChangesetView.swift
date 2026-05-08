@@ -18,6 +18,7 @@ struct ChangesetView: View {
     @State private var containerWidth: CGFloat = 800
     @State private var showAllHunks: Bool = false
     @State private var lineSelection: FolioLineSelection?
+    @State private var parsedHunks = ParsedChangesetHunkCache()
 
     init(changeset: Changeset, latestDiffID: Int) {
         self.changeset = changeset
@@ -132,11 +133,7 @@ struct ChangesetView: View {
         let totalHunks = changeset.hunks.count
         let visibleCount = showAllHunks ? totalHunks : min(1, totalHunks)
         let visibleHunks = changeset.hunks.prefix(visibleCount).map { hunk in
-            UnifiedDiffParser.parse(
-                corpus: hunk.corpus,
-                oldStart: hunk.oldOffset,
-                newStart: hunk.newOffset
-            )
+            parsedHunks.hunk(for: hunk)
         }
         let mode: DiffViewMode = (containerWidth >= Self.splitWidthThreshold) ? .split : .unified
         let theme: HighlightTheme = (colorScheme == .dark) ? .dark : .light
@@ -239,11 +236,7 @@ struct ChangesetView: View {
         let side: AnchorRange.Side = isNewFile ? .newFile : .oldFile
         let target = AnchorRange(line: line, length: 1, side: side)
         for hunkData in changeset.hunks {
-            let parsed = UnifiedDiffParser.parse(
-                corpus: hunkData.corpus,
-                oldStart: hunkData.oldOffset,
-                newStart: hunkData.newOffset
-            )
+            let parsed = parsedHunks.hunk(for: hunkData)
             if parsed.contains(target) {
                 return parsed
             }
@@ -578,3 +571,17 @@ struct ChangesetHeader: View {
     }
 }
 
+private final class ParsedChangesetHunkCache {
+    private var storage: [Hunk: DiffHunk] = [:]
+
+    func hunk(for hunk: Hunk) -> DiffHunk {
+        if let cached = storage[hunk] { return cached }
+        let parsed = UnifiedDiffParser.parse(
+            corpus: hunk.corpus,
+            oldStart: hunk.oldOffset,
+            newStart: hunk.newOffset
+        )
+        storage[hunk] = parsed
+        return parsed
+    }
+}
