@@ -73,9 +73,9 @@ struct InlineComposerSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     bordered: false,
+                    autoFocus: true,
                     autolinksReferences: true,
-                    mentionCompletionContext: workspace.revisionMentionCompletionContext,
-                    autoFocus: true
+                    mentionCompletionContext: workspace.revisionMentionCompletionContext
                 )
                 Spacer(minLength: 0)
             }

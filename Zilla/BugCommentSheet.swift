@@ -24,9 +24,9 @@ struct BugCommentSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     bordered: false,
+                    autoFocus: true,
                     autolinksReferences: true,
-                    mentionCompletionContext: mentionCompletionContext,
-                    autoFocus: true
+                    mentionCompletionContext: mentionCompletionContext
                 )
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle")
