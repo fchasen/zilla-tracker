@@ -233,7 +233,7 @@ enum FolioRenderArtifactBuilder {
         switch content {
         case let .diff(hunk, _, _):
             guard diffTextLength(hunk.lines) <= highlightUTF16Limit else { return [] }
-            let corpus = hunk.lines.map(\.text).joined(separator: "\n")
+            let corpus = makeDiffCorpus(hunk.lines)
             return highlighter.runs(for: corpus, language: language)
         case let .code(text, _):
             guard (text as NSString).length <= highlightUTF16Limit else { return [] }
@@ -245,6 +245,17 @@ enum FolioRenderArtifactBuilder {
         guard !lines.isEmpty else { return 0 }
         let textLength = lines.reduce(0) { $0 + ($1.text as NSString).length }
         return textLength + lines.count - 1
+    }
+
+    private static func makeDiffCorpus(_ lines: [DiffLine]) -> String {
+        guard let first = lines.first else { return "" }
+        var corpus = first.text
+        corpus.reserveCapacity(lines.reduce(0) { $0 + $1.text.count } + max(0, lines.count - 1))
+        for line in lines.dropFirst() {
+            corpus.append("\n")
+            corpus.append(line.text)
+        }
+        return corpus
     }
 
     private static func makeLineRanges(for lines: [DiffLine]) -> [NSRange] {
