@@ -4,8 +4,17 @@
 //
 
 import SwiftUI
+import ImageIO
 import BugzillaKit
 import Textual
+
+#if os(macOS)
+import AppKit
+private typealias AttachmentPreviewImage = NSImage
+#elseif os(iOS)
+import UIKit
+private typealias AttachmentPreviewImage = UIImage
+#endif
 
 struct BugStatusOption: Hashable {
     let code: String
@@ -1963,31 +1972,46 @@ private struct AttachmentImagePreview: View {
     var cornerRadius: CGFloat = 6
 
     private static let maxHeight: CGFloat = 360
+    private static let maxPreviewBytes = 8 * 1024 * 1024
+    private static let maxDisplayScale = 3
+
+    @State private var previewImage: AttachmentPreviewImage?
+    @State private var didFail = false
+    @State private var useLinkFallback = false
 
     var body: some View {
-        if let url = attachmentURL(attachment) {
+        if shouldUseLinkFallback {
+            AttachmentInlineLink(attachment: attachment)
+        } else if let url = attachmentURL(attachment) {
             Link(destination: url) {
-                AsyncImage(url: url, transaction: Transaction(animation: .default)) { phase in
-                    switch phase {
-                    case .empty:
-                        placeholder
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: Self.maxHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    case .failure:
-                        failure
-                    @unknown default:
-                        failure
-                    }
-                }
+                previewContent
             }
             .buttonStyle(.plain)
             .linkPointerStyle()
             .help("Open attachment in Bugzilla")
+            .task(id: attachment.id) {
+                await loadImage(from: url)
+            }
+        }
+    }
+
+    private var shouldUseLinkFallback: Bool {
+        useLinkFallback || (attachment.size.map { $0 > Self.maxPreviewBytes } ?? false)
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        if let previewImage {
+            Self.image(from: previewImage)
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: Self.maxHeight)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if didFail {
+            failure
+        } else {
+            placeholder
         }
     }
 
@@ -2007,6 +2031,66 @@ private struct AttachmentImagePreview: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 80)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    private func loadImage(from url: URL) async {
+        previewImage = nil
+        didFail = false
+        useLinkFallback = false
+        let maxPixelSize = Int(Self.maxHeight) * Self.maxDisplayScale
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard !Task.isCancelled else { return }
+            guard data.count <= Self.maxPreviewBytes else {
+                useLinkFallback = true
+                return
+            }
+            guard let decoded = await Task.detached(priority: .utility, operation: {
+                Self.downsample(data: data, maxPixelSize: maxPixelSize).map(DecodedAttachmentPreview.init)
+            }).value else {
+                didFail = true
+                return
+            }
+            guard !Task.isCancelled else { return }
+            previewImage = Self.platformImage(from: decoded.image)
+        } catch {
+            if !Task.isCancelled {
+                didFail = true
+            }
+        }
+    }
+
+    private nonisolated static func downsample(data: Data, maxPixelSize: Int) -> CGImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ] as CFDictionary
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+    }
+
+    private static func image(from image: AttachmentPreviewImage) -> Image {
+        #if os(macOS)
+        Image(nsImage: image)
+        #else
+        Image(uiImage: image)
+        #endif
+    }
+
+    private static func platformImage(from image: CGImage) -> AttachmentPreviewImage {
+        #if os(macOS)
+        NSImage(cgImage: image, size: .zero)
+        #else
+        UIImage(cgImage: image)
+        #endif
+    }
+
+    private struct DecodedAttachmentPreview: @unchecked Sendable {
+        let image: CGImage
     }
 }
 
@@ -2037,6 +2121,7 @@ private struct AttachmentInlineLink: View {
     private var iconName: String {
         if attachment.isPatch { return "text.alignleft" }
         switch attachment.contentType.split(separator: "/").first {
+        case "image": return "photo"
         case "text": return "doc.text"
         case "video": return "film"
         case "audio": return "speaker.wave.2"
