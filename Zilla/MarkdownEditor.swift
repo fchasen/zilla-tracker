@@ -289,16 +289,25 @@ struct MarkdownEditor: View {
     @ViewBuilder
     private var completionPopup: some View {
         if let completionSession, let controller, !completionItems.isEmpty {
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array(completionItems.enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            applyMentionCompletion(item, session: completionSession, controller: controller)
-                        } label: {
-                            completionRow(item, isHighlighted: index == completionSession.highlightedIndex)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(completionItems.enumerated()), id: \.element.id) { index, item in
+                            Button {
+                                applyMentionCompletion(item, session: completionSession, controller: controller)
+                            } label: {
+                                completionRow(item, isHighlighted: index == completionSession.highlightedIndex)
+                            }
+                            .buttonStyle(.plain)
+                            .id(item.id)
                         }
-                        .buttonStyle(.plain)
                     }
+                }
+                .onChange(of: completionSession.highlightedIndex) { _, newValue in
+                    scrollToHighlighted(newValue, proxy: proxy)
+                }
+                .onChange(of: completionItems.map(\.id)) { _, _ in
+                    scrollToHighlighted(completionSession.highlightedIndex, proxy: proxy)
                 }
             }
             .frame(width: 280)
@@ -311,6 +320,11 @@ struct MarkdownEditor: View {
             .offset(completionPopupOffset(for: completionSession, controller: controller))
             .transition(.opacity)
         }
+    }
+
+    private func scrollToHighlighted(_ index: Int, proxy: ScrollViewProxy) {
+        guard index >= 0, index < completionItems.count else { return }
+        proxy.scrollTo(completionItems[index].id, anchor: .center)
     }
 
     private func completionRow(_ item: MentionCompletionItem, isHighlighted: Bool) -> some View {
