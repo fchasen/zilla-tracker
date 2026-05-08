@@ -204,7 +204,7 @@ public extension BugzillaClient {
         value: [
             "id", "name", "description", "is_active",
             "components.id", "components.name", "components.description",
-            "components.default_assigned_to", "components.is_active"
+            "components.default_assigned_to", "components.triage_owner", "components.is_active"
         ].joined(separator: ",")
     )
 
@@ -237,6 +237,16 @@ public extension BugzillaClient {
     func searchBugs(_ query: BugQuery) async throws -> BugSearchResult {
         let endpoint = Endpoint(path: "bug", query: query.queryItems())
         return try await execute(endpoint)
+    }
+
+    func countBugs(_ query: BugQuery) async throws -> Int {
+        struct Response: Decodable { let bugCount: Int }
+        let endpoint = Endpoint(
+            path: "bug",
+            query: query.queryItems() + [URLQueryItem(name: "count_only", value: "true")]
+        )
+        let response: Response = try await execute(endpoint)
+        return response.bugCount
     }
 
     func updateBug(id: Bug.ID, _ update: BugUpdate) async throws -> [BugChangeResult] {

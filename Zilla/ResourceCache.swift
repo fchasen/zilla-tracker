@@ -13,6 +13,7 @@ enum CacheKey: Hashable, Sendable {
     case bug(Bug.ID)
     case comments(bugID: Bug.ID)
     case bugSearch(BugQuery)
+    case bugCount(BugQuery)
     case dependencyMeta(Bug.ID)
     case phabUser
     case revisionSearch(RevisionQuery)
@@ -36,7 +37,7 @@ extension CacheKey {
             return 5 * 60
         // Bug / list searches — tighter freshness because list contents
         // change as the user works elsewhere.
-        case .bug, .comments, .bugSearch, .revisionSearch:
+        case .bug, .comments, .bugSearch, .bugCount, .revisionSearch:
             return 60
         case .dependencyMeta:
             return 24 * 60 * 60
@@ -51,7 +52,7 @@ extension CacheKey {
             return 7 * 24 * 60 * 60
         case .revision, .revisionDiff, .revisionTransactions, .revisionStack:
             return 60 * 60
-        case .bug, .comments, .bugSearch, .revisionSearch:
+        case .bug, .comments, .bugSearch, .bugCount, .revisionSearch:
             return 10 * 60
         case .dependencyMeta:
             return 7 * 24 * 60 * 60
@@ -266,6 +267,17 @@ extension ResourceCache {
     ) async throws -> BugSearchResult {
         try await fetch(key: .bugSearch(query), force: force, onRefresh: onRefresh) {
             try await client.searchBugs(query)
+        }
+    }
+
+    func bugCount(
+        _ query: BugQuery,
+        force: Bool = false,
+        using client: BugzillaClient,
+        onRefresh: ((Int) -> Void)? = nil
+    ) async throws -> Int {
+        try await fetch(key: .bugCount(query), force: force, onRefresh: onRefresh) {
+            try await client.countBugs(query)
         }
     }
 

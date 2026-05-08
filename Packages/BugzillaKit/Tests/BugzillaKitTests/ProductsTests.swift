@@ -29,13 +29,21 @@ final class ProductsTests: XCTestCase {
                 XCTAssertTrue(items.contains(URLQueryItem(name: "ids", value: "20")))
                 let include = items.first { $0.name == "include_fields" }?.value ?? ""
                 XCTAssertTrue(include.contains("components.name"))
+                XCTAssertTrue(include.contains("components.triage_owner"))
                 let body = #"""
                 {
                   "products": [
                     {
                       "id": 10, "name": "Firefox", "description": "Browser", "is_active": true,
                       "components": [
-                        {"id": 1, "name": "General", "description": "top", "default_assigned_to": "a@b", "is_active": true}
+                        {
+                          "id": 1,
+                          "name": "General",
+                          "description": "top",
+                          "default_assigned_to": "a@b",
+                          "triage_owner": "owner@mozilla.com",
+                          "is_active": true
+                        }
                       ]
                     },
                     {"id": 20, "name": "Core", "description": "Engine", "is_active": true, "components": []}
@@ -52,6 +60,7 @@ final class ProductsTests: XCTestCase {
         XCTAssertEqual(products[0].name, "Firefox")
         XCTAssertEqual(products[0].components.first?.name, "General")
         XCTAssertEqual(products[0].components.first?.defaultAssignedTo, "a@b")
+        XCTAssertEqual(products[0].components.first?.triageOwner, "owner@mozilla.com")
         XCTAssertEqual(products[1].name, "Core")
         XCTAssertEqual(calls.withLock { $0 }, 2)
     }

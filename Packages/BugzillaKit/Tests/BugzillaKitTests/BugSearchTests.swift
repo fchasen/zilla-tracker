@@ -95,6 +95,30 @@ final class BugSearchTests: XCTestCase {
         _ = try await client.searchBugs(.openIn(component: ref))
     }
 
+    func testSearchTriage() async throws {
+        MockURLProtocol.handler = { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertTrue(items.contains(URLQueryItem(name: "severity", value: "--")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "type", value: "defect")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "triage_owner", value: "@me")))
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.searchBugs(.triage)
+    }
+
+    func testCountBugs() async throws {
+        MockURLProtocol.handler = { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertTrue(items.contains(URLQueryItem(name: "severity", value: "--")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "count_only", value: "true")))
+            return (httpResponse(for: request, status: 200), #"{"bug_count":27}"#.data(using: .utf8)!)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        let count = try await client.countBugs(.triage)
+        XCTAssertEqual(count, 27)
+    }
+
     func testSearchBlockedByMetaBug() async throws {
         MockURLProtocol.handler = { request in
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []

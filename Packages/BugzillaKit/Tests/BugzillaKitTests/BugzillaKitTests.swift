@@ -13,6 +13,9 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(BugQuery.myBugs.assignedTo, ["@me"])
         XCTAssertEqual(BugQuery.myBugs.resolution, [])
         XCTAssertEqual(BugQuery.reportedByMe.reporter, ["@me"])
+        XCTAssertEqual(BugQuery.triage.severity, ["--"])
+        XCTAssertEqual(BugQuery.triage.type, ["defect"])
+        XCTAssertEqual(BugQuery.triage.triageOwner, "@me")
 
         let ref = ComponentRef(product: "Firefox", component: "General")
         let q = BugQuery.openIn(component: ref)
@@ -27,6 +30,7 @@ final class BugzillaKitTests: XCTestCase {
             reporter: [BugQuery.me, "someone@example.com"],
             cc: [BugQuery.me],
             flagRequestee: BugQuery.me,
+            triageOwner: BugQuery.me,
             userInvolved: BugQuery.me
         )
         q.flagNames = ["review"]
@@ -36,6 +40,7 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(resolved.reporter, ["alice@example.com", "someone@example.com"])
         XCTAssertEqual(resolved.cc, ["alice@example.com"])
         XCTAssertEqual(resolved.flagRequestee, "alice@example.com")
+        XCTAssertEqual(resolved.triageOwner, "alice@example.com")
         XCTAssertEqual(resolved.userInvolved, "alice@example.com")
         XCTAssertEqual(resolved.flagNames, ["review"], "non-user fields untouched")
     }

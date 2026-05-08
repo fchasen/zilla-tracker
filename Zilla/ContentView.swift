@@ -100,7 +100,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     case myBugs
     case reported
     case needsReview
-    case recentlyChanged
+    case triage
     case todo
 
     var id: String { rawValue }
@@ -110,17 +110,17 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
         case .myBugs: return "My Bugs"
         case .reported: return "Reported"
         case .needsReview: return "Needs Info"
-        case .recentlyChanged: return "Recently Changed"
+        case .triage: return "Triage"
         case .todo: return "Todo"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .myBugs: return "ladybug"
+        case .myBugs: return "tray"
         case .reported: return "tray.and.arrow.up"
         case .needsReview: return "flag"
-        case .recentlyChanged: return "clock"
+        case .triage: return "ant"
         case .todo: return "checklist"
         }
     }
@@ -456,14 +456,25 @@ final class Workspace {
     private static func defaultSort(for endpoint: SmartEndpoint) -> BugListSort {
         switch endpoint {
         case .myBugs: return .rank
+        case .triage: return .newest
         default: return .recent
         }
     }
 
     private static func defaultFilter(for endpoint: SmartEndpoint) -> BugStatusFilter {
         switch endpoint {
-        case .myBugs: return .open
+        case .myBugs, .triage: return .open
         default: return .all
+        }
+    }
+
+    func hasTriageComponents(for login: String?) -> Bool {
+        guard let login, !login.isEmpty else { return false }
+        return products.contains { product in
+            product.isActive && product.components.contains { component in
+                guard component.isActive, let triageOwner = component.triageOwner else { return false }
+                return triageOwner.caseInsensitiveCompare(login) == .orderedSame
+            }
         }
     }
 
@@ -1161,8 +1172,8 @@ final class Workspace {
             return .reportedByMe
         case .smart(.needsReview):
             return .needsReviewFromMe
-        case .smart(.recentlyChanged):
-            return .recentlyChanged(involving: BugQuery.me)
+        case .smart(.triage):
+            return .triage
         case .smart(.todo):
             return BugQuery()
         case .component(let ref):
@@ -1655,13 +1666,13 @@ struct Sidebar: View {
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
-    @Query(sort: [SortDescriptor(\BugDraft.updatedAt, order: .reverse)])
-    private var drafts: [BugDraft]
 
     @Binding var selection: SidebarSelection?
 
     @State private var addMetaBugTarget: FollowedComponent?
     @State private var showAddComponent = false
+    @State private var needsInfoCount: Int?
+    @State private var triageCount: Int?
 
     @AppStorage("sidebar.section.review.expanded") private var reviewExpanded = true
     @AppStorage("sidebar.section.components.expanded") private var componentsExpanded = true
@@ -1669,28 +1680,22 @@ struct Sidebar: View {
     var body: some View {
         List(selection: $selection) {
                 Section {
-                    ForEach(SmartEndpoint.allCases) { endpoint in
+                    ForEach(visibleSmartEndpoints) { endpoint in
                         if endpoint == .todo {
                             TodoSidebarRow()
                                 .tag(SidebarSelection.smart(endpoint))
+                        } else if endpoint == .needsReview {
+                            smartEndpointRow(endpoint, count: needsInfoCount)
+                                .tag(SidebarSelection.smart(endpoint))
+                        } else if endpoint == .triage {
+                            smartEndpointRow(endpoint, count: triageCount)
+                                .tag(SidebarSelection.smart(endpoint))
                         } else {
-                            Label(endpoint.title, systemImage: endpoint.systemImage)
+                            smartEndpointRow(endpoint)
                                 .tag(SidebarSelection.smart(endpoint))
                         }
                     }
-                    Label {
-                        HStack {
-                            Text("Drafts")
-                            Spacer()
-                            if !drafts.isEmpty {
-                                Text("\(drafts.count)")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    } icon: {
-                        Image(systemName: "square.and.pencil")
-                    }
+                    Label("Drafts", systemImage: "square.and.pencil")
                     .tag(SidebarSelection.allDrafts)
                 }
 
@@ -1761,6 +1766,21 @@ struct Sidebar: View {
         .sheet(isPresented: $showAddComponent) {
             ComponentPickerSheet()
         }
+        .task(id: auth.currentUser?.name) {
+            if auth.isSignedIn {
+                await workspace.loadProducts(using: auth.client)
+            }
+        }
+        .task(id: triageCountKey) {
+            await loadTriageCount(force: false)
+        }
+        .task(id: workspace.bugListRefreshToken) {
+            await loadTriageCount(force: true)
+            await loadNeedsInfoCount(force: true)
+        }
+        .task(id: needsInfoCountKey) {
+            await loadNeedsInfoCount(force: false)
+        }
         .task(id: reviewBadgeKey) {
             await loadReviewBadge(force: false)
         }
@@ -1772,6 +1792,81 @@ struct Sidebar: View {
             NSApplication.shared.dockTile.badgeLabel = new > 0 ? "\(new)" : nil
         }
         #endif
+    }
+
+    private func smartEndpointRow(_ endpoint: SmartEndpoint, count: Int? = nil) -> some View {
+        Label {
+            HStack {
+                Text(endpoint.title)
+                Spacer()
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } icon: {
+            Image(systemName: endpoint.systemImage)
+        }
+    }
+
+    private var visibleSmartEndpoints: [SmartEndpoint] {
+        SmartEndpoint.allCases.filter { endpoint in
+            endpoint != .triage || workspace.hasTriageComponents(for: auth.currentUser?.name)
+        }
+    }
+
+    private struct TriageCountKey: Hashable {
+        let signedIn: Bool
+        let login: String?
+        let hasTriageComponents: Bool
+    }
+
+    private var triageCountKey: TriageCountKey {
+        TriageCountKey(
+            signedIn: auth.isSignedIn,
+            login: auth.currentUser?.name,
+            hasTriageComponents: workspace.hasTriageComponents(for: auth.currentUser?.name)
+        )
+    }
+
+    private struct NeedsInfoCountKey: Hashable {
+        let signedIn: Bool
+        let login: String?
+    }
+
+    private var needsInfoCountKey: NeedsInfoCountKey {
+        NeedsInfoCountKey(
+            signedIn: auth.isSignedIn,
+            login: auth.currentUser?.name
+        )
+    }
+
+    private func countQuery(_ query: BugQuery, defaultFilter: BugStatusFilter, force: Bool) async -> Int? {
+        guard auth.isSignedIn, let login = auth.currentUser?.name else { return nil }
+        var countQuery = query.substitutingMe(with: login)
+        countQuery = defaultFilter.apply(to: countQuery)
+        return try? await cache.bugCount(countQuery, force: force, using: auth.client)
+    }
+
+    private func loadTriageCount(force: Bool) async {
+        guard auth.isSignedIn,
+              workspace.hasTriageComponents(for: auth.currentUser?.name),
+              auth.currentUser?.name != nil else {
+            triageCount = nil
+            return
+        }
+
+        triageCount = await countQuery(.triage, defaultFilter: .open, force: force)
+    }
+
+    private func loadNeedsInfoCount(force: Bool) async {
+        guard auth.isSignedIn, auth.currentUser?.name != nil else {
+            needsInfoCount = nil
+            return
+        }
+
+        needsInfoCount = await countQuery(.needsReviewFromMe, defaultFilter: .all, force: force)
     }
 
     private var reviewQuery: RevisionQuery? {
@@ -2084,7 +2179,19 @@ private struct TodoSidebarRow: View {
     @State private var isDropTarget = false
 
     var body: some View {
-        Label(SmartEndpoint.todo.title, systemImage: SmartEndpoint.todo.systemImage)
+        Label {
+            HStack {
+                Text(SmartEndpoint.todo.title)
+                Spacer()
+                if !todoOrder.isEmpty {
+                    Text("\(todoOrder.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } icon: {
+            Image(systemName: SmartEndpoint.todo.systemImage)
+        }
             .background(
                 isDropTarget ? Color.accentColor.opacity(0.18) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 6)

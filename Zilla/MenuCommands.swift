@@ -81,19 +81,20 @@ struct ZillaCommands: Commands {
                 .keyboardShortcut("2", modifiers: .command)
             Button("Needs Info") { workspace.sidebarSelection = .smart(.needsReview) }
                 .keyboardShortcut("3", modifiers: .command)
-            Button("Recently Changed") { workspace.sidebarSelection = .smart(.recentlyChanged) }
-                .keyboardShortcut("4", modifiers: .command)
+            if workspace.hasTriageComponents(for: auth.currentUser?.name) {
+                Button("Triage") { workspace.sidebarSelection = .smart(.triage) }
+            }
 
             Divider()
 
             Button("Active Revisions") { workspace.sidebarSelection = .review(.active) }
-                .keyboardShortcut("5", modifiers: .command)
+                .keyboardShortcut("4", modifiers: .command)
                 .disabled(!phab.isSignedIn)
             Button("Under Review") { workspace.sidebarSelection = .review(.review) }
-                .keyboardShortcut("6", modifiers: .command)
+                .keyboardShortcut("5", modifiers: .command)
                 .disabled(!phab.isSignedIn)
             Button("Landed") { workspace.sidebarSelection = .review(.landed) }
-                .keyboardShortcut("7", modifiers: .command)
+                .keyboardShortcut("6", modifiers: .command)
                 .disabled(!phab.isSignedIn)
 
             Divider()

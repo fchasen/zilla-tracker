@@ -9,12 +9,15 @@ public struct BugQuery: Sendable, Hashable {
     public var reporter: [String]
     public var cc: [String]
     public var keywords: [String]
+    public var severity: [String]
+    public var type: [String]
     public var whiteboard: String?
     public var quicksearch: String?
     public var blocks: [Int]
     public var dependsOn: [Int]
     public var flagRequestee: String?
     public var flagNames: [String]
+    public var triageOwner: String?
     public var changedAfter: Date?
     public var userInvolved: String?
     public var limit: Int?
@@ -33,12 +36,15 @@ public struct BugQuery: Sendable, Hashable {
         reporter: [String] = [],
         cc: [String] = [],
         keywords: [String] = [],
+        severity: [String] = [],
+        type: [String] = [],
         whiteboard: String? = nil,
         quicksearch: String? = nil,
         blocks: [Int] = [],
         dependsOn: [Int] = [],
         flagRequestee: String? = nil,
         flagNames: [String] = [],
+        triageOwner: String? = nil,
         changedAfter: Date? = nil,
         userInvolved: String? = nil,
         limit: Int? = nil,
@@ -56,12 +62,15 @@ public struct BugQuery: Sendable, Hashable {
         self.reporter = reporter
         self.cc = cc
         self.keywords = keywords
+        self.severity = severity
+        self.type = type
         self.whiteboard = whiteboard
         self.quicksearch = quicksearch
         self.blocks = blocks
         self.dependsOn = dependsOn
         self.flagRequestee = flagRequestee
         self.flagNames = flagNames
+        self.triageOwner = triageOwner
         self.changedAfter = changedAfter
         self.userInvolved = userInvolved
         self.limit = limit
@@ -93,6 +102,8 @@ extension BugQuery {
         items += .repeating("reporter", values: reporter)
         items += .repeating("cc", values: cc)
         items += .repeating("keywords", values: keywords)
+        items += .repeating("severity", values: severity)
+        items += .repeating("type", values: type)
         if !blocks.isEmpty {
             items += .repeating("blocks", values: blocks.map(String.init))
         }
@@ -104,6 +115,9 @@ extension BugQuery {
         }
         if let quicksearch {
             items.append(URLQueryItem(name: "quicksearch", value: quicksearch))
+        }
+        if let triageOwner {
+            items.append(URLQueryItem(name: "triage_owner", value: triageOwner))
         }
         if let changedAfter {
             items.append(URLQueryItem(
@@ -174,6 +188,7 @@ public extension BugQuery {
         copy.cc = copy.cc.map(swap)
         if copy.flagRequestee == BugQuery.me { copy.flagRequestee = login }
         if copy.userInvolved == BugQuery.me { copy.userInvolved = login }
+        if copy.triageOwner == BugQuery.me { copy.triageOwner = login }
         return copy
     }
 
@@ -187,6 +202,10 @@ public extension BugQuery {
 
     static var needsReviewFromMe: BugQuery {
         BugQuery(flagRequestee: me)
+    }
+
+    static var triage: BugQuery {
+        BugQuery(severity: ["--"], type: ["defect"], triageOwner: me)
     }
 
     static func recentlyChanged(involving user: String, daysBack: Int = 7) -> BugQuery {

@@ -21,13 +21,22 @@ public struct Component: Codable, Sendable, Hashable, Identifiable {
     public let name: String
     public let description: String
     public let defaultAssignedTo: String?
+    public let triageOwner: String?
     public let isActive: Bool
 
-    public init(id: Int, name: String, description: String, defaultAssignedTo: String? = nil, isActive: Bool = true) {
+    public init(
+        id: Int,
+        name: String,
+        description: String,
+        defaultAssignedTo: String? = nil,
+        triageOwner: String? = nil,
+        isActive: Bool = true
+    ) {
         self.id = id
         self.name = name
         self.description = description
         self.defaultAssignedTo = defaultAssignedTo
+        self.triageOwner = triageOwner
         self.isActive = isActive
     }
 }
