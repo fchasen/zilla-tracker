@@ -109,28 +109,21 @@ struct FolioRow: View {
     }
 
     private var code: some View {
-        Text(highlightedText)
-            .foregroundColor(Color(theme.foreground))
+        FolioHighlightedText(
+            text: line.text,
+            lineRange: lineRange,
+            runs: runs,
+            defaultColor: theme.foreground,
+            backgroundRanges: intralineRanges,
+            backgroundColor: intralineBackground,
+            themeSignature: theme.paletteSignature
+        )
+            .equatable()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 4)
             .padding(.trailing, 8)
             .padding(.vertical, 1)
             .textSelection(.enabled)
-    }
-
-    private var highlightedText: AttributedString {
-        var attr = FolioHighlighter.attributed(
-            text: line.text,
-            lineRange: lineRange,
-            runs: runs,
-            defaultColor: theme.foreground
-        )
-        if !intralineRanges.isEmpty, let bg = intralineBackground {
-            for range in intralineRanges {
-                attr.applyBackground(on: line.text, range: range, color: bg)
-            }
-        }
-        return attr
     }
 
     private var intralineBackground: PlatformColor? {

@@ -35,8 +35,16 @@ struct CodeFolioRow: View {
                 onMarkTap: onCommentMarkTap,
                 onCreate: onCreateComment
             )
-            Text(highlightedText)
-                .foregroundColor(Color(theme.foreground))
+            FolioHighlightedText(
+                text: text,
+                lineRange: lineRange,
+                runs: runs,
+                defaultColor: theme.foreground,
+                backgroundRanges: [],
+                backgroundColor: nil,
+                themeSignature: theme.paletteSignature
+            )
+                .equatable()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 6)
                 .padding(.trailing, 8)
@@ -75,15 +83,6 @@ struct CodeFolioRow: View {
             side: .newFile,
             in: coordinateSpace,
             enabled: reportsSelection
-        )
-    }
-
-    private var highlightedText: AttributedString {
-        FolioHighlighter.attributed(
-            text: text,
-            lineRange: lineRange,
-            runs: runs,
-            defaultColor: theme.foreground
         )
     }
 }

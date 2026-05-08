@@ -143,8 +143,16 @@ struct SplitFolioRow: View {
         runs: [FolioHighlighter.Run],
         side: CellSide
     ) -> some View {
-        Text(highlighted(line: line, lineRange: lineRange, runs: runs, side: side))
-            .foregroundColor(Color(theme.foreground))
+        FolioHighlightedText(
+            text: line?.text ?? "",
+            lineRange: lineRange ?? NSRange(location: 0, length: 0),
+            runs: runs,
+            defaultColor: theme.foreground,
+            backgroundRanges: intralineRanges(for: side),
+            backgroundColor: intralineBackground(for: side),
+            themeSignature: theme.paletteSignature
+        )
+            .equatable()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 4)
             .padding(.trailing, 8)
@@ -152,27 +160,14 @@ struct SplitFolioRow: View {
             .textSelection(.enabled)
     }
 
-    private func highlighted(
-        line: DiffLine?,
-        lineRange: NSRange?,
-        runs: [FolioHighlighter.Run],
-        side: CellSide
-    ) -> AttributedString {
-        guard let line, let lineRange else { return AttributedString("") }
-        var attr = FolioHighlighter.attributed(
-            text: line.text,
-            lineRange: lineRange,
-            runs: runs,
-            defaultColor: theme.foreground
-        )
-        if let intra = row.intralineDiff {
-            let ranges = side == .left ? intra.oldRanges : intra.newRanges
-            let bg: PlatformColor = side == .left ? theme.intralineRemoved : theme.intralineAdded
-            for range in ranges {
-                attr.applyBackground(on: line.text, range: range, color: bg)
-            }
-        }
-        return attr
+    private func intralineRanges(for side: CellSide) -> [NSRange] {
+        guard let intra = row.intralineDiff else { return [] }
+        return side == .left ? intra.oldRanges : intra.newRanges
+    }
+
+    private func intralineBackground(for side: CellSide) -> PlatformColor? {
+        guard row.intralineDiff != nil else { return nil }
+        return side == .left ? theme.intralineRemoved : theme.intralineAdded
     }
 
     private func markerString(for line: DiffLine?) -> String {
