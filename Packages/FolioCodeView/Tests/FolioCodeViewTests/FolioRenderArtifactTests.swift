@@ -49,6 +49,26 @@ final class FolioRenderArtifactTests: XCTestCase {
         assertRunsIntersectTheirLines(runsByLine: code.runsByLine, lineRanges: code.lineRanges)
     }
 
+    func testCodeArtifactKeepsBackingTextAndReturnsLineText() {
+        let artifact = FolioRenderArtifactBuilder.full(
+            content: .code("let first = 1;\n\nconst third = 3;\n", startLine: 10),
+            contextLines: 3,
+            path: "example.js",
+            theme: .light
+        )
+
+        guard case let .code(code) = artifact.kind else {
+            return XCTFail("Expected code artifact")
+        }
+
+        XCTAssertEqual(code.text, "let first = 1;\n\nconst third = 3;\n")
+        XCTAssertEqual(code.lineRanges.count, 4)
+        XCTAssertEqual(code.lineText(at: 0), "let first = 1;")
+        XCTAssertEqual(code.lineText(at: 1), "")
+        XCTAssertEqual(code.lineText(at: 2), "const third = 3;")
+        XCTAssertEqual(code.lineText(at: 3), "")
+    }
+
     func testSkeletonCreatesEmptyRunSlots() {
         let hunk = DiffHunk(
             oldStart: 1,

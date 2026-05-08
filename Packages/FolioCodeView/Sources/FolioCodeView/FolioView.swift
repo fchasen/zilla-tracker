@@ -758,12 +758,12 @@ public struct FolioView: View {
     @ViewBuilder
     private func codeBody(code: FolioRenderArtifact.Code) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(code.lines.enumerated()), id: \.offset) { index, lineText in
+            ForEach(code.lineRanges.indices, id: \.self) { index in
                 let lineNum = code.startLine + index
                 let mark = findMark(side: .newFile, line: lineNum)
                 CodeFolioRow(
                     lineNumber: lineNum,
-                    text: lineText,
+                    text: code.lineText(at: index),
                     lineRange: code.lineRanges[index],
                     runs: code.runsByLine[index],
                     theme: theme,

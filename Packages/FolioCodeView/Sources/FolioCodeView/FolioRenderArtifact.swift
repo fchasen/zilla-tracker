@@ -25,10 +25,15 @@ struct FolioRenderArtifact: Sendable, Equatable {
     }
 
     struct Code: Sendable, Equatable {
-        let lines: [String]
+        let text: String
         let lineRanges: [NSRange]
         let runsByLine: [[FolioHighlighter.Run]]
         let startLine: Int
+
+        func lineText(at index: Int) -> String {
+            guard lineRanges.indices.contains(index) else { return "" }
+            return (text as NSString).substring(with: lineRanges[index])
+        }
     }
 
     let kind: Kind
@@ -42,7 +47,7 @@ struct FolioRenderArtifact: Sendable, Equatable {
     var totalLineCount: Int {
         switch kind {
         case let .diff(d): return d.hunk.lines.count
-        case let .code(c): return c.lines.count
+        case let .code(c): return c.lineRanges.count
         case .empty: return 0
         }
     }
@@ -59,7 +64,7 @@ struct FolioRenderArtifact: Sendable, Equatable {
                 + diff.foldedSections.count * 32
         case let .code(code):
             return 128
-                + code.lines.reduce(0) { $0 + estimatedCost(of: $1) }
+                + estimatedCost(of: code.text)
                 + estimatedCost(of: code.lineRanges)
                 + estimatedCost(of: code.runsByLine)
         case .empty:
@@ -130,12 +135,11 @@ enum FolioRenderArtifactBuilder {
                 gutterWidth: gutter
             )
         case let .code(text, startLine):
-            let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-            let lineRanges = makeCodeLineRanges(lines: lines)
-            let gutter = makeCodeGutterWidth(lineCount: lines.count, startLine: startLine)
+            let lineRanges = makeCodeLineRanges(text: text)
+            let gutter = makeCodeGutterWidth(lineCount: lineRanges.count, startLine: startLine)
             return FolioRenderArtifact(
                 kind: .code(.init(
-                    lines: lines,
+                    text: text,
                     lineRanges: lineRanges,
                     runsByLine: Array(repeating: [], count: lineRanges.count),
                     startLine: startLine
@@ -172,13 +176,12 @@ enum FolioRenderArtifactBuilder {
                 gutterWidth: gutter
             )
         case let .code(text, startLine):
-            let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-            let lineRanges = makeCodeLineRanges(lines: lines)
-            let gutter = makeCodeGutterWidth(lineCount: lines.count, startLine: startLine)
+            let lineRanges = makeCodeLineRanges(text: text)
+            let gutter = makeCodeGutterWidth(lineCount: lineRanges.count, startLine: startLine)
             let runs = computeRuns(path: path, content: content, theme: theme)
             return FolioRenderArtifact(
                 kind: .code(.init(
-                    lines: lines,
+                    text: text,
                     lineRanges: lineRanges,
                     runsByLine: makeRunsByLine(runs: runs, lineRanges: lineRanges),
                     startLine: startLine
@@ -225,15 +228,21 @@ enum FolioRenderArtifactBuilder {
         return ranges
     }
 
-    private static func makeCodeLineRanges(lines: [String]) -> [NSRange] {
+    private static func makeCodeLineRanges(text: String) -> [NSRange] {
+        let nsText = text as NSString
+        let length = nsText.length
+        guard length > 0 else { return [] }
         var ranges: [NSRange] = []
-        ranges.reserveCapacity(lines.count)
-        var cursor = 0
-        for line in lines {
-            let length = (line as NSString).length
-            ranges.append(NSRange(location: cursor, length: length))
-            cursor += length + 1
+        var lineStart = 0
+        var index = 0
+        while index < length {
+            if nsText.character(at: index) == 0x0A {
+                ranges.append(NSRange(location: lineStart, length: index - lineStart))
+                lineStart = index + 1
+            }
+            index += 1
         }
+        ranges.append(NSRange(location: lineStart, length: length - lineStart))
         return ranges
     }
 
