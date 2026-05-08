@@ -32,12 +32,10 @@ struct FolioRenderArtifact: Sendable, Equatable {
     }
 
     let kind: Kind
-    var runs: [FolioHighlighter.Run]
     let gutterWidth: CGFloat
 
     static let empty = FolioRenderArtifact(
         kind: .empty,
-        runs: [],
         gutterWidth: 30
     )
 
@@ -72,7 +70,6 @@ enum FolioRenderArtifactBuilder {
                     foldedSections: folded,
                     foldedContextLines: contextLines
                 )),
-                runs: [],
                 gutterWidth: gutter
             )
         case let .code(text, startLine):
@@ -86,7 +83,6 @@ enum FolioRenderArtifactBuilder {
                     runsByLine: Array(repeating: [], count: lineRanges.count),
                     startLine: startLine
                 )),
-                runs: [],
                 gutterWidth: gutter
             )
         }
@@ -116,7 +112,6 @@ enum FolioRenderArtifactBuilder {
                     foldedSections: folded,
                     foldedContextLines: contextLines
                 )),
-                runs: runs,
                 gutterWidth: gutter
             )
         case let .code(text, startLine):
@@ -131,7 +126,6 @@ enum FolioRenderArtifactBuilder {
                     runsByLine: makeRunsByLine(runs: runs, lineRanges: lineRanges),
                     startLine: startLine
                 )),
-                runs: runs,
                 gutterWidth: gutter
             )
         }

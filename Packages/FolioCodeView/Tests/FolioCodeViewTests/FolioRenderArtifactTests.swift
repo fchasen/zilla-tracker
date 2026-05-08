@@ -25,7 +25,6 @@ final class FolioRenderArtifactTests: XCTestCase {
             return XCTFail("Expected diff artifact")
         }
 
-        XCTAssertFalse(artifact.runs.isEmpty)
         XCTAssertEqual(diff.runsByLine.count, diff.lineRanges.count)
         XCTAssertFalse(diff.runsByLine[0].isEmpty)
         XCTAssertFalse(diff.runsByLine[1].isEmpty)
@@ -44,7 +43,6 @@ final class FolioRenderArtifactTests: XCTestCase {
             return XCTFail("Expected code artifact")
         }
 
-        XCTAssertFalse(artifact.runs.isEmpty)
         XCTAssertEqual(code.runsByLine.count, code.lineRanges.count)
         XCTAssertFalse(code.runsByLine[0].isEmpty)
         XCTAssertFalse(code.runsByLine[1].isEmpty)
@@ -87,7 +85,6 @@ final class FolioRenderArtifactTests: XCTestCase {
             return XCTFail("Expected code artifact")
         }
 
-        XCTAssertTrue(artifact.runs.isEmpty)
         XCTAssertEqual(code.runsByLine.count, code.lineRanges.count)
         XCTAssertTrue(code.runsByLine.allSatisfy(\.isEmpty))
     }
@@ -113,7 +110,6 @@ final class FolioRenderArtifactTests: XCTestCase {
             return XCTFail("Expected diff artifact")
         }
 
-        XCTAssertTrue(artifact.runs.isEmpty)
         XCTAssertEqual(diff.runsByLine.count, diff.lineRanges.count)
         XCTAssertTrue(diff.runsByLine.allSatisfy(\.isEmpty))
     }

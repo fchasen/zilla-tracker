@@ -97,6 +97,8 @@ public struct FolioView: View {
     }
 
     public var body: some View {
+        let key = artifactKey
+
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
                 header
@@ -113,8 +115,8 @@ public struct FolioView: View {
             folioShape.strokeBorder(Color(theme.border), lineWidth: 1)
         }
         .clipShape(folioShape)
-        .task(id: artifactKey) {
-            await refreshArtifact()
+        .task(id: key) {
+            await refreshArtifact(key: key)
         }
         .onChange(of: commentMarks, initial: true) { _, marks in
             commentMarkIndex = FolioCommentMarkIndex(marks)
@@ -132,43 +134,23 @@ public struct FolioView: View {
         )
     }
 
-    private var artifactKey: Int {
-        var hasher = Hasher()
-        hasher.combine(path)
-        hasher.combine(theme.paletteSignature)
-        hasher.combine(initialContextLines)
-        switch content {
-        case let .diff(hunk, _, _):
-            hasher.combine(0)
-            hasher.combine(hunk.oldStart)
-            hasher.combine(hunk.newStart)
-            hasher.combine(hunk.lines.count)
-            hasher.combine(hunk.lines.first?.text)
-            hasher.combine(hunk.lines.last?.text)
-        case let .code(text, startLine):
-            hasher.combine(1)
-            hasher.combine(text.count)
-            hasher.combine(text.first)
-            hasher.combine(text.last)
-            hasher.combine(startLine)
-        }
-        return hasher.finalize()
+    private var artifactKey: FolioRenderArtifactCacheKey {
+        FolioRenderArtifactCacheKey(
+            content: content,
+            path: path,
+            theme: theme,
+            contextLines: initialContextLines
+        )
     }
 
     @MainActor
-    private func refreshArtifact() async {
+    private func refreshArtifact(key: FolioRenderArtifactCacheKey) async {
         let path = self.path
         let content = self.content
         let theme = self.theme
         let contextLines = self.initialContextLines
 
         let artifactTask = Task.detached(priority: .userInitiated) {
-            let key = FolioRenderArtifactCacheKey(
-                content: content,
-                path: path,
-                theme: theme,
-                contextLines: contextLines
-            )
             if let cached = await FolioRenderArtifactCache.shared.artifact(for: key) {
                 return cached
             }
