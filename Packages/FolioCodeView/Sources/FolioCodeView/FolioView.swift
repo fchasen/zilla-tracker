@@ -116,7 +116,7 @@ public struct FolioView: View {
         .task(id: artifactKey) {
             await refreshArtifact()
         }
-        .onChange(of: commentMarks) { _, marks in
+        .onChange(of: commentMarks, initial: true) { _, marks in
             commentMarkIndex = FolioCommentMarkIndex(marks)
         }
     }
