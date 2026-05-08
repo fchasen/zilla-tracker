@@ -262,15 +262,9 @@ struct RevisionInspector: View {
                 Image(systemName: current?.systemImage ?? "testtube.2")
                     .foregroundStyle(current?.tint ?? Color.secondary)
                     .scaledFont(.title3)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(current?.title ?? "Set testing status")
-                        .scaledFont(.callout, weight: .medium)
-                        .foregroundStyle(.primary)
-                    Text(current?.detail ?? "Mark this revision's testing status.")
-                        .scaledFont(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+                Text(current?.title ?? "Set testing status")
+                    .scaledFont(.callout, weight: .medium)
+                    .foregroundStyle(.primary)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.down")
                     .scaledFont(.caption2, weight: .semibold)

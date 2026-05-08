@@ -161,7 +161,7 @@ struct ActivityRow: View {
 
     private var headerLine: some View {
         HStack(spacing: 6) {
-            if let icon = activityIcon {
+            if !isCommentLike, let icon = activityIcon {
                 Image(systemName: icon.systemName)
                     .scaledFont(.callout)
                     .foregroundStyle(icon.tint ?? Color.secondary)

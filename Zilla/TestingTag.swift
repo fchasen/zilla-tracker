@@ -20,16 +20,6 @@ enum TestingTag: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var detail: String {
-        switch self {
-        case .approved: return "Adequate automated tests are included."
-        case .exceptionUnchanged: return "No runtime behavior change in this revision."
-        case .exceptionUI: return "Pure UI work; not exercisable by unit tests."
-        case .exceptionElsewhere: return "Behavior is covered by tests in another module."
-        case .exceptionOther: return "Other reason; explain in the comments."
-        }
-    }
-
     var systemImage: String {
         switch self {
         case .approved: return "checkmark.seal.fill"
