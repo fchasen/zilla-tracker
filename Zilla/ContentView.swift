@@ -98,7 +98,6 @@ struct BugLinkTransfer: Codable, Transferable {
 
 enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     case myBugs
-    case reported
     case needsReview
     case triage
     case todo
@@ -108,7 +107,6 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .myBugs: return "My Bugs"
-        case .reported: return "Reported"
         case .needsReview: return "Needs Info"
         case .triage: return "Triage"
         case .todo: return "Todo"
@@ -118,7 +116,6 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     var systemImage: String {
         switch self {
         case .myBugs: return "tray"
-        case .reported: return "tray.and.arrow.up"
         case .needsReview: return "flag"
         case .triage: return "ant"
         case .todo: return "checklist"
@@ -244,7 +241,7 @@ enum BugListSort: String, CaseIterable, Identifiable, Hashable {
 }
 
 enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
-    case all, open, new, assigned, closed
+    case all, open, new, assigned, reported, closed
 
     var id: String { rawValue }
 
@@ -254,6 +251,7 @@ enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
         case .open: return "Open"
         case .new: return "New"
         case .assigned: return "Assigned"
+        case .reported: return "Reported"
         case .closed: return "Closed"
         }
     }
@@ -264,6 +262,7 @@ enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
         case .open: return "circle"
         case .new: return "sparkles"
         case .assigned: return "person.fill"
+        case .reported: return "tray.and.arrow.up"
         case .closed: return "checkmark.circle"
         }
     }
@@ -283,6 +282,10 @@ enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
         case .assigned:
             copy.status = ["ASSIGNED", "IN_PROGRESS"]
             copy.resolution = ["---"]
+        case .reported:
+            copy.status = []
+            copy.resolution = []
+            copy.reporter = [BugQuery.me]
         case .closed:
             copy.status = ["RESOLVED", "VERIFIED", "CLOSED"]
             copy.resolution = []
@@ -1168,8 +1171,6 @@ final class Workspace {
         switch selection {
         case .smart(.myBugs):
             return .myBugs
-        case .smart(.reported):
-            return .reportedByMe
         case .smart(.needsReview):
             return .needsReviewFromMe
         case .smart(.triage):
@@ -1844,8 +1845,8 @@ struct Sidebar: View {
 
     private func countQuery(_ query: BugQuery, defaultFilter: BugStatusFilter, force: Bool) async -> Int? {
         guard auth.isSignedIn, let login = auth.currentUser?.name else { return nil }
-        var countQuery = query.substitutingMe(with: login)
-        countQuery = defaultFilter.apply(to: countQuery)
+        var countQuery = defaultFilter.apply(to: query)
+        countQuery = countQuery.substitutingMe(with: login)
         return try? await cache.bugCount(countQuery, force: force, using: auth.client)
     }
 
@@ -2478,7 +2479,7 @@ struct BugListView: View {
         } label: {
             Label("Filter", systemImage: filterIcon)
         }
-        .help("Filter by status")
+        .help("Filter bugs")
     }
 
     private var filterIcon: String {
@@ -2716,11 +2717,14 @@ struct BugListView: View {
 
     private func makeQuery(offset: Int) -> BugQuery? {
         guard let selection else { return nil }
-        var query = workspace.bugQuery(for: selection)
+        let filter = workspace.bugStatusFilter
+        var query = selection == .smart(.myBugs) && filter == .reported
+            ? .reportedByMe
+            : workspace.bugQuery(for: selection)
+        query = filter.apply(to: query)
         if let login = auth.currentUser?.name {
             query = query.substitutingMe(with: login)
         }
-        query = workspace.bugStatusFilter.apply(to: query)
         let trimmed = workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             query.quicksearch = trimmed
@@ -2863,10 +2867,10 @@ struct BugListView: View {
             for id in metaIDs {
                 group.addTask {
                     var query = BugQuery.blockedBy(metaBug: id)
+                    query = filter.apply(to: query)
                     if let login {
                         query = query.substitutingMe(with: login)
                     }
-                    query = filter.apply(to: query)
                     query.limit = 100
                     query.includeFields = fields
                     guard let result = try? await client.searchBugs(query) else {

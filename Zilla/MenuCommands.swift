@@ -77,10 +77,8 @@ struct ZillaCommands: Commands {
         CommandMenu("Navigate") {
             Button("My Bugs") { workspace.sidebarSelection = .smart(.myBugs) }
                 .keyboardShortcut("1", modifiers: .command)
-            Button("Reported") { workspace.sidebarSelection = .smart(.reported) }
-                .keyboardShortcut("2", modifiers: .command)
             Button("Needs Info") { workspace.sidebarSelection = .smart(.needsReview) }
-                .keyboardShortcut("3", modifiers: .command)
+                .keyboardShortcut("2", modifiers: .command)
             if workspace.hasTriageComponents(for: auth.currentUser?.name) {
                 Button("Triage") { workspace.sidebarSelection = .smart(.triage) }
             }
@@ -88,13 +86,13 @@ struct ZillaCommands: Commands {
             Divider()
 
             Button("Active Revisions") { workspace.sidebarSelection = .review(.active) }
-                .keyboardShortcut("4", modifiers: .command)
+                .keyboardShortcut("3", modifiers: .command)
                 .disabled(!phab.isSignedIn)
             Button("Under Review") { workspace.sidebarSelection = .review(.review) }
-                .keyboardShortcut("5", modifiers: .command)
+                .keyboardShortcut("4", modifiers: .command)
                 .disabled(!phab.isSignedIn)
             Button("Landed") { workspace.sidebarSelection = .review(.landed) }
-                .keyboardShortcut("6", modifiers: .command)
+                .keyboardShortcut("5", modifiers: .command)
                 .disabled(!phab.isSignedIn)
 
             Divider()

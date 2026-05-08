@@ -157,7 +157,8 @@ struct DraftEditorView: View {
             let newID = try await auth.client.createBug(payload)
             modelContext.delete(draft)
             workspace.selectedDraftID = nil
-            workspace.sidebarSelection = .smart(.reported)
+            workspace.sidebarSelection = .smart(.myBugs)
+            workspace.smartFilters[.myBugs] = .reported
             workspace.selectedBugID = newID
             workspace.bugListRefreshToken = UUID()
         } catch {
