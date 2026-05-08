@@ -2,17 +2,8 @@ import Foundation
 import PhabricatorKit
 
 enum ChangesetContentSource: Sendable, Hashable {
-    case hunks(old: String, new: String)
+    case hunks
     case binary
-
-    var lines: (old: String, new: String)? {
-        switch self {
-        case .hunks(let old, let new):
-            return (old, new)
-        case .binary:
-            return nil
-        }
-    }
 }
 
 @MainActor
@@ -27,7 +18,6 @@ struct ChangesetContentLoader {
         default:
             break
         }
-        let (old, new) = ChangesetSynthesizer.synthesize(changeset: changeset)
-        return .hunks(old: old, new: new)
+        return .hunks
     }
 }
