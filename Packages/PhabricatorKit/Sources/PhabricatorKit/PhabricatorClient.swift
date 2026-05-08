@@ -176,6 +176,45 @@ public extension PhabricatorClient {
         }
     }
 
+    func searchUsers(query: String, limit: Int = 12) async throws -> [PhabricatorUser] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        struct Params: Encodable {
+            let constraints: Constraints
+            let limit: Int
+
+            struct Constraints: Encodable {
+                let query: String
+            }
+        }
+        struct Result: Decodable, Sendable {
+            let data: [Row]
+        }
+        struct Row: Decodable, Sendable {
+            let phid: String
+            let fields: Fields
+
+            struct Fields: Decodable, Sendable {
+                let username: String
+                let realName: String?
+                let image: URL?
+            }
+        }
+        let result: Result = try await call(
+            method: "user.search",
+            params: Params(constraints: .init(query: trimmed), limit: limit)
+        )
+        return result.data.map { row in
+            PhabricatorUser(
+                phid: row.phid,
+                userName: row.fields.username,
+                realName: row.fields.realName,
+                primaryEmail: nil,
+                image: row.fields.image
+            )
+        }
+    }
+
     func getFileContent(repositoryPHID: String, commit: String, path: String) async throws -> String? {
         struct FCQ: Encodable {
             let repositoryPHID: String

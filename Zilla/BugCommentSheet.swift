@@ -7,6 +7,7 @@ struct BugCommentSheet: View {
 
     let bugID: Bug.ID?
     @Binding var text: String
+    let mentionCompletionContext: MentionCompletionContext
     let onPost: () -> Void
     let isPosting: Bool
     let error: String?
@@ -23,6 +24,8 @@ struct BugCommentSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     bordered: false,
+                    autolinksReferences: true,
+                    mentionCompletionContext: mentionCompletionContext,
                     autoFocus: true
                 )
                 if let error {

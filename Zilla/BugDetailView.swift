@@ -80,6 +80,12 @@ struct BugDetailView: View {
     private var comments: [Comment] { commentsSnapshot }
     private var loadError: String? { workspace.bugLoadError }
     private var isLoading: Bool { workspace.isLoadingBug }
+    private var bugMentionCompletionContext: MentionCompletionContext {
+        MentionCompletionContext.bugzilla(
+            bug: bug,
+            comments: comments.filter { ($0.count ?? -1) != 0 }
+        )
+    }
 
     var body: some View {
         Group {
@@ -153,6 +159,7 @@ struct BugDetailView: View {
             BugCommentSheet(
                 bugID: bugID,
                 text: composerTextBinding,
+                mentionCompletionContext: bugMentionCompletionContext,
                 onPost: { Task { await postComment() } },
                 isPosting: isPostingComment,
                 error: composerError
@@ -292,7 +299,11 @@ struct BugDetailView: View {
 
         let client = auth.client
         do {
-            _ = try await client.addComment(bugID: id, text: trimmed, isMarkdown: true)
+            _ = try await client.addComment(
+                bugID: id,
+                text: CommentMarkdown.autolinkReferences(in: trimmed),
+                isMarkdown: true
+            )
             workspace.bugCommentDrafts.removeValue(forKey: id)
             await workspace.refreshLoadedComments(using: client)
         } catch {
@@ -321,7 +332,12 @@ private struct BugContent: View {
                         .foregroundStyle(.orange)
                 }
                 if let description = descriptionComment {
-                    DescriptionBlock(bug: bug, comment: description, attachments: bug.attachments)
+                    DescriptionBlock(
+                        bug: bug,
+                        comment: description,
+                        attachments: bug.attachments,
+                        mentionCompletionContext: mentionCompletionContext
+                    )
                 }
                 if !phabricatorPatches.isEmpty {
                     PhabricatorSection(patches: phabricatorPatches)
@@ -336,6 +352,7 @@ private struct BugContent: View {
                     bugID: bug.id,
                     comments: threadComments,
                     attachmentsByID: attachmentsByID,
+                    mentionCompletionContext: mentionCompletionContext,
                     onQuote: quoteIntoComposer
                 )
                 #if os(macOS)
@@ -344,6 +361,7 @@ private struct BugContent: View {
                     text: $composerText,
                     isPosting: isPosting,
                     error: composerError,
+                    mentionCompletionContext: mentionCompletionContext,
                     onPost: onPost
                 )
                 #endif
@@ -392,6 +410,10 @@ private struct BugContent: View {
             }
             return true
         }
+    }
+
+    private var mentionCompletionContext: MentionCompletionContext {
+        MentionCompletionContext.bugzilla(bug: bug, comments: threadComments)
     }
 
     private var attachmentsByID: [BugzillaKit.Attachment.ID: BugzillaKit.Attachment] {
@@ -1605,6 +1627,7 @@ private struct BugCommentsSection: View {
     let bugID: Bug.ID
     let comments: [Comment]
     let attachmentsByID: [BugzillaKit.Attachment.ID: BugzillaKit.Attachment]
+    let mentionCompletionContext: MentionCompletionContext
     let onQuote: (String) -> Void
 
     var body: some View {
@@ -1623,6 +1646,7 @@ private struct BugCommentsSection: View {
                         bugID: bugID,
                         comment: comment,
                         attachment: comment.attachmentId.flatMap { attachmentsByID[$0] },
+                        mentionCompletionContext: mentionCompletionContext,
                         onQuote: onQuote
                     )
                 }
@@ -1635,6 +1659,7 @@ private struct DescriptionBlock: View {
     let bug: Bug
     let comment: Comment
     let attachments: [BugzillaKit.Attachment]
+    let mentionCompletionContext: MentionCompletionContext
 
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
@@ -1675,7 +1700,9 @@ private struct DescriptionBlock: View {
                         MarkdownEditor(
                             text: $editedText,
                             minHeight: 160,
-                            isDisabled: workspace.isUpdatingBug
+                            isDisabled: workspace.isUpdatingBug,
+                            autolinksReferences: true,
+                            mentionCompletionContext: mentionCompletionContext
                         )
                         HStack(spacing: 8) {
                             if let saveError {
@@ -1698,7 +1725,7 @@ private struct DescriptionBlock: View {
                             .disabled(workspace.isUpdatingBug || !canSave)
                         }
                     } else if !stripped.isEmpty {
-                        StructuredText(markdown: flattenBlockquotes(stripped))
+                        StructuredText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
                             .scaledFont(.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1728,7 +1755,7 @@ private struct DescriptionBlock: View {
         if let error = await workspace.updateComment(
             bugID: bug.id,
             commentID: comment.id,
-            newText: trimmed,
+            newText: CommentMarkdown.autolinkReferences(in: trimmed),
             using: auth.client
         ) {
             saveError = error.localizedDescription
@@ -1743,6 +1770,7 @@ private struct CommentBlock: View {
     let bugID: Bug.ID
     let comment: Comment
     let attachment: BugzillaKit.Attachment?
+    let mentionCompletionContext: MentionCompletionContext
     let onQuote: (String) -> Void
 
     @Environment(Workspace.self) private var workspace
@@ -1847,7 +1875,9 @@ private struct CommentBlock: View {
                 MarkdownEditor(
                     text: $editedText,
                     minHeight: 120,
-                    isDisabled: workspace.isUpdatingBug
+                    isDisabled: workspace.isUpdatingBug,
+                    autolinksReferences: true,
+                    mentionCompletionContext: mentionCompletionContext
                 )
                 HStack(spacing: 8) {
                     if let saveError {
@@ -1871,7 +1901,7 @@ private struct CommentBlock: View {
             }
             .padding(.horizontal, narrow ? 12 : 0)
         } else if !stripped.isEmpty {
-            StructuredText(markdown: flattenBlockquotes(stripped))
+            StructuredText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
                 .scaledFont(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1899,7 +1929,7 @@ private struct CommentBlock: View {
         if let error = await workspace.updateComment(
             bugID: bugID,
             commentID: comment.id,
-            newText: trimmed,
+            newText: CommentMarkdown.autolinkReferences(in: trimmed),
             using: auth.client
         ) {
             saveError = error.localizedDescription
@@ -2427,6 +2457,7 @@ private struct CommentComposer: View {
     @Binding var text: String
     let isPosting: Bool
     let error: String?
+    let mentionCompletionContext: MentionCompletionContext
     let onPost: () -> Void
 
     var body: some View {
@@ -2435,7 +2466,9 @@ private struct CommentComposer: View {
                 .scaledFont(.headline)
             MarkdownEditor(
                 text: $text,
-                isDisabled: isPosting
+                isDisabled: isPosting,
+                autolinksReferences: true,
+                mentionCompletionContext: mentionCompletionContext
             )
 
             if let error {

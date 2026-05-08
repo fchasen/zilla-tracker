@@ -35,6 +35,8 @@ struct RevisionCommentSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     bordered: false,
+                    autolinksReferences: true,
+                    mentionCompletionContext: workspace.revisionMentionCompletionContext,
                     autoFocus: true
                 )
                 Spacer(minLength: 0)
@@ -67,7 +69,7 @@ struct RevisionCommentSheet: View {
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
-            transactions: [.comment(Markdown.toRemarkup(trimmed))],
+            transactions: [.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))],
             using: phab.client
         ) {
             workspace.lastUpdateError = error.localizedDescription

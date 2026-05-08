@@ -26,7 +26,9 @@ struct RevisionCommentComposer: View {
             InspectorSectionHeader(title: "Add comment")
             MarkdownEditor(
                 text: draftBinding,
-                isDisabled: isPosting
+                isDisabled: isPosting,
+                autolinksReferences: true,
+                mentionCompletionContext: workspace.revisionMentionCompletionContext
             )
             .frame(minHeight: 100)
 
@@ -54,7 +56,7 @@ struct RevisionCommentComposer: View {
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
-            transactions: [.comment(Markdown.toRemarkup(trimmed))],
+            transactions: [.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))],
             using: phab.client
         ) {
             workspace.lastUpdateError = error.localizedDescription

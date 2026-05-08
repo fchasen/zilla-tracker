@@ -11,6 +11,7 @@ struct RevisionActionSheet: View {
     let onSubmit: ([RevisionEditTransaction]) async -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(Workspace.self) private var workspace
     @State private var commentBody: String = ""
     @State private var isSubmitting: Bool = false
 
@@ -20,7 +21,9 @@ struct RevisionActionSheet: View {
                 Section {
                     MarkdownEditor(
                         text: $commentBody,
-                        isDisabled: isSubmitting
+                        isDisabled: isSubmitting,
+                        autolinksReferences: true,
+                        mentionCompletionContext: workspace.revisionMentionCompletionContext
                     )
                     .frame(minHeight: 140)
                 } header: {
@@ -132,7 +135,7 @@ struct RevisionActionSheet: View {
             transactions.append(.action(state.action))
         }
         if !trimmed.isEmpty {
-            transactions.append(.comment(Markdown.toRemarkup(trimmed)))
+            transactions.append(.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))))
         }
         guard !transactions.isEmpty else { return }
         isSubmitting = true

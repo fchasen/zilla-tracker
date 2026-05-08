@@ -9,6 +9,7 @@ struct InlineComposerView: View {
     let chromed: Bool
     let bordered: Bool
     let showToolbar: Bool
+    let mentionCompletionContext: MentionCompletionContext
     let onCancel: () -> Void
     let onPost: () -> Void
 
@@ -20,6 +21,7 @@ struct InlineComposerView: View {
         chromed: Bool = true,
         bordered: Bool = false,
         showToolbar: Bool = true,
+        mentionCompletionContext: MentionCompletionContext = .none,
         onCancel: @escaping () -> Void,
         onPost: @escaping () -> Void
     ) {
@@ -30,6 +32,7 @@ struct InlineComposerView: View {
         self.chromed = chromed
         self.bordered = bordered
         self.showToolbar = showToolbar
+        self.mentionCompletionContext = mentionCompletionContext
         self.onCancel = onCancel
         self.onPost = onPost
     }
@@ -49,7 +52,9 @@ struct InlineComposerView: View {
                 minHeight: 36,
                 isDisabled: isPosting,
                 bordered: bordered,
-                showToolbar: showToolbar
+                showToolbar: showToolbar,
+                autolinksReferences: true,
+                mentionCompletionContext: mentionCompletionContext
             )
 
             HStack {

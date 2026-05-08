@@ -73,6 +73,8 @@ struct InlineComposerSheet: View {
                     minHeight: 240,
                     isDisabled: isPosting,
                     bordered: false,
+                    autolinksReferences: true,
+                    mentionCompletionContext: workspace.revisionMentionCompletionContext,
                     autoFocus: true
                 )
                 Spacer(minLength: 0)
@@ -124,6 +126,7 @@ struct InlineComposerSheet: View {
     private func post() async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let body = Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))
         isPosting = true
         defer { isPosting = false }
         let error: Error?
@@ -134,7 +137,7 @@ struct InlineComposerSheet: View {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                newContent: trimmed,
+                newContent: body,
                 replyTo: replyTo,
                 using: phab.client
             )
@@ -144,7 +147,7 @@ struct InlineComposerSheet: View {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                content: trimmed,
+                content: body,
                 replyTo: replyTo,
                 using: phab.client
             )

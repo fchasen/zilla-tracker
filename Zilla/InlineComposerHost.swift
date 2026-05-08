@@ -66,6 +66,7 @@ struct InlineComposerHost: View {
             postLabel: editingPHID != nil ? "Save" : "Post",
             chromed: chromed,
             showToolbar: showToolbar,
+            mentionCompletionContext: workspace.revisionMentionCompletionContext,
             onCancel: cancel,
             onPost: { Task { await post() } }
         )
@@ -99,7 +100,7 @@ struct InlineComposerHost: View {
     private func post() async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let body = Markdown.toRemarkup(trimmed)
+        let body = Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))
         isPosting = true
         defer { isPosting = false }
         let error: Error?
