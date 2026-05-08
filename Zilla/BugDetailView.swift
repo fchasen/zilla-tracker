@@ -51,9 +51,6 @@ struct BugDetailView: View {
     @State private var dupePrompt: DupePromptIdentifier?
     @State private var updateError: String?
 
-    @State private var bugSnapshot: Bug?
-    @State private var commentsSnapshot: [Comment] = []
-
     #if os(iOS)
     @State private var isPresentingCommentSheet: Bool = false
     #endif
@@ -76,8 +73,9 @@ struct BugDetailView: View {
         composerTextBinding.wrappedValue
     }
 
-    private var bug: Bug? { bugSnapshot }
-    private var comments: [Comment] { commentsSnapshot }
+    private var isShowingLoadedBug: Bool { workspace.loadedBug?.id == bugID }
+    private var bug: Bug? { isShowingLoadedBug ? workspace.loadedBug : nil }
+    private var comments: [Comment] { isShowingLoadedBug ? workspace.loadedComments : [] }
     private var loadError: String? { workspace.bugLoadError }
     private var isLoading: Bool { workspace.isLoadingBug }
     private var bugMentionCompletionContext: MentionCompletionContext {
@@ -138,7 +136,7 @@ struct BugDetailView: View {
                     Label("Inspector", systemImage: "sidebar.right")
                 }
                 .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
-                .disabled(workspace.loadedBug == nil)
+                .disabled(bug == nil)
             }
             #if os(iOS)
             ToolbarItemGroup(placement: .bottomBar) {
@@ -148,7 +146,7 @@ struct BugDetailView: View {
                 } label: {
                     Label("New Comment", systemImage: "square.and.pencil")
                 }
-                .disabled(workspace.loadedBug == nil || !auth.isSignedIn)
+                .disabled(bug == nil || !auth.isSignedIn)
             }
             #endif
         }
@@ -190,28 +188,19 @@ struct BugDetailView: View {
         .onChange(of: workspace.dupePromptRequested) { _, requested in
             if requested {
                 workspace.dupePromptRequested = false
-                if workspace.loadedBug != nil, !BugStatuses.isClosed(workspace.loadedBug?.status ?? "") {
+                if let bug, !BugStatuses.isClosed(bug.status) {
                     dupePrompt = DupePromptIdentifier()
                 }
             }
         }
         .interceptingMozillaLinks(workspace: workspace)
         .task(id: bugID) { await reload() }
-        .onAppear { restoreSnapshotIfNeeded() }
-        .onChange(of: workspace.loadedBug) { _, newValue in
-            guard let newValue, newValue.id == bugID else { return }
-            bugSnapshot = newValue
-            commentsSnapshot = workspace.loadedComments
-        }
-        .onChange(of: workspace.loadedComments) { _, newValue in
-            guard workspace.loadedBug?.id == bugID else { return }
-            commentsSnapshot = newValue
-        }
+        .onAppear { restoreCachedBugIfNeeded() }
     }
 
-    private func restoreSnapshotIfNeeded() {
-        guard let bugSnapshot, workspace.loadedBug?.id != bugSnapshot.id else { return }
-        workspace.publishLoadedBug(bugSnapshot, comments: commentsSnapshot)
+    private func restoreCachedBugIfNeeded() {
+        guard let id = bugID, workspace.loadedBug?.id != id else { return }
+        _ = workspace.restoreCachedBug(id: id)
     }
 
     @ViewBuilder
@@ -277,16 +266,10 @@ struct BugDetailView: View {
         composerError = nil
         guard let id = bugID else {
             workspace.clearLoadedBug()
-            bugSnapshot = nil
-            commentsSnapshot = []
             return
         }
         viewedBugs.markViewed(id)
         await workspace.loadBug(id: id, using: auth.client)
-        if workspace.loadedBug?.id == id {
-            bugSnapshot = workspace.loadedBug
-            commentsSnapshot = workspace.loadedComments
-        }
     }
 
     private func postComment() async {

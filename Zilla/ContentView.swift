@@ -630,6 +630,16 @@ final class Workspace {
 
     @discardableResult
     @MainActor
+    func restoreCachedBug(id: Bug.ID) -> Bool {
+        guard let cache,
+              let bug: Bug = cache.get(.bug(id)) else { return false }
+        let comments: [Comment] = cache.get(.comments(bugID: id)) ?? []
+        publishLoadedBug(bug, comments: comments)
+        return true
+    }
+
+    @discardableResult
+    @MainActor
     func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
         guard let id = loadedBug?.id else { return nil }
         isUpdatingBug = true
@@ -742,6 +752,24 @@ final class Workspace {
         loadedRevisionInlines = inlines
         loadedRevisionStack = stack
         revisionLoadError = nil
+    }
+
+    @discardableResult
+    @MainActor
+    func restoreCachedRevision(id: Int) -> Bool {
+        guard let cache,
+              let revision: Revision = cache.get(.revision(id)) else { return false }
+        let cachedDiff: DiffDetail?? = cache.get(.revisionDiff(id), as: Optional<DiffDetail>.self)
+        let transactions: [RevisionTransaction] = cache.get(.revisionTransactions(id)) ?? []
+        let stack: RevisionStackGraph? = cache.get(.revisionStack(id))
+        publishLoadedRevision(
+            revision,
+            diff: cachedDiff ?? nil,
+            transactions: transactions,
+            inlines: PhabricatorClient.inlineComments(from: transactions),
+            stack: stack
+        )
+        return true
     }
 
     func clearLoadedRevision() {
