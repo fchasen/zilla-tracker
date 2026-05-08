@@ -75,6 +75,39 @@ final class FolioRenderArtifactCacheTests: XCTestCase {
         XCTAssertNotNil(cachedThird)
     }
 
+    func testCacheEvictsLeastRecentlyUsedArtifactWhenCostLimitIsExceeded() async {
+        let first = FolioContent.code(String(repeating: "let first = 1;\n", count: 80), startLine: 1)
+        let second = FolioContent.code(String(repeating: "let second = 2;\n", count: 80), startLine: 1)
+        let firstArtifact = artifact(for: first)
+        let secondArtifact = artifact(for: second)
+        let cache = FolioRenderArtifactCache(
+            limit: 10,
+            costLimit: firstArtifact.estimatedByteCost + secondArtifact.estimatedByteCost - 1
+        )
+        let firstKey = key(for: first)
+        let secondKey = key(for: second)
+
+        await cache.store(firstArtifact, for: firstKey)
+        await cache.store(secondArtifact, for: secondKey)
+
+        let cachedFirst = await cache.artifact(for: firstKey)
+        let cachedSecond = await cache.artifact(for: secondKey)
+        XCTAssertNil(cachedFirst)
+        XCTAssertNotNil(cachedSecond)
+    }
+
+    func testCacheSkipsOversizedArtifact() async {
+        let content = FolioContent.code(String(repeating: "let value = 1;\n", count: 80), startLine: 1)
+        let artifact = artifact(for: content)
+        let cache = FolioRenderArtifactCache(limit: 10, costLimit: artifact.estimatedByteCost - 1)
+        let key = key(for: content)
+
+        await cache.store(artifact, for: key)
+
+        let cached = await cache.artifact(for: key)
+        XCTAssertNil(cached)
+    }
+
     private func key(for content: FolioContent) -> FolioRenderArtifactCacheKey {
         FolioRenderArtifactCacheKey(
             content: content,

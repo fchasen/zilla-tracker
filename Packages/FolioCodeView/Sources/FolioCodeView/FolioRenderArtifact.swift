@@ -46,6 +46,63 @@ struct FolioRenderArtifact: Sendable, Equatable {
         case .empty: return 0
         }
     }
+
+    var estimatedByteCost: Int {
+        switch kind {
+        case let .diff(diff):
+            return 128
+                + estimatedCost(of: diff.hunk)
+                + estimatedCost(of: diff.lineRanges)
+                + estimatedCost(of: diff.runsByLine)
+                + estimatedCost(of: diff.intralineDiffByText)
+                + estimatedCost(of: diff.unifiedIntralineByHunkIdx)
+                + diff.foldedSections.count * 32
+        case let .code(code):
+            return 128
+                + code.lines.reduce(0) { $0 + estimatedCost(of: $1) }
+                + estimatedCost(of: code.lineRanges)
+                + estimatedCost(of: code.runsByLine)
+        case .empty:
+            return 64
+        }
+    }
+}
+
+private func estimatedCost(of hunk: DiffHunk) -> Int {
+    hunk.lines.reduce(64) { total, line in
+        total + 48 + estimatedCost(of: line.text)
+    }
+}
+
+private func estimatedCost(of string: String) -> Int {
+    32 + string.utf8.count
+}
+
+private func estimatedCost(of ranges: [NSRange]) -> Int {
+    24 + ranges.count * MemoryLayout<NSRange>.stride
+}
+
+private func estimatedCost(of runsByLine: [[FolioHighlighter.Run]]) -> Int {
+    runsByLine.reduce(24 + runsByLine.count * 24) { total, runs in
+        total + runs.count * MemoryLayout<FolioHighlighter.Run>.stride
+    }
+}
+
+private func estimatedCost(of cache: [FolioTextPair: IntralineDiff.Result]) -> Int {
+    cache.reduce(24) { total, entry in
+        total
+            + 96
+            + estimatedCost(of: entry.key.old)
+            + estimatedCost(of: entry.key.new)
+            + estimatedCost(of: entry.value.oldRanges)
+            + estimatedCost(of: entry.value.newRanges)
+    }
+}
+
+private func estimatedCost(of intralineByIndex: [Int: [NSRange]]) -> Int {
+    intralineByIndex.reduce(24) { total, entry in
+        total + 32 + estimatedCost(of: entry.value)
+    }
 }
 
 enum FolioRenderArtifactBuilder {

@@ -51,22 +51,39 @@ struct FolioContentFingerprint: Sendable, Hashable {
 actor FolioRenderArtifactCache {
     static let shared = FolioRenderArtifactCache()
 
-    private var storage: [FolioRenderArtifactCacheKey: FolioRenderArtifact] = [:]
-    private var order: [FolioRenderArtifactCacheKey] = []
-    private let limit: Int
+    private struct Entry {
+        let artifact: FolioRenderArtifact
+        let cost: Int
+    }
 
-    init(limit: Int = 8) {
+    private var storage: [FolioRenderArtifactCacheKey: Entry] = [:]
+    private var order: [FolioRenderArtifactCacheKey] = []
+    private var totalCost: Int = 0
+    private let limit: Int
+    private let costLimit: Int
+
+    init(limit: Int = 8, costLimit: Int = 12 * 1024 * 1024) {
         self.limit = max(1, limit)
+        self.costLimit = max(1, costLimit)
     }
 
     func artifact(for key: FolioRenderArtifactCacheKey) -> FolioRenderArtifact? {
-        guard let artifact = storage[key] else { return nil }
+        guard let entry = storage[key] else { return nil }
         touch(key)
-        return artifact
+        return entry.artifact
     }
 
     func store(_ artifact: FolioRenderArtifact, for key: FolioRenderArtifactCacheKey) {
-        storage[key] = artifact
+        let cost = artifact.estimatedByteCost
+        guard cost <= costLimit else {
+            remove(key)
+            return
+        }
+        if let existing = storage[key] {
+            totalCost -= existing.cost
+        }
+        storage[key] = Entry(artifact: artifact, cost: cost)
+        totalCost += cost
         touch(key)
         trim()
     }
@@ -77,10 +94,16 @@ actor FolioRenderArtifactCache {
     }
 
     private func trim() {
-        while storage.count > limit, let key = order.first {
-            order.removeFirst()
-            storage[key] = nil
+        while (storage.count > limit || totalCost > costLimit), let key = order.first {
+            remove(key)
         }
+    }
+
+    private func remove(_ key: FolioRenderArtifactCacheKey) {
+        if let existing = storage.removeValue(forKey: key) {
+            totalCost -= existing.cost
+        }
+        order.removeAll { $0 == key }
     }
 }
 
