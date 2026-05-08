@@ -96,7 +96,6 @@ final class ResourceCache {
     private struct Entry {
         let value: Any
         let storedAt: Date
-        var lastAccessed: Date
     }
 
     enum Freshness {
@@ -105,9 +104,10 @@ final class ResourceCache {
 
     private(set) var version: UInt64 = 0
     private var entries: [CacheKey: Entry] = [:]
-    private var inflight: [CacheKey: Task<Any, Error>] = [:]
-    private var inflightToken: [CacheKey: UUID] = [:]
-    private var revalidationListeners: [CacheKey: Task<Void, Never>] = [:]
+    @ObservationIgnored private var lastAccessed: [CacheKey: Date] = [:]
+    @ObservationIgnored private var inflight: [CacheKey: Task<Any, Error>] = [:]
+    @ObservationIgnored private var inflightToken: [CacheKey: UUID] = [:]
+    @ObservationIgnored private var revalidationListeners: [CacheKey: Task<Void, Never>] = [:]
     private let maxEntryCount: Int
     private let groupLimits: [CacheRetentionGroup: Int]
 
@@ -133,10 +133,9 @@ final class ResourceCache {
     }
 
     func get<V>(_ key: CacheKey, as: V.Type = V.self) -> V? {
-        guard var entry = entries[key],
+        guard let entry = entries[key],
               let value = entry.value as? V else { return nil }
-        entry.lastAccessed = .now
-        entries[key] = entry
+        lastAccessed[key] = .now
         return value
     }
 
@@ -145,13 +144,15 @@ final class ResourceCache {
     }
 
     func store<V>(_ value: V, for key: CacheKey, storedAt: Date = .now) {
-        entries[key] = Entry(value: value, storedAt: storedAt, lastAccessed: storedAt)
+        entries[key] = Entry(value: value, storedAt: storedAt)
+        lastAccessed[key] = storedAt
         _ = trim(now: storedAt)
         version &+= 1
     }
 
     func invalidate(_ key: CacheKey) {
         cancelInflight(for: key)
+        lastAccessed.removeValue(forKey: key)
         if entries.removeValue(forKey: key) != nil {
             version &+= 1
         }
@@ -161,6 +162,7 @@ final class ResourceCache {
         var changed = false
         for key in [CacheKey.bug(id), .comments(bugID: id), .dependencyMeta(id)] {
             cancelInflight(for: key)
+            lastAccessed.removeValue(forKey: key)
             if entries.removeValue(forKey: key) != nil { changed = true }
         }
         if changed { version &+= 1 }
@@ -175,6 +177,7 @@ final class ResourceCache {
             .revisionStack(id)
         ] {
             cancelInflight(for: key)
+            lastAccessed.removeValue(forKey: key)
             if entries.removeValue(forKey: key) != nil { changed = true }
         }
         if changed { version &+= 1 }
@@ -186,6 +189,7 @@ final class ResourceCache {
         inflight.removeAll()
         inflightToken.removeAll()
         revalidationListeners.removeAll()
+        lastAccessed.removeAll()
         if !entries.isEmpty {
             entries.removeAll()
             version &+= 1
@@ -220,6 +224,7 @@ final class ResourceCache {
         }
         for key in expired {
             entries.removeValue(forKey: key)
+            lastAccessed.removeValue(forKey: key)
         }
         return !expired.isEmpty
     }
@@ -230,7 +235,8 @@ final class ResourceCache {
         let overflow = keys.count - limit
         let orderedKeys = keys
             .compactMap { key -> (CacheKey, Date)? in
-                entries[key].map { (key, $0.lastAccessed) }
+                guard let entry = entries[key] else { return nil }
+                return (key, lastAccessed[key] ?? entry.storedAt)
             }
             .sorted { lhs, rhs in
                 if lhs.1 == rhs.1 {
@@ -242,6 +248,7 @@ final class ResourceCache {
             .map(\.0)
         for key in orderedKeys {
             entries.removeValue(forKey: key)
+            lastAccessed.removeValue(forKey: key)
         }
         return !orderedKeys.isEmpty
     }
