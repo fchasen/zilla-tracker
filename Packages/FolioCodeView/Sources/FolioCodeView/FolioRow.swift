@@ -63,7 +63,10 @@ struct FolioRow: View {
         .lineLimit(nil)
         .fixedSize(horizontal: false, vertical: true)
         #if os(macOS)
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            guard onCreateComment != nil, isHovered != hovering else { return }
+            isHovered = hovering
+        }
         #else
         .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 10) {
             guard let onCreateComment else { return }

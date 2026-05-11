@@ -1,4 +1,5 @@
 import XCTest
+import FolioModel
 @testable import FolioCodeView
 
 final class FolioRenderArtifactCacheTests: XCTestCase {
@@ -108,6 +109,53 @@ final class FolioRenderArtifactCacheTests: XCTestCase {
         XCTAssertNil(cached)
     }
 
+    func testTaskKeyIgnoresDiffPresentationValues() {
+        let hunk = DiffHunk(
+            oldStart: 1,
+            newStart: 1,
+            lines: [
+                DiffLine(kind: .context, oldNumber: 1, newNumber: 1, text: "let value = 1;")
+            ]
+        )
+        let anchored = FolioRenderArtifactTaskKey(
+            content: .diff(
+                hunk,
+                anchor: AnchorRange(line: 1, length: 1, side: .newFile),
+                mode: .unified
+            ),
+            path: "example.swift",
+            theme: .light,
+            contextLines: 3
+        )
+        let split = FolioRenderArtifactTaskKey(
+            content: .diff(hunk, anchor: nil, mode: .split),
+            path: "example.swift",
+            theme: .light,
+            contextLines: 3
+        )
+
+        XCTAssertEqual(anchored, split)
+    }
+
+    func testTaskKeyDistinguishesMiddleDiffLineChanges() {
+        let original = diffContent(middle: "let second = 2;")
+        let changed = diffContent(middle: "let second = 20;")
+        let originalKey = FolioRenderArtifactTaskKey(
+            content: original,
+            path: "example.swift",
+            theme: .light,
+            contextLines: 3
+        )
+        let changedKey = FolioRenderArtifactTaskKey(
+            content: changed,
+            path: "example.swift",
+            theme: .light,
+            contextLines: 3
+        )
+
+        XCTAssertNotEqual(originalKey, changedKey)
+    }
+
     private func key(for content: FolioContent) -> FolioRenderArtifactCacheKey {
         FolioRenderArtifactCacheKey(
             content: content,
@@ -123,6 +171,22 @@ final class FolioRenderArtifactCacheTests: XCTestCase {
             contextLines: 3,
             path: "example.js",
             theme: .light
+        )
+    }
+
+    private func diffContent(middle: String) -> FolioContent {
+        .diff(
+            DiffHunk(
+                oldStart: 1,
+                newStart: 1,
+                lines: [
+                    DiffLine(kind: .context, oldNumber: 1, newNumber: 1, text: "let first = 1;"),
+                    DiffLine(kind: .context, oldNumber: 2, newNumber: 2, text: middle),
+                    DiffLine(kind: .context, oldNumber: 3, newNumber: 3, text: "let third = 3;")
+                ]
+            ),
+            anchor: nil,
+            mode: .unified
         )
     }
 }

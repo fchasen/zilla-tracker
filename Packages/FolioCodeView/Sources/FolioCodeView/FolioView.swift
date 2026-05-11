@@ -97,7 +97,7 @@ public struct FolioView: View {
     }
 
     public var body: some View {
-        let key = artifactKey
+        let key = artifactTaskKey
 
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
@@ -134,8 +134,8 @@ public struct FolioView: View {
         )
     }
 
-    private var artifactKey: FolioRenderArtifactCacheKey {
-        FolioRenderArtifactCacheKey(
+    private var artifactTaskKey: FolioRenderArtifactTaskKey {
+        FolioRenderArtifactTaskKey(
             content: content,
             path: path,
             theme: theme,
@@ -144,25 +144,23 @@ public struct FolioView: View {
     }
 
     @MainActor
-    private func refreshArtifact(key: FolioRenderArtifactCacheKey) async {
-        let path = self.path
-        let content = self.content
+    private func refreshArtifact(key: FolioRenderArtifactTaskKey) async {
         let theme = self.theme
-        let contextLines = self.initialContextLines
 
         let artifactTask = Task.detached(priority: .userInitiated) {
-            if let cached = await FolioRenderArtifactCache.shared.artifact(for: key) {
+            let cacheKey = FolioRenderArtifactCacheKey(key)
+            if let cached = await FolioRenderArtifactCache.shared.artifact(for: cacheKey) {
                 return cached
             }
             guard !Task.isCancelled else { return FolioRenderArtifact.empty }
             let artifact = FolioRenderArtifactBuilder.full(
-                content: content,
-                contextLines: contextLines,
-                path: path,
+                content: key.content.folioContent,
+                contextLines: key.contextLines,
+                path: key.path,
                 theme: theme
             )
             if !Task.isCancelled {
-                await FolioRenderArtifactCache.shared.store(artifact, for: key)
+                await FolioRenderArtifactCache.shared.store(artifact, for: cacheKey)
             }
             return artifact
         }
@@ -323,7 +321,7 @@ public struct FolioView: View {
         let leadingGutter = artifact.gutterWidth + 8
         let trailingGutter: CGFloat? = mode == .split ? leadingGutter : nil
 
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             if isExpandable, bounds.linesAbove > 0 || onExpandContext != nil {
                 ExpandContextRow(
                     label: ExpandContextRow.unmodifiedLabel(count: bounds.linesAbove),
@@ -396,7 +394,7 @@ public struct FolioView: View {
         let positions = computeGapPositions(sections)
         let capInfo = progressiveCapInfo(for: sections)
 
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(sections.enumerated()), id: \.offset) { idx, section in
                 if let capInfo, idx > capInfo.cutSectionIdx {
                     EmptyView()
@@ -760,7 +758,7 @@ public struct FolioView: View {
 
     @ViewBuilder
     private func codeBody(code: FolioRenderArtifact.Code) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(code.lineRanges.indices, id: \.self) { index in
                 let lineNum = code.startLine + index
                 let mark = findMark(side: .newFile, line: lineNum)

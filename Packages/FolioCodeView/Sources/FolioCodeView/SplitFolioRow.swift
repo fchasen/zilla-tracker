@@ -96,8 +96,15 @@ struct SplitFolioRow: View {
         }
         #if os(macOS)
         .onHover { hovering in
-            if side == .left { isLeftHovered = hovering }
-            else { isRightHovered = hovering }
+            guard onCreate != nil else { return }
+            switch side {
+            case .left where isLeftHovered != hovering:
+                isLeftHovered = hovering
+            case .right where isRightHovered != hovering:
+                isRightHovered = hovering
+            default:
+                break
+            }
         }
         #else
         .onLongPressGesture(minimumDuration: 0.4, maximumDistance: 10) {

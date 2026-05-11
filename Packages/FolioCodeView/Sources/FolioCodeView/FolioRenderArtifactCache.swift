@@ -3,6 +3,48 @@ import Foundation
 import FolioHighlight
 import FolioModel
 
+struct FolioRenderArtifactTaskKey: Sendable, Equatable {
+    enum Content: Sendable, Equatable {
+        case diff(DiffHunk)
+        case code(String, startLine: Int)
+
+        init(_ content: FolioContent) {
+            switch content {
+            case let .diff(hunk, _, _):
+                self = .diff(hunk)
+            case let .code(text, startLine):
+                self = .code(text, startLine: startLine)
+            }
+        }
+
+        var folioContent: FolioContent {
+            switch self {
+            case let .diff(hunk):
+                return .diff(hunk, anchor: nil, mode: .unified)
+            case let .code(text, startLine):
+                return .code(text, startLine: startLine)
+            }
+        }
+    }
+
+    let path: String
+    let themeSignature: Int
+    let contextLines: Int
+    let content: Content
+
+    init(
+        content: FolioContent,
+        path: String,
+        theme: HighlightTheme,
+        contextLines: Int
+    ) {
+        self.path = path
+        self.themeSignature = theme.paletteSignature
+        self.contextLines = contextLines
+        self.content = Content(content)
+    }
+}
+
 struct FolioRenderArtifactCacheKey: Sendable, Hashable {
     let path: String
     let themeSignature: Int
@@ -20,15 +62,26 @@ struct FolioRenderArtifactCacheKey: Sendable, Hashable {
         self.contextLines = contextLines
         self.content = FolioContentFingerprint(content)
     }
+
+    init(_ taskKey: FolioRenderArtifactTaskKey) {
+        self.path = taskKey.path
+        self.themeSignature = taskKey.themeSignature
+        self.contextLines = taskKey.contextLines
+        self.content = FolioContentFingerprint(taskKey.content)
+    }
 }
 
 struct FolioContentFingerprint: Sendable, Hashable {
     let digest: [UInt8]
 
     init(_ content: FolioContent) {
+        self.init(FolioRenderArtifactTaskKey.Content(content))
+    }
+
+    init(_ content: FolioRenderArtifactTaskKey.Content) {
         var hasher = SHA256()
         switch content {
-        case let .diff(hunk, _, _):
+        case let .diff(hunk):
             append(0, to: &hasher)
             append(hunk.oldStart, to: &hasher)
             append(hunk.newStart, to: &hasher)
