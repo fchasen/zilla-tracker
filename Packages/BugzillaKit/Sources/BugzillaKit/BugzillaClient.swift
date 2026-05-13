@@ -202,7 +202,8 @@ public extension BugzillaClient {
     private static let productIncludeFieldsItem = URLQueryItem(
         name: "include_fields",
         value: [
-            "id", "name", "description", "is_active",
+            "id", "name", "description", "is_active", "default_milestone",
+            "milestones.id", "milestones.name", "milestones.is_active", "milestones.sort_key",
             "components.id", "components.name", "components.description",
             "components.default_assigned_to", "components.triage_owner", "components.is_active"
         ].joined(separator: ",")

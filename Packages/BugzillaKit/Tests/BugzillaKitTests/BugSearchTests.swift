@@ -95,6 +95,22 @@ final class BugSearchTests: XCTestCase {
         _ = try await client.searchBugs(.openIn(component: ref))
     }
 
+    func testSearchTargetMilestone() async throws {
+        MockURLProtocol.handler = { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertTrue(items.contains(URLQueryItem(name: "product", value: "Firefox")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "component", value: "General")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "target_milestone", value: "126 Branch")))
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.searchBugs(BugQuery(
+            product: ["Firefox"],
+            component: ["General"],
+            targetMilestone: ["126 Branch"]
+        ))
+    }
+
     func testSearchTriage() async throws {
         MockURLProtocol.handler = { request in
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []

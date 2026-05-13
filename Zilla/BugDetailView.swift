@@ -313,7 +313,7 @@ struct BugDetailView: View {
     }
 }
 
-private struct BugContent: View {
+struct BugContent: View {
     let bug: Bug
     let comments: [Comment]
     let loadError: String?
@@ -654,12 +654,14 @@ struct BugMetadata: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+
     @State private var showingAssignPicker = false
 
     static let priorityOptions = ["--", "P1", "P2", "P3", "P4", "P5"]
     static let severityOptions = ["--", "S1", "S2", "S3", "S4", "N/A"]
     static let pointsOptions = ["---", "?", "1", "2", "3", "5", "8", "13"]
-    static let milestoneOptions = ["---", "Future"]
     static let flagOptions: [(label: String, status: String)] = [
         ("—", "X"),
         ("?", "?"),
@@ -711,6 +713,11 @@ struct BugMetadata: View {
             if let when = bug.lastChangeTime { dateRow("Last change", when, relative: true) }
         }
         .scaledFont(.callout)
+        .task(id: auth.currentUser?.name) {
+            if auth.isSignedIn {
+                await workspace.loadProducts(using: auth.client)
+            }
+        }
     }
 
     @ViewBuilder
@@ -743,13 +750,11 @@ struct BugMetadata: View {
     }
 
     private var milestoneChoices: [String] {
-        var opts = Self.milestoneOptions
-        if let m = bug.targetMilestone?.trimmingCharacters(in: .whitespaces),
-           !m.isEmpty,
-           !opts.contains(m) {
-            opts.append(m)
-        }
-        return opts
+        ReleaseTargetMilestonePlanner.inspectorChoices(for: product, current: bug.targetMilestone)
+    }
+
+    private var product: Product? {
+        workspace.products.first { $0.name == bug.product }
     }
 
     @ViewBuilder

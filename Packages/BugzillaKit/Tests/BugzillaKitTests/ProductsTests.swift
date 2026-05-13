@@ -30,11 +30,18 @@ final class ProductsTests: XCTestCase {
                 let include = items.first { $0.name == "include_fields" }?.value ?? ""
                 XCTAssertTrue(include.contains("components.name"))
                 XCTAssertTrue(include.contains("components.triage_owner"))
+                XCTAssertTrue(include.contains("default_milestone"))
+                XCTAssertTrue(include.contains("milestones.name"))
                 let body = #"""
                 {
                   "products": [
                     {
                       "id": 10, "name": "Firefox", "description": "Browser", "is_active": true,
+                      "default_milestone": "---",
+                      "milestones": [
+                        {"id": 1, "name": "---", "is_active": true, "sort_key": 0},
+                        {"id": 2, "name": "126 Branch", "is_active": true, "sort_key": 10}
+                      ],
                       "components": [
                         {
                           "id": 1,
@@ -58,6 +65,9 @@ final class ProductsTests: XCTestCase {
         let products = try await client.selectableProducts()
         XCTAssertEqual(products.count, 2)
         XCTAssertEqual(products[0].name, "Firefox")
+        XCTAssertEqual(products[0].defaultMilestone, "---")
+        XCTAssertEqual(products[0].milestones.map(\.name), ["---", "126 Branch"])
+        XCTAssertEqual(products[0].milestones[1].sortKey, 10)
         XCTAssertEqual(products[0].components.first?.name, "General")
         XCTAssertEqual(products[0].components.first?.defaultAssignedTo, "a@b")
         XCTAssertEqual(products[0].components.first?.triageOwner, "owner@mozilla.com")

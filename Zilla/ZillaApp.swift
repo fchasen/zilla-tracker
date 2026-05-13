@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import BugzillaKit
 import Textual
 
 @main
@@ -48,6 +49,23 @@ struct ZillaApp: App {
         .commands {
             ZillaCommands(auth: auth, phab: phab, workspace: workspace, viewedBugs: viewedBugs)
         }
+        #endif
+
+        #if os(macOS)
+        WindowGroup("Board", id: "component-board", for: ComponentRef.self) { component in
+            if let component = component.wrappedValue {
+                NavigationStack {
+                    ComponentReleaseColumnBoardView(component: component)
+                }
+                .environment(auth)
+                .environment(phab)
+                .environment(workspace)
+                .environment(viewedBugs)
+                .environment(viewedRevisions)
+                .environment(cache)
+            }
+        }
+        .defaultSize(width: 1280, height: 760)
         #endif
     }
 }

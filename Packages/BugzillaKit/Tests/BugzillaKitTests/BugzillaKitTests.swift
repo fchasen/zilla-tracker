@@ -51,6 +51,18 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(resolved.assignedTo, ["bob@example.com"])
     }
 
+    func testNobodyAssigneeDisplayNameUsesShortLabel() {
+        let detail = User(
+            id: 0,
+            name: "nobody@mozilla.org",
+            realName: "Nobody; OK to take it and work on it"
+        )
+
+        XCTAssertEqual(detail.displayName, "Nobody")
+        XCTAssertEqual(User.displayName(for: "nobody@mozilla.org", detail: detail), "Nobody")
+        XCTAssertEqual(User.displayName(for: "nobody@mozilla.org"), "Nobody")
+    }
+
     func testPhabricatorPatchDetection() {
         let phab = Attachment(id: 1, contentType: "text/x-phabricator-request", isObsolete: false)
         let phabObsolete = Attachment(id: 2, contentType: "text/x-phabricator-request", isObsolete: true)

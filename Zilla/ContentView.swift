@@ -197,6 +197,7 @@ enum SidebarSelection: Hashable {
     case review(ReviewList)
     case component(ComponentRef)
     case componentTriage(ComponentRef)
+    case componentBoard(ComponentRef)
     case metaBug(Int)
 }
 
@@ -437,7 +438,7 @@ final class Workspace {
                 return smartFilters[endpoint] ?? Self.defaultFilter(for: endpoint)
             case .metaBug:
                 return metaBugFilter
-            case .component, .componentTriage:
+            case .component, .componentTriage, .componentBoard:
                 return componentFilter
             case .allDrafts, .review, .none:
                 return .all
@@ -449,7 +450,7 @@ final class Workspace {
                 smartFilters[endpoint] = newValue
             case .metaBug:
                 metaBugFilter = newValue
-            case .component, .componentTriage:
+            case .component, .componentTriage, .componentBoard:
                 componentFilter = newValue
             case .allDrafts, .review, .none:
                 break
@@ -647,21 +648,29 @@ final class Workspace {
     @MainActor
     func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
         guard let id = loadedBug?.id else { return nil }
+        return await applyBugUpdate(id: id, update, using: client)
+    }
+
+    @discardableResult
+    @MainActor
+    func applyBugUpdate(id: Bug.ID, _ update: BugUpdate, using client: BugzillaClient) async -> Error? {
         isUpdatingBug = true
         defer { isUpdatingBug = false }
         do {
             _ = try await client.updateBug(id: id, update)
             cache?.invalidateBug(id: id)
-            if let cache {
-                if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
-                    loadedBug = refreshed
+            if loadedBug?.id == id {
+                if let cache {
+                    if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
+                        loadedBug = refreshed
+                    }
+                    if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
+                        loadedComments = refreshed
+                    }
+                } else {
+                    if let refreshed = try? await client.getBug(id: id) { loadedBug = refreshed }
+                    if let refreshed = try? await client.comments(bugID: id) { loadedComments = refreshed }
                 }
-                if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
-                    loadedComments = refreshed
-                }
-            } else {
-                if let refreshed = try? await client.getBug(id: id) { loadedBug = refreshed }
-                if let refreshed = try? await client.comments(bugID: id) { loadedComments = refreshed }
             }
             return nil
         } catch {
@@ -1210,7 +1219,7 @@ final class Workspace {
             return .triage
         case .smart(.todo):
             return BugQuery()
-        case .component(let ref):
+        case .component(let ref), .componentBoard(let ref):
             return .openIn(component: ref)
         case .componentTriage(let ref):
             return .triage(in: ref)
@@ -1266,7 +1275,7 @@ struct ContentView: View {
         .environment(\.folioFontScale, FontScale.multiplier(for: workspace.fontScaleStep))
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
-                .inspectorColumnWidth(min: 220, ideal: 280, max: 360)
+                .inspectorColumnWidth(min: 220, ideal: 342, max: 360)
         }
         .sheet(isPresented: $workspace.bugzillaSettingsPresented) {
             BugzillaSettingsView()
@@ -1316,6 +1325,8 @@ struct ContentView: View {
         switch workspace.sidebarSelection {
         case .review(let list):
             RevisionListView(list: list)
+        case .componentBoard(let ref):
+            ComponentReleaseBoardView(component: ref)
         default:
             BugListView(selection: workspace.sidebarSelection,
                         selectedBugID: $workspace.selectedBugID,
@@ -1402,7 +1413,7 @@ struct ContentView: View {
 
     private var newBugHelpText: String {
         switch workspace.sidebarSelection {
-        case .component(let ref), .componentTriage(let ref):
+        case .component(let ref), .componentTriage(let ref), .componentBoard(let ref):
             return "New bug in \(ref.component)"
         case .metaBug(let id):
             return "New bug blocking #\(id)"
@@ -1414,7 +1425,7 @@ struct ContentView: View {
     private func createDraft() {
         let draft = BugDraft()
         switch workspace.sidebarSelection {
-        case .component(let ref), .componentTriage(let ref):
+        case .component(let ref), .componentTriage(let ref), .componentBoard(let ref):
             draft.product = ref.product
             draft.componentName = ref.component
         case .metaBug(let bugId):
@@ -2146,6 +2157,8 @@ private struct FollowedComponentEntry: View {
                 .tag(SidebarSelection.component(followed.ref))
             Label("Triage", systemImage: SmartEndpoint.triage.systemImage)
                 .tag(SidebarSelection.componentTriage(followed.ref))
+            Label("Board", systemImage: "rectangle.3.group")
+                .tag(SidebarSelection.componentBoard(followed.ref))
             ForEach(metas) { meta in
                 FollowedMetaBugRow(meta: meta)
                     .tag(SidebarSelection.metaBug(meta.bugId))
@@ -2441,7 +2454,7 @@ struct BugListView: View {
         }
         .navigationTitle(title)
         #if os(macOS)
-        .navigationSplitViewColumnWidth(min: 360, ideal: 560)
+        .navigationSplitViewColumnWidth(min: 400, ideal: 560)
         #else
         .toolbarTitleDisplayMode(.inline)
         #endif
@@ -2607,6 +2620,7 @@ struct BugListView: View {
         Button("Copy Bug ID") {
             copyToPasteboard(String(bug.id))
         }
+        BugMilestoneMenu(bug: bug)
         Divider()
         if viewedBugs.contains(bug.id) {
             Button("Mark as Unviewed") {
@@ -2767,6 +2781,7 @@ struct BugListView: View {
         case .smart(let s): return s.title
         case .component(let ref): return "\(ref.product) :: \(ref.component)"
         case .componentTriage(let ref): return "\(ref.product) :: \(ref.component) Triage"
+        case .componentBoard(let ref): return "\(ref.product) :: \(ref.component)"
         case .metaBug(let id):
             if let meta = followedMetaBugs.first(where: { $0.bugId == id }),
                !meta.summary.isEmpty {
@@ -3096,7 +3111,7 @@ extension View {
     }
 }
 
-private struct BugRow: View {
+struct BugRow: View {
     @Environment(ViewedBugsStore.self) private var viewedBugs
     let bug: Bug
 

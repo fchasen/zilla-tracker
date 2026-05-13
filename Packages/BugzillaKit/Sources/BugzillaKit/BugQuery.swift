@@ -6,6 +6,7 @@ public struct BugQuery: Sendable, Hashable {
     public var componentRefs: [ComponentRef]
     public var status: [String]
     public var resolution: [String]
+    public var targetMilestone: [String]
     public var assignedTo: [String]
     public var reporter: [String]
     public var cc: [String]
@@ -34,6 +35,7 @@ public struct BugQuery: Sendable, Hashable {
         componentRefs: [ComponentRef] = [],
         status: [String] = [],
         resolution: [String] = [],
+        targetMilestone: [String] = [],
         assignedTo: [String] = [],
         reporter: [String] = [],
         cc: [String] = [],
@@ -61,6 +63,7 @@ public struct BugQuery: Sendable, Hashable {
         self.componentRefs = componentRefs
         self.status = status
         self.resolution = resolution
+        self.targetMilestone = targetMilestone
         self.assignedTo = assignedTo
         self.reporter = reporter
         self.cc = cc
@@ -101,6 +104,7 @@ extension BugQuery {
         items += .repeating("component", values: component)
         items += .repeating("status", values: status)
         items += .repeating("resolution", values: resolution)
+        items += .repeating("target_milestone", values: targetMilestone)
         items += .repeating("assigned_to", values: assignedTo)
         items += .repeating("reporter", values: reporter)
         items += .repeating("cc", values: cc)

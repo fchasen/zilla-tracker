@@ -33,6 +33,7 @@ public struct User: Codable, Sendable, Hashable, Identifiable {
     }
 
     public var displayName: String {
+        if User.isNobody(name) || User.isNobody(email) || User.isNobody(realName) { return "Nobody" }
         if let realName, !realName.isEmpty { return realName }
         if let nick, !nick.isEmpty { return nick }
         return User.localPart(of: name)
@@ -43,7 +44,7 @@ public struct User: Codable, Sendable, Hashable, Identifiable {
             return detail.displayName
         }
         guard let email, !email.isEmpty else { return "—" }
-        if email.lowercased().contains("nobody") { return "Nobody" }
+        if User.isNobody(email) { return "Nobody" }
         return User.localPart(of: email)
     }
 
@@ -52,5 +53,9 @@ public struct User: Codable, Sendable, Hashable, Identifiable {
             return String(value[..<at])
         }
         return value
+    }
+
+    private static func isNobody(_ value: String?) -> Bool {
+        value?.lowercased().contains("nobody") == true
     }
 }
