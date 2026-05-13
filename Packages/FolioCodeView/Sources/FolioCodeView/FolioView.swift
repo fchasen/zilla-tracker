@@ -23,6 +23,7 @@ public struct FolioView: View {
     public let roundsBottomCorners: Bool
     public let editable: Bool
     public let text: Binding<String>?
+    public let diffTextSelectionLineLimit: Int?
 
     @State private var isExpanded: Bool = true
     @State private var contextAbove: Int
@@ -64,7 +65,8 @@ public struct FolioView: View {
         contextLinesBelow: Int? = nil,
         roundsBottomCorners: Bool = true,
         editable: Bool = false,
-        text: Binding<String>? = nil
+        text: Binding<String>? = nil,
+        diffTextSelectionLineLimit: Int? = 300
     ) {
         self.path = path
         self.content = content
@@ -86,6 +88,7 @@ public struct FolioView: View {
         self.roundsBottomCorners = roundsBottomCorners
         self.editable = editable
         self.text = text
+        self.diffTextSelectionLineLimit = diffTextSelectionLineLimit
         self._contextAbove = State(initialValue: contextLines)
         self._contextBelow = State(initialValue: contextLinesBelow ?? contextLines)
         self._isExpanded = State(initialValue: !showsHeader || true)
@@ -206,6 +209,11 @@ public struct FolioView: View {
 
     private var selectionReportingEnabled: Bool {
         selection != nil || onLineSelectionChange != nil
+    }
+
+    private var diffTextSelectionEnabled: Bool {
+        guard let limit = diffTextSelectionLineLimit else { return true }
+        return artifact.totalLineCount <= limit
     }
 
     @ViewBuilder
@@ -594,7 +602,8 @@ public struct FolioView: View {
                         isInSelection: isLineSelected(lookup.lineNum, side: lookup.side),
                         coordinateSpace: FolioSelectionMath.coordinateSpaceName,
                         reportsSelection: selectionReportingEnabled,
-                        intralineRanges: diff.unifiedIntralineByHunkIdx[absIdx] ?? []
+                        intralineRanges: diff.unifiedIntralineByHunkIdx[absIdx] ?? [],
+                        allowsTextSelection: diffTextSelectionEnabled
                     )
                     unifiedSlots(for: line)
                 }
@@ -643,7 +652,8 @@ public struct FolioView: View {
                         isLeftInSelection: isLineSelected(leftLineNum, side: .oldFile),
                         isRightInSelection: isLineSelected(rightLineNum, side: .newFile),
                         coordinateSpace: FolioSelectionMath.coordinateSpaceName,
-                        reportsSelection: selectionReportingEnabled
+                        reportsSelection: selectionReportingEnabled,
+                        allowsTextSelection: diffTextSelectionEnabled
                     )
                     splitSlots(leftLine: leftLine, rightLine: rightLine)
                 }

@@ -25,6 +25,7 @@ struct SplitFolioRow: View {
     let isRightInSelection: Bool
     let coordinateSpace: String
     let reportsSelection: Bool
+    let allowsTextSelection: Bool
 
     @State private var isLeftHovered: Bool = false
     @State private var isRightHovered: Bool = false
@@ -164,7 +165,7 @@ struct SplitFolioRow: View {
             .padding(.leading, 4)
             .padding(.trailing, 8)
             .padding(.vertical, 1)
-            .textSelection(.enabled)
+            .folioTextSelection(allowsTextSelection)
     }
 
     private func intralineRanges(for side: CellSide) -> [NSRange] {

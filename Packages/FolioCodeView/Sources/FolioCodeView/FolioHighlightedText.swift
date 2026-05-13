@@ -39,3 +39,14 @@ struct FolioHighlightedText: View, Equatable {
         return attr
     }
 }
+
+extension View {
+    @ViewBuilder
+    func folioTextSelection(_ enabled: Bool) -> some View {
+        if enabled {
+            textSelection(.enabled)
+        } else {
+            self
+        }
+    }
+}

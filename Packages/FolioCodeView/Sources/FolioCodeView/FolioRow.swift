@@ -18,6 +18,7 @@ struct FolioRow: View {
     let coordinateSpace: String
     let reportsSelection: Bool
     let intralineRanges: [NSRange]
+    let allowsTextSelection: Bool
 
     @State private var isHovered: Bool = false
 
@@ -126,7 +127,7 @@ struct FolioRow: View {
             .padding(.leading, 4)
             .padding(.trailing, 8)
             .padding(.vertical, 1)
-            .textSelection(.enabled)
+            .folioTextSelection(allowsTextSelection)
     }
 
     private var intralineBackground: PlatformColor? {
