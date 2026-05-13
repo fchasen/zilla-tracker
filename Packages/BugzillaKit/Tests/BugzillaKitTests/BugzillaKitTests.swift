@@ -15,7 +15,7 @@ final class BugzillaKitTests: XCTestCase {
         XCTAssertEqual(BugQuery.reportedByMe.reporter, ["@me"])
         XCTAssertEqual(BugQuery.triage.severity, ["--"])
         XCTAssertEqual(BugQuery.triage.type, ["defect"])
-        XCTAssertEqual(BugQuery.triage.triageOwner, "@me")
+        XCTAssertNil(BugQuery.triage.triageOwner)
 
         let ref = ComponentRef(product: "Firefox", component: "General")
         let q = BugQuery.openIn(component: ref)

@@ -79,9 +79,7 @@ struct ZillaCommands: Commands {
                 .keyboardShortcut("1", modifiers: .command)
             Button("Needs Info") { workspace.sidebarSelection = .smart(.needsReview) }
                 .keyboardShortcut("2", modifiers: .command)
-            if workspace.hasTriageComponents(for: auth.currentUser?.name) {
-                Button("Triage") { workspace.sidebarSelection = .smart(.triage) }
-            }
+            Button("Triage") { workspace.sidebarSelection = .smart(.triage) }
 
             Divider()
 

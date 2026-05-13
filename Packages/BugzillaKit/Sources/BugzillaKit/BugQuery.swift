@@ -3,6 +3,7 @@ import Foundation
 public struct BugQuery: Sendable, Hashable {
     public var product: [String]
     public var component: [String]
+    public var componentRefs: [ComponentRef]
     public var status: [String]
     public var resolution: [String]
     public var assignedTo: [String]
@@ -30,6 +31,7 @@ public struct BugQuery: Sendable, Hashable {
     public init(
         product: [String] = [],
         component: [String] = [],
+        componentRefs: [ComponentRef] = [],
         status: [String] = [],
         resolution: [String] = [],
         assignedTo: [String] = [],
@@ -56,6 +58,7 @@ public struct BugQuery: Sendable, Hashable {
     ) {
         self.product = product
         self.component = component
+        self.componentRefs = componentRefs
         self.status = status
         self.resolution = resolution
         self.assignedTo = assignedTo
@@ -140,11 +143,13 @@ extension BugQuery {
         if !excludeFields.isEmpty {
             items.append(URLQueryItem(name: "exclude_fields", value: excludeFields.joined(separator: ",")))
         }
+        var chartIndex = 1
+        if !componentRefs.isEmpty {
+            items += Self.componentChartItems(for: componentRefs, chartIndex: &chartIndex)
+        }
         for (key, values) in extra {
             items += .repeating(key, values: values)
         }
-
-        var chartIndex = 1
         if let flagRequestee {
             items.append(URLQueryItem(name: "f\(chartIndex)", value: "requestees.login_name"))
             items.append(URLQueryItem(name: "o\(chartIndex)", value: "equals"))
@@ -169,6 +174,49 @@ extension BugQuery {
             }
             items.append(URLQueryItem(name: "f\(chartIndex)", value: "CP"))
         }
+
+        return items
+    }
+
+    private static func componentChartItems(for refs: [ComponentRef], chartIndex: inout Int) -> [URLQueryItem] {
+        let uniqueRefs = Array(Set(refs)).sorted {
+            if $0.product == $1.product {
+                return $0.component.localizedCaseInsensitiveCompare($1.component) == .orderedAscending
+            }
+            return $0.product.localizedCaseInsensitiveCompare($1.product) == .orderedAscending
+        }
+        guard !uniqueRefs.isEmpty else { return [] }
+
+        var items: [URLQueryItem] = []
+
+        func appendOpen(join: String? = nil) {
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: "OP"))
+            if let join {
+                items.append(URLQueryItem(name: "j\(chartIndex)", value: join))
+            }
+            chartIndex += 1
+        }
+
+        func appendClose() {
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: "CP"))
+            chartIndex += 1
+        }
+
+        func appendCondition(field: String, value: String) {
+            items.append(URLQueryItem(name: "f\(chartIndex)", value: field))
+            items.append(URLQueryItem(name: "o\(chartIndex)", value: "equals"))
+            items.append(URLQueryItem(name: "v\(chartIndex)", value: value))
+            chartIndex += 1
+        }
+
+        appendOpen(join: "OR")
+        for ref in uniqueRefs {
+            appendOpen()
+            appendCondition(field: "product", value: ref.product)
+            appendCondition(field: "component", value: ref.component)
+            appendClose()
+        }
+        appendClose()
 
         return items
     }
@@ -205,7 +253,23 @@ public extension BugQuery {
     }
 
     static var triage: BugQuery {
-        BugQuery(severity: ["--"], type: ["defect"], triageOwner: me)
+        BugQuery(severity: ["--"], type: ["defect"])
+    }
+
+    static func triage(in component: ComponentRef) -> BugQuery {
+        BugQuery(product: [component.product], component: [component.component], severity: ["--"], type: ["defect"])
+    }
+
+    static func triage(in components: [ComponentRef]) -> BugQuery {
+        let unique = Array(Set(components)).sorted {
+            if $0.product == $1.product {
+                return $0.component.localizedCaseInsensitiveCompare($1.component) == .orderedAscending
+            }
+            return $0.product.localizedCaseInsensitiveCompare($1.product) == .orderedAscending
+        }
+        if unique.isEmpty { return triage }
+        if unique.count == 1, let first = unique.first { return triage(in: first) }
+        return BugQuery(componentRefs: unique, severity: ["--"], type: ["defect"])
     }
 
     static func recentlyChanged(involving user: String, daysBack: Int = 7) -> BugQuery {

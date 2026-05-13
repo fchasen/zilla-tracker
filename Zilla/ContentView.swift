@@ -196,6 +196,7 @@ enum SidebarSelection: Hashable {
     case allDrafts
     case review(ReviewList)
     case component(ComponentRef)
+    case componentTriage(ComponentRef)
     case metaBug(Int)
 }
 
@@ -436,7 +437,7 @@ final class Workspace {
                 return smartFilters[endpoint] ?? Self.defaultFilter(for: endpoint)
             case .metaBug:
                 return metaBugFilter
-            case .component:
+            case .component, .componentTriage:
                 return componentFilter
             case .allDrafts, .review, .none:
                 return .all
@@ -448,7 +449,7 @@ final class Workspace {
                 smartFilters[endpoint] = newValue
             case .metaBug:
                 metaBugFilter = newValue
-            case .component:
+            case .component, .componentTriage:
                 componentFilter = newValue
             case .allDrafts, .review, .none:
                 break
@@ -471,13 +472,17 @@ final class Workspace {
         }
     }
 
-    func hasTriageComponents(for login: String?) -> Bool {
-        guard let login, !login.isEmpty else { return false }
-        return products.contains { product in
-            product.isActive && product.components.contains { component in
-                guard component.isActive, let triageOwner = component.triageOwner else { return false }
-                return triageOwner.caseInsensitiveCompare(login) == .orderedSame
-            }
+    func ownedComponentRefs(for login: String?) -> [ComponentRef] {
+        guard let login, !login.isEmpty else { return [] }
+        return products.flatMap { product -> [ComponentRef] in
+            guard product.isActive else { return [] }
+            return product.components
+                .filter { component in
+                    guard component.isActive, let triageOwner = component.triageOwner else { return false }
+                    return triageOwner.caseInsensitiveCompare(login) == .orderedSame
+                }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                .map { ComponentRef(product: product.name, component: $0.name) }
         }
     }
 
@@ -1207,6 +1212,8 @@ final class Workspace {
             return BugQuery()
         case .component(let ref):
             return .openIn(component: ref)
+        case .componentTriage(let ref):
+            return .triage(in: ref)
         case .metaBug(let id):
             return .blockedBy(metaBug: id)
         case .allDrafts, .review:
@@ -1395,7 +1402,7 @@ struct ContentView: View {
 
     private var newBugHelpText: String {
         switch workspace.sidebarSelection {
-        case .component(let ref):
+        case .component(let ref), .componentTriage(let ref):
             return "New bug in \(ref.component)"
         case .metaBug(let id):
             return "New bug blocking #\(id)"
@@ -1407,7 +1414,7 @@ struct ContentView: View {
     private func createDraft() {
         let draft = BugDraft()
         switch workspace.sidebarSelection {
-        case .component(let ref):
+        case .component(let ref), .componentTriage(let ref):
             draft.product = ref.product
             draft.componentName = ref.component
         case .metaBug(let bugId):
@@ -1796,8 +1803,9 @@ struct Sidebar: View {
             ComponentPickerSheet()
         }
         .task(id: auth.currentUser?.name) {
-            if auth.isSignedIn {
+            if auth.isSignedIn, let login = auth.currentUser?.name {
                 await workspace.loadProducts(using: auth.client)
+                autoFollowOwnedComponents(for: login)
             }
         }
         .task(id: triageCountKey) {
@@ -1840,22 +1848,24 @@ struct Sidebar: View {
     }
 
     private var visibleSmartEndpoints: [SmartEndpoint] {
-        SmartEndpoint.allCases.filter { endpoint in
-            endpoint != .triage || workspace.hasTriageComponents(for: auth.currentUser?.name)
-        }
+        SmartEndpoint.allCases
+    }
+
+    private var followedComponentRefs: [ComponentRef] {
+        followedComponents.map(\.ref)
     }
 
     private struct TriageCountKey: Hashable {
         let signedIn: Bool
         let login: String?
-        let hasTriageComponents: Bool
+        let componentRefs: [ComponentRef]
     }
 
     private var triageCountKey: TriageCountKey {
         TriageCountKey(
             signedIn: auth.isSignedIn,
             login: auth.currentUser?.name,
-            hasTriageComponents: workspace.hasTriageComponents(for: auth.currentUser?.name)
+            componentRefs: followedComponentRefs
         )
     }
 
@@ -1879,14 +1889,34 @@ struct Sidebar: View {
     }
 
     private func loadTriageCount(force: Bool) async {
-        guard auth.isSignedIn,
-              workspace.hasTriageComponents(for: auth.currentUser?.name),
-              auth.currentUser?.name != nil else {
+        guard auth.isSignedIn, auth.currentUser?.name != nil else {
             triageCount = nil
             return
         }
+        guard !followedComponentRefs.isEmpty else {
+            triageCount = 0
+            return
+        }
 
-        triageCount = await countQuery(.triage, defaultFilter: .open, force: force)
+        triageCount = await countQuery(.triage(in: followedComponentRefs), defaultFilter: .open, force: force)
+    }
+
+    private func autoFollowOwnedComponents(for login: String) {
+        let ownedRefs = workspace.ownedComponentRefs(for: login)
+        guard !ownedRefs.isEmpty else { return }
+
+        var knownRefs = Set(followedComponents.map(\.ref))
+        var nextPosition = (followedComponents.map(\.position).max() ?? -1) + 1
+
+        for ref in ownedRefs where !knownRefs.contains(ref) {
+            modelContext.insert(FollowedComponent(
+                product: ref.product,
+                componentName: ref.component,
+                position: nextPosition
+            ))
+            knownRefs.insert(ref)
+            nextPosition += 1
+        }
     }
 
     private func loadNeedsInfoCount(force: Bool) async {
@@ -2114,6 +2144,8 @@ private struct FollowedComponentEntry: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             Label("Open Bugs", systemImage: "tray.full")
                 .tag(SidebarSelection.component(followed.ref))
+            Label("Triage", systemImage: SmartEndpoint.triage.systemImage)
+                .tag(SidebarSelection.componentTriage(followed.ref))
             ForEach(metas) { meta in
                 FollowedMetaBugRow(meta: meta)
                     .tag(SidebarSelection.metaBug(meta.bugId))
@@ -2332,6 +2364,14 @@ struct BugListView: View {
 
     private var isTodo: Bool {
         selection == .smart(.todo)
+    }
+
+    private var isGlobalTriage: Bool {
+        selection == .smart(.triage)
+    }
+
+    private var followedComponentRefs: [ComponentRef] {
+        followedComponents.map(\.ref)
     }
 
     var body: some View {
@@ -2716,6 +2756,7 @@ struct BugListView: View {
             filter: workspace.bugStatusFilter,
             refresh: workspace.bugListRefreshToken,
             signedIn: auth.isSignedIn,
+            triageComponentRefs: isGlobalTriage ? followedComponentRefs : [],
             todoIDs: isTodo ? todoOrder.map(\.bugId) : []
         )
     }
@@ -2725,6 +2766,7 @@ struct BugListView: View {
         switch selection {
         case .smart(let s): return s.title
         case .component(let ref): return "\(ref.product) :: \(ref.component)"
+        case .componentTriage(let ref): return "\(ref.product) :: \(ref.component) Triage"
         case .metaBug(let id):
             if let meta = followedMetaBugs.first(where: { $0.bugId == id }),
                !meta.summary.isEmpty {
@@ -2748,7 +2790,7 @@ struct BugListView: View {
         let filter = workspace.bugStatusFilter
         var query = selection == .smart(.myBugs) && filter == .reported
             ? .reportedByMe
-            : workspace.bugQuery(for: selection)
+            : (isGlobalTriage ? .triage(in: followedComponentRefs) : workspace.bugQuery(for: selection))
         query = filter.apply(to: query)
         if let login = auth.currentUser?.name {
             query = query.substitutingMe(with: login)
@@ -2780,6 +2822,15 @@ struct BugListView: View {
         guard auth.isSignedIn else {
             bugs = []
             totalMatches = nil
+            canLoadMore = false
+            loadError = nil
+            return
+        }
+
+        if isGlobalTriage && followedComponentRefs.isEmpty {
+            bugs = []
+            dependents = [:]
+            totalMatches = 0
             canLoadMore = false
             loadError = nil
             return
@@ -2931,6 +2982,7 @@ private struct BugListLoadKey: Hashable {
     let filter: BugStatusFilter
     let refresh: UUID
     let signedIn: Bool
+    let triageComponentRefs: [ComponentRef]
     let todoIDs: [Int]
 }
 

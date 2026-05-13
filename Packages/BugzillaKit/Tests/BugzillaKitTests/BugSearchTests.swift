@@ -100,11 +100,52 @@ final class BugSearchTests: XCTestCase {
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             XCTAssertTrue(items.contains(URLQueryItem(name: "severity", value: "--")))
             XCTAssertTrue(items.contains(URLQueryItem(name: "type", value: "defect")))
-            XCTAssertTrue(items.contains(URLQueryItem(name: "triage_owner", value: "@me")))
+            XCTAssertFalse(items.contains { $0.name == "triage_owner" })
             return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
         }
         let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
         _ = try await client.searchBugs(.triage)
+    }
+
+    func testSearchComponentTriage() async throws {
+        MockURLProtocol.handler = { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertTrue(items.contains(URLQueryItem(name: "product", value: "Firefox")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "component", value: "General")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "severity", value: "--")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "type", value: "defect")))
+            XCTAssertFalse(items.contains { $0.name == "triage_owner" })
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.searchBugs(.triage(in: ComponentRef(product: "Firefox", component: "General")))
+    }
+
+    func testSearchTriageAcrossComponentsUsesExactComponentChart() async throws {
+        MockURLProtocol.handler = { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertTrue(items.contains(URLQueryItem(name: "severity", value: "--")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "type", value: "defect")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "f1", value: "OP")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "j1", value: "OR")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "f3", value: "product")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "o3", value: "equals")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "v3", value: "Core")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "f4", value: "component")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "v4", value: "DOM: Core & HTML")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "f7", value: "product")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "v7", value: "Firefox")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "f8", value: "component")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "v8", value: "General")))
+            XCTAssertTrue(items.contains(URLQueryItem(name: "f10", value: "CP")))
+            XCTAssertFalse(items.contains { $0.name == "triage_owner" })
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.searchBugs(.triage(in: [
+            ComponentRef(product: "Firefox", component: "General"),
+            ComponentRef(product: "Core", component: "DOM: Core & HTML")
+        ]))
     }
 
     func testCountBugs() async throws {
