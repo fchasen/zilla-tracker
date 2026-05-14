@@ -12,11 +12,15 @@ final class BugSearchTests: XCTestCase {
     func testGetBugById() async throws {
         MockURLProtocol.handler = { request in
             XCTAssertEqual(request.url?.path, "/rest/bug/1234567")
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let includeFields = items.first { $0.name == "include_fields" }?.value ?? ""
+            XCTAssertTrue(includeFields.contains("cf_accessibility_severity"))
             let body = #"""
             {"bugs":[
               {"id":1234567,"summary":"Hello","status":"NEW","resolution":"",
                "product":"Firefox","component":"General","keywords":[],
-               "blocks":[],"depends_on":[],"cc":[],"flags":[]}
+               "blocks":[],"depends_on":[],"cc":[],"flags":[],
+               "cf_accessibility_severity":"s2"}
             ]}
             """#.data(using: .utf8)!
             return (httpResponse(for: request, status: 200), body)
@@ -27,6 +31,7 @@ final class BugSearchTests: XCTestCase {
         XCTAssertEqual(bug.id, 1234567)
         XCTAssertEqual(bug.summary, "Hello")
         XCTAssertEqual(bug.product, "Firefox")
+        XCTAssertEqual(bug.accessibilitySeverity, "s2")
     }
 
     func testGetBugByIdNotFoundEnvelope() async {

@@ -26,6 +26,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
     public let type: String?
     public let targetMilestone: String?
     public let points: String?
+    public let accessibilitySeverity: String?
     public let rank: Int?
     public let assignedToDetail: User?
     public let creatorDetail: User?
@@ -55,6 +56,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         type: String? = nil,
         targetMilestone: String? = nil,
         points: String? = nil,
+        accessibilitySeverity: String? = nil,
         rank: Int? = nil,
         assignedToDetail: User? = nil,
         creatorDetail: User? = nil,
@@ -83,6 +85,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.type = type
         self.targetMilestone = targetMilestone
         self.points = points
+        self.accessibilitySeverity = accessibilitySeverity
         self.rank = rank
         self.assignedToDetail = assignedToDetail
         self.creatorDetail = creatorDetail
@@ -97,6 +100,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         case blocks, dependsOn, seeAlso, cc, flags
         case type, targetMilestone, attachments
         case points = "cfFxPoints"
+        case accessibilitySeverity = "cfAccessibilitySeverity"
         case rank = "cfRank"
         case assignedToDetail, creatorDetail
     }
@@ -126,6 +130,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.type = try c.decodeIfPresent(String.self, forKey: .type)
         self.targetMilestone = try c.decodeIfPresent(String.self, forKey: .targetMilestone)
         self.points = try c.decodeIfPresent(String.self, forKey: .points)
+        self.accessibilitySeverity = try c.decodeIfPresent(String.self, forKey: .accessibilitySeverity)
         if let i = try? c.decodeIfPresent(Int.self, forKey: .rank) {
             self.rank = i
         } else if let s = try? c.decodeIfPresent(String.self, forKey: .rank), let i = Int(s) {

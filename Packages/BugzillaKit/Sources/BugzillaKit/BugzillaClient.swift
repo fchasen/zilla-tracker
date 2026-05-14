@@ -215,7 +215,7 @@ public extension BugzillaClient {
             path: "bug/\(id)",
             query: [URLQueryItem(
                 name: "include_fields",
-                value: "_default,attachments,see_also,target_milestone,cf_fx_points,cf_rank,assigned_to_detail,creator_detail"
+                value: "_default,attachments,see_also,target_milestone,cf_fx_points,cf_accessibility_severity,cf_rank,assigned_to_detail,creator_detail"
             )]
         )
         let response: Response = try await execute(endpoint)

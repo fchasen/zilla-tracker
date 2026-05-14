@@ -583,19 +583,11 @@ private struct BugHeader: View {
     }
 
     private func priorityColor(_ value: String?) -> Color {
-        switch value?.uppercased() {
-        case "P1": return .red
-        case "P2": return .orange
-        default: return .secondary
-        }
+        bugPriorityColor(value)
     }
 
     private func severityColor(_ value: String?) -> Color {
-        switch value?.uppercased() {
-        case "S1", "BLOCKER", "CRITICAL": return .red
-        case "S2", "MAJOR": return .orange
-        default: return .secondary
-        }
+        bugSeverityColor(value)
     }
 
     private func copyID() {
@@ -650,6 +642,22 @@ private struct MetaPill: View {
     }
 }
 
+private func bugPriorityColor(_ value: String?) -> Color {
+    switch value?.uppercased() {
+    case "P1": return .red
+    case "P2": return .orange
+    default: return .secondary
+    }
+}
+
+private func bugSeverityColor(_ value: String?) -> Color {
+    switch value?.uppercased() {
+    case "S1", "BLOCKER", "CRITICAL": return .red
+    case "S2", "MAJOR": return .orange
+    default: return .secondary
+    }
+}
+
 struct BugMetadata: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
@@ -658,56 +666,62 @@ struct BugMetadata: View {
     @Environment(AuthStore.self) private var auth
 
     @State private var showingAssignPicker = false
+    @State private var pendingAssignedTo: String?
+    @State private var pendingAssignedToDetail: User?
+    @State private var pendingPriority: String?
+    @State private var pendingSeverity: String?
+    @State private var pendingPoints: String?
+    @State private var pendingTargetMilestone: String?
+    @State private var pendingFlagStatuses: [String: String] = [:]
 
-    static let priorityOptions = ["--", "P1", "P2", "P3", "P4", "P5"]
-    static let severityOptions = ["--", "S1", "S2", "S3", "S4", "N/A"]
-    static let pointsOptions = ["---", "?", "1", "2", "3", "5", "8", "13"]
-    static let flagOptions: [(label: String, status: String)] = [
-        ("—", "X"),
-        ("?", "?"),
-        ("+", "+"),
-        ("-", "-")
-    ]
+    static let priorityOptions = ["--", "P5", "P4", "P3", "P2", "P1"]
+    static let severityOptions = ["--", "S4", "S3", "S2", "S1"]
+    static let pointsOptions = ["---", "1", "2", "3", "5", "8", "13"]
+    private static let controlSpacing: CGFloat = 6
+    #if os(macOS)
+    private static let metadataPickerWidth: CGFloat? = 190
+    #else
+    private static let metadataPickerWidth: CGFloat? = nil
+    #endif
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
             assigneeRow
             row("Reporter", User.displayName(for: bug.reporter ?? bug.creator, detail: bug.creatorDetail))
             row("Component", "\(bug.product) :: \(bug.component)")
+            milestoneRow
             editableRow(
                 label: "Priority",
-                current: bug.priority,
+                current: effectivePriority,
                 options: Self.priorityOptions,
-                color: priorityColor(bug.priority)
+                fallback: "--",
+                color: priorityColor(effectivePriority)
             ) { value in
+                pendingPriority = value
                 onUpdate(BugUpdate(priority: value))
             }
             editableRow(
                 label: "Severity",
-                current: bug.severity,
+                current: effectiveSeverity,
                 options: Self.severityOptions,
-                color: severityColor(bug.severity)
+                fallback: "--",
+                color: severityColor(effectiveSeverity)
             ) { value in
+                pendingSeverity = value
                 onUpdate(BugUpdate(severity: value))
             }
             editableRow(
                 label: "Points",
-                current: bug.points,
+                current: effectivePoints,
                 options: Self.pointsOptions,
+                fallback: "---",
                 color: nil
             ) { value in
+                pendingPoints = value
                 onUpdate(BugUpdate(points: value))
             }
-            editableRow(
-                label: "Milestone",
-                current: bug.targetMilestone,
-                options: milestoneChoices,
-                color: nil
-            ) { value in
-                onUpdate(BugUpdate(targetMilestone: value))
-            }
-            flagRow(label: "QE Verify", flagName: "qe-verify")
-            flagRow(label: "A11y Review", flagName: "a11y-review")
+            qeVerifyRow
+            a11yReviewRow
             if !bug.keywords.isEmpty { row("Keywords", bug.keywords.joined(separator: ", ")) }
             if let when = bug.creationTime { dateRow("Created", when, relative: false) }
             if let when = bug.lastChangeTime { dateRow("Last change", when, relative: true) }
@@ -716,6 +730,14 @@ struct BugMetadata: View {
         .task(id: auth.currentUser?.name) {
             if auth.isSignedIn {
                 await workspace.loadProducts(using: auth.client)
+            }
+        }
+        .onChange(of: bug.id) { _, _ in
+            clearPendingEdits()
+        }
+        .onChange(of: workspace.isUpdatingBug) { _, isUpdating in
+            if !isUpdating {
+                clearPendingEdits()
             }
         }
     }
@@ -728,7 +750,7 @@ struct BugMetadata: View {
                 showingAssignPicker = true
             } label: {
                 HStack(spacing: 4) {
-                    Text(User.displayName(for: bug.assignedTo, detail: bug.assignedToDetail))
+                    Text(User.displayName(for: effectiveAssignedTo, detail: effectiveAssignedToDetail))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Image(systemName: "chevron.down")
@@ -739,65 +761,208 @@ struct BugMetadata: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help(bug.assignedTo ?? "")
+            .help(effectiveAssignedTo ?? "")
             .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
                 UserSearchPopover { user in
                     showingAssignPicker = false
+                    pendingAssignedTo = user.name
+                    pendingAssignedToDetail = user
                     onUpdate(BugUpdate(assignedTo: user.name))
                 }
             }
         }
     }
 
+    @ViewBuilder
+    private var milestoneRow: some View {
+        let selected = normalizedSelection(effectiveTargetMilestone, fallback: "---")
+        GridRow {
+            Text("Milestone").foregroundStyle(.secondary)
+            Menu {
+                ForEach(milestoneChoices, id: \.self) { value in
+                    Button {
+                        pendingTargetMilestone = value
+                        onUpdate(BugUpdate(targetMilestone: value))
+                    } label: {
+                        if value == selected {
+                            Label(milestoneDisplayName(value), systemImage: "checkmark")
+                        } else {
+                            Text(milestoneDisplayName(value))
+                        }
+                    }
+                    .disabled(value == selected)
+                }
+            } label: {
+                Text(milestoneDisplayName(selected))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(milestoneDisplayName(selected))
+        }
+    }
+
     private var milestoneChoices: [String] {
-        ReleaseTargetMilestonePlanner.inspectorChoices(for: product, current: bug.targetMilestone)
+        ReleaseTargetMilestonePlanner.inspectorChoices(for: product, current: effectiveTargetMilestone)
     }
 
     private var product: Product? {
         workspace.products.first { $0.name == bug.product }
     }
 
+    private var accessibilitySeverity: String? {
+        guard let value = bug.accessibilitySeverity?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty,
+              value != "--",
+              value != "---" else { return nil }
+        return value
+    }
+
     @ViewBuilder
-    private func flagRow(label: String, flagName: String) -> some View {
-        let existing = bug.flags.first { $0.name == flagName }
-        let current = existing?.status
-        let displayed = (current.flatMap { $0.isEmpty ? nil : $0 }) ?? "—"
+    private var qeVerifyRow: some View {
+        let flag = flag(named: "qe-verify")
         GridRow {
-            Text(label).foregroundStyle(.secondary)
-            Menu {
-                ForEach(Self.flagOptions, id: \.status) { option in
-                    Button {
-                        let update = FlagUpdate(
-                            id: existing?.id,
-                            name: existing == nil ? flagName : nil,
-                            status: option.status
-                        )
-                        onUpdate(BugUpdate(flags: [update]))
-                    } label: {
-                        let isSelected = option.status == (current?.isEmpty == false ? current : "X")
-                        if isSelected {
-                            Label(option.label, systemImage: "checkmark")
-                        } else {
-                            Text(option.label)
-                        }
-                    }
-                }
-            } label: {
-                Text(displayed).foregroundStyle(flagColor(current) ?? .primary)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            Text("QE Verify").foregroundStyle(.secondary)
+            qeVerifyPicker(flag)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func flagColor(_ status: String?) -> Color? {
-        switch status {
-        case "+": return .green
-        case "-": return .red
-        case "?": return .orange
-        default: return nil
+    @ViewBuilder
+    private var a11yReviewRow: some View {
+        let flag = flag(named: "a11y-review")
+        GridRow {
+            Text("A11y Review").foregroundStyle(.secondary)
+            a11yReviewControl(flag)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private func a11yReviewControl(_ flag: Flag?) -> some View {
+        if let accessibilitySeverity {
+            MetaPill(
+                label: accessibilitySeverity,
+                color: severityColor(accessibilitySeverity)
+            )
+        } else {
+            let isRequested = normalizedFlagStatus(flagStatus(named: "a11y-review")) == "+"
+            Button(isRequested ? "requested" : "request") {
+                let status = "+"
+                let update = FlagUpdate(
+                    id: flag?.id,
+                    name: flag == nil ? "a11y-review" : nil,
+                    status: status
+                )
+                pendingFlagStatuses["a11y-review"] = status
+                onUpdate(BugUpdate(flags: [update]))
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .disabled(isRequested)
+            .accessibilityLabel("A11y Review")
+            .accessibilityValue(isRequested ? "Requested" : "Not requested")
+            .help(isRequested ? "Accessibility review requested" : "Request accessibility review")
+        }
+    }
+
+    private func qeVerifyPicker(_ flag: Flag?) -> some View {
+        let status = normalizedQEVerifyStatus(flagStatus(named: "qe-verify"))
+        let isSet = status != "X"
+        return HStack(spacing: Self.controlSpacing) {
+            Picker("QE Verify", selection: Binding(
+                get: { normalizedQEVerifyStatus(flagStatus(named: "qe-verify")) },
+                set: { status in
+                    guard status != normalizedFlagStatus(flagStatus(named: "qe-verify")) else { return }
+                    let update = FlagUpdate(
+                        id: flag?.id,
+                        name: flag == nil ? "qe-verify" : nil,
+                        status: status
+                    )
+                    pendingFlagStatuses["qe-verify"] = status
+                    onUpdate(BugUpdate(flags: [update]))
+                }
+            )) {
+                Text("-").tag("-")
+                Text("+").tag("+")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+
+            clearButton(isVisible: isSet, label: "QE Verify") {
+                let update = FlagUpdate(
+                    id: flag?.id,
+                    name: flag == nil ? "qe-verify" : nil,
+                    status: "X"
+                )
+                pendingFlagStatuses["qe-verify"] = "X"
+                onUpdate(BugUpdate(flags: [update]))
+            }
+        }
+        .help(flagControlHelp(flagStatus(named: "qe-verify")))
+    }
+
+    private func flag(named name: String) -> Flag? {
+        bug.flags.first { $0.name == name }
+    }
+
+    private func flagStatus(named name: String) -> String? {
+        pendingFlagStatuses[name] ?? flag(named: name)?.status
+    }
+
+    private func normalizedFlagStatus(_ status: String?) -> String {
+        guard let status, !status.isEmpty else { return "X" }
+        return status
+    }
+
+    private func normalizedQEVerifyStatus(_ status: String?) -> String {
+        switch normalizedFlagStatus(status) {
+        case "-", "+": return normalizedFlagStatus(status)
+        default: return "X"
+        }
+    }
+
+    private func flagControlHelp(_ status: String?) -> String {
+        switch normalizedFlagStatus(status) {
+        case "+": return "On"
+        case "-": return "Rejected"
+        default: return "Unset"
+        }
+    }
+
+    private var effectiveAssignedTo: String? {
+        pendingAssignedTo ?? bug.assignedTo
+    }
+
+    private var effectiveAssignedToDetail: User? {
+        pendingAssignedToDetail ?? bug.assignedToDetail
+    }
+
+    private var effectivePriority: String? {
+        pendingPriority ?? bug.priority
+    }
+
+    private var effectiveSeverity: String? {
+        pendingSeverity ?? bug.severity
+    }
+
+    private var effectivePoints: String? {
+        pendingPoints ?? bug.points
+    }
+
+    private var effectiveTargetMilestone: String? {
+        pendingTargetMilestone ?? bug.targetMilestone
+    }
+
+    private func clearPendingEdits() {
+        pendingAssignedTo = nil
+        pendingAssignedToDetail = nil
+        pendingPriority = nil
+        pendingSeverity = nil
+        pendingPoints = nil
+        pendingTargetMilestone = nil
+        pendingFlagStatuses.removeAll()
     }
 
     @ViewBuilder
@@ -830,54 +995,207 @@ struct BugMetadata: View {
         label: String,
         current: String?,
         options: [String],
+        fallback: String,
         color: Color?,
         onPick: @escaping (String) -> Void
     ) -> some View {
-        let displayed = (current?.isEmpty == false ? current : nil) ?? "--"
+        let selected = normalizedSelection(current, fallback: fallback)
+        let choices = selectableOptions(options: options, current: current, fallback: fallback)
+        let isSet = selected != fallback
+        let selection = Binding<String>(
+            get: { normalizedSelection(current, fallback: fallback) },
+            set: { value in
+                guard value != normalizedSelection(current, fallback: fallback) else { return }
+                onPick(value)
+            }
+        )
         GridRow {
             Text(label).foregroundStyle(.secondary)
-            Menu {
-                ForEach(options, id: \.self) { value in
-                    Button {
-                        onPick(value)
-                    } label: {
-                        if value == current || (value == "--" && (current == nil || current?.isEmpty == true)) {
-                            Label(value, systemImage: "checkmark")
-                        } else {
-                            Text(value)
-                        }
+            HStack(spacing: Self.controlSpacing) {
+#if os(macOS)
+                MetadataSegmentedPicker(
+                    label: label,
+                    selection: selection,
+                    options: choices,
+                    selectedColor: selectedSegmentColor(label: label, selection: selected)
+                )
+                .frame(width: Self.metadataPickerWidth)
+#else
+                Picker(label, selection: selection) {
+                    ForEach(choices, id: \.self) { value in
+                        segmentedOptionLabel(value)
+                            .tag(value)
                     }
                 }
-                if let current, !current.isEmpty, !options.contains(current) {
-                    Divider()
-                    Text("Currently: \(current)")
-                        .foregroundStyle(.secondary)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .tint(color ?? .accentColor)
+                .frame(width: Self.metadataPickerWidth)
+#endif
+
+                clearButton(isVisible: isSet, label: label) {
+                    onPick(fallback)
                 }
-            } label: {
-                Text(displayed).foregroundStyle(color ?? .primary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func priorityColor(_ value: String?) -> Color? {
-        switch value?.uppercased() {
-        case "P1": return .red
-        case "P2": return .orange
-        default: return nil
+    private func clearButton(isVisible: Bool, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .symbolRenderingMode(.hierarchical)
         }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(.secondary)
+        .opacity(isVisible ? 1 : 0)
+        .disabled(!isVisible)
+        .accessibilityHidden(!isVisible)
+        .help("Clear \(label)")
     }
 
-    private func severityColor(_ value: String?) -> Color? {
-        switch value?.uppercased() {
-        case "S1", "BLOCKER", "CRITICAL": return .red
-        case "S2", "MAJOR": return .orange
-        default: return nil
+    @ViewBuilder
+    private func segmentedOptionLabel(_ value: String) -> some View {
+        Text(value)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+    }
+
+    private func normalizedSelection(_ value: String?, fallback: String) -> String {
+        guard let value, !value.isEmpty else { return fallback }
+        return value
+    }
+
+    private func selectableOptions(options: [String], current: String?, fallback: String) -> [String] {
+        let selected = normalizedSelection(current, fallback: fallback)
+        let visibleOptions = options.filter { $0 != fallback }
+        guard selected != fallback, !visibleOptions.contains(selected) else { return visibleOptions }
+        return [selected] + visibleOptions
+    }
+
+    private func milestoneDisplayName(_ value: String) -> String {
+        value == "---" ? "Unset" : value
+    }
+
+    private func priorityColor(_ value: String?) -> Color? {
+        bugPriorityColor(value)
+    }
+
+    private func severityColor(_ value: String?) -> Color {
+        bugSeverityColor(value)
+    }
+
+#if os(macOS)
+    private func selectedSegmentColor(label: String, selection: String) -> NSColor? {
+        switch label {
+        case "Priority":
+            switch selection.uppercased() {
+            case "P1": return .systemRed
+            case "P2": return .systemOrange
+            default: return nil
+            }
+        case "Severity":
+            switch selection.uppercased() {
+            case "S1", "BLOCKER", "CRITICAL": return .systemRed
+            case "S2", "MAJOR": return .systemOrange
+            default: return nil
+            }
+        default:
+            return nil
+        }
+    }
+#endif
+}
+
+#if os(macOS)
+private final class EqualWidthSegmentedControl: NSSegmentedControl {
+    override var intrinsicContentSize: NSSize {
+        let size = super.intrinsicContentSize
+        return NSSize(width: NSView.noIntrinsicMetric, height: size.height)
+    }
+
+    override func layout() {
+        super.layout()
+        distributeSegmentWidths()
+    }
+
+    func distributeSegmentWidths() {
+        guard segmentCount > 0, bounds.width > 0 else { return }
+        let baseWidth = floor(bounds.width / CGFloat(segmentCount))
+        let extraWidth = bounds.width - (baseWidth * CGFloat(segmentCount))
+        for index in 0..<segmentCount {
+            setWidth(baseWidth + (index == segmentCount - 1 ? extraWidth : 0), forSegment: index)
         }
     }
 }
+
+private struct MetadataSegmentedPicker: NSViewRepresentable {
+    let label: String
+    @Binding var selection: String
+    let options: [String]
+    let selectedColor: NSColor?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection, options: options)
+    }
+
+    func makeNSView(context: Context) -> EqualWidthSegmentedControl {
+        let control = EqualWidthSegmentedControl(
+            labels: options,
+            trackingMode: .selectOne,
+            target: context.coordinator,
+            action: #selector(Coordinator.selectionChanged(_:))
+        )
+        control.controlSize = .small
+        control.segmentStyle = .automatic
+        control.focusRingType = .none
+        control.selectedSegmentBezelColor = selectedColor
+        control.setAccessibilityLabel(label)
+        return control
+    }
+
+    func updateNSView(_ control: EqualWidthSegmentedControl, context: Context) {
+        context.coordinator.selection = $selection
+        context.coordinator.options = options
+        control.selectedSegmentBezelColor = selectedColor
+
+        if control.segmentCount != options.count {
+            control.segmentCount = options.count
+        }
+
+        for index in options.indices {
+            if control.label(forSegment: index) != options[index] {
+                control.setLabel(options[index], forSegment: index)
+            }
+            control.setEnabled(true, forSegment: index)
+        }
+
+        let selectedSegment = options.firstIndex(of: selection) ?? -1
+        if control.selectedSegment != selectedSegment {
+            control.selectedSegment = selectedSegment
+        }
+        control.setAccessibilityLabel(label)
+        control.distributeSegmentWidths()
+    }
+
+    final class Coordinator: NSObject {
+        var selection: Binding<String>
+        var options: [String]
+
+        init(selection: Binding<String>, options: [String]) {
+            self.selection = selection
+            self.options = options
+        }
+
+        @objc func selectionChanged(_ sender: NSSegmentedControl) {
+            guard options.indices.contains(sender.selectedSegment) else { return }
+            selection.wrappedValue = options[sender.selectedSegment]
+        }
+    }
+}
+#endif
 
 // MARK: - Inspector
 
@@ -890,6 +1208,9 @@ struct BugInspectorContent: View {
     @Environment(AuthStore.self) private var auth
 
     @State private var quickAddTarget: QuickAddTarget?
+    @State private var pendingDependsOn: [Bug.ID]?
+    @State private var pendingBlocks: [Bug.ID]?
+    @State private var pendingSeeAlso: [String]?
 
     private enum QuickAddTarget: String, Identifiable {
         case dependsOn, blocks, seeAlso
@@ -916,16 +1237,25 @@ struct BugInspectorContent: View {
             Divider()
             DependenciesSection(
                 bugID: bug.id,
-                dependsOn: bug.dependsOn,
-                blocks: bug.blocks,
-                seeAlso: bug.seeAlso,
+                dependsOn: effectiveDependsOn,
+                blocks: effectiveBlocks,
+                seeAlso: effectiveSeeAlso,
                 onOpenBug: onOpenBug,
                 onAddDependsOn: { quickAddTarget = .dependsOn },
                 onAddBlocks: { quickAddTarget = .blocks },
                 onAddSeeAlso: { quickAddTarget = .seeAlso },
-                onRemoveDependsOn: { id in onUpdate(BugUpdate(dependsOn: .remove([id]))) },
-                onRemoveBlocks: { id in onUpdate(BugUpdate(blocks: .remove([id]))) },
-                onRemoveSeeAlso: { url in onUpdate(BugUpdate(seeAlso: .remove([url]))) }
+                onRemoveDependsOn: { id in
+                    pendingDependsOn = removing(id, from: effectiveDependsOn)
+                    onUpdate(BugUpdate(dependsOn: .remove([id])))
+                },
+                onRemoveBlocks: { id in
+                    pendingBlocks = removing(id, from: effectiveBlocks)
+                    onUpdate(BugUpdate(blocks: .remove([id])))
+                },
+                onRemoveSeeAlso: { url in
+                    pendingSeeAlso = removing(url, from: effectiveSeeAlso)
+                    onUpdate(BugUpdate(seeAlso: .remove([url])))
+                }
             )
 
             if !bug.cc.isEmpty {
@@ -933,15 +1263,9 @@ struct BugInspectorContent: View {
                 CCSection(cc: bug.cc)
             }
         }
-        .task(id: bug.id) {
-            var ids = Set(bug.dependsOn + bug.blocks)
-            for url in bug.seeAlso {
-                if let id = bmoBugID(from: url) {
-                    ids.insert(id)
-                }
-            }
-            if !ids.isEmpty {
-                await workspace.loadDependencyMetadata(ids: Array(ids), using: auth.client)
+        .task(id: dependencyMetadataIDs) {
+            if !dependencyMetadataIDs.isEmpty {
+                await workspace.loadDependencyMetadata(ids: dependencyMetadataIDs, using: auth.client)
             }
         }
         .sheet(item: $quickAddTarget) { target in
@@ -950,13 +1274,24 @@ struct BugInspectorContent: View {
                 guard pickedID != bug.id else { return }
                 switch target {
                 case .dependsOn:
+                    pendingDependsOn = adding(pickedID, to: effectiveDependsOn)
                     onUpdate(BugUpdate(dependsOn: .add([pickedID])))
                 case .blocks:
+                    pendingBlocks = adding(pickedID, to: effectiveBlocks)
                     onUpdate(BugUpdate(blocks: .add([pickedID])))
                 case .seeAlso:
                     let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(pickedID)"
+                    pendingSeeAlso = adding(url, to: effectiveSeeAlso)
                     onUpdate(BugUpdate(seeAlso: .add([url])))
                 }
+            }
+        }
+        .onChange(of: bug.id) { _, _ in
+            clearPendingInspectorEdits()
+        }
+        .onChange(of: workspace.isUpdatingBug) { _, isUpdating in
+            if !isUpdating {
+                clearPendingInspectorEdits()
             }
         }
     }
@@ -981,6 +1316,42 @@ struct BugInspectorContent: View {
     private var nonNeedinfoFlags: [Flag] {
         bug.flags.filter { $0.name != "needinfo" }
     }
+
+    private var dependencyMetadataIDs: [Bug.ID] {
+        var ids = Set(effectiveDependsOn + effectiveBlocks)
+        for url in effectiveSeeAlso {
+            if let id = bmoBugID(from: url) {
+                ids.insert(id)
+            }
+        }
+        return Array(ids).sorted()
+    }
+
+    private var effectiveDependsOn: [Bug.ID] {
+        pendingDependsOn ?? bug.dependsOn
+    }
+
+    private var effectiveBlocks: [Bug.ID] {
+        pendingBlocks ?? bug.blocks
+    }
+
+    private var effectiveSeeAlso: [String] {
+        pendingSeeAlso ?? bug.seeAlso
+    }
+
+    private func adding<T: Equatable>(_ value: T, to values: [T]) -> [T] {
+        values.contains(value) ? values : values + [value]
+    }
+
+    private func removing<T: Equatable>(_ value: T, from values: [T]) -> [T] {
+        values.filter { $0 != value }
+    }
+
+    private func clearPendingInspectorEdits() {
+        pendingDependsOn = nil
+        pendingBlocks = nil
+        pendingSeeAlso = nil
+    }
 }
 
 private struct FlagsSection: View {
@@ -1002,8 +1373,11 @@ private struct NeedinfoSection: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 
+    @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
     @State private var showingPicker = false
+    @State private var hiddenRequestIDs: Set<Int> = []
+    @State private var pendingRequests: [PendingNeedinfoRequest] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1017,15 +1391,12 @@ private struct NeedinfoSection: View {
                     .foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(requests) { flag in
+                    ForEach(requests) { request in
                         NeedinfoRow(
-                            flag: flag,
-                            isMe: isCurrentUser(flag.requestee)
-                        ) {
-                            onUpdate(BugUpdate(flags: [
-                                FlagUpdate(id: flag.id, status: "X")
-                            ]))
-                        }
+                            request: request,
+                            isMe: isCurrentUser(request.requestee),
+                            onClear: clearAction(for: request)
+                        )
                     }
                 }
             }
@@ -1040,16 +1411,51 @@ private struct NeedinfoSection: View {
             .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
                 UserSearchPopover { user in
                     showingPicker = false
+                    addPendingRequest(for: user)
                     onUpdate(BugUpdate(flags: [
                         FlagUpdate(name: "needinfo", status: "?", requestee: user.name)
                     ]))
                 }
             }
         }
+        .onChange(of: bug.id) { _, _ in
+            clearPendingEdits()
+        }
+        .onChange(of: workspace.isUpdatingBug) { _, isUpdating in
+            if !isUpdating {
+                clearPendingEdits()
+            }
+        }
     }
 
-    private var requests: [Flag] {
-        bug.flags.filter { $0.name == "needinfo" }
+    private var requests: [NeedinfoDisplayRequest] {
+        let existingFlags = bug.flags.filter {
+            $0.name == "needinfo" && !hiddenRequestIDs.contains($0.id)
+        }
+        let existing = existingFlags.map { flag in
+            NeedinfoDisplayRequest(
+                id: "flag-\(flag.id)",
+                flagID: flag.id,
+                requestee: flag.requestee,
+                setter: flag.setter,
+                displayName: nil
+            )
+        }
+        let existingKeys = Set(existingFlags.compactMap { normalizedUserKey($0.requestee) })
+        let pending = pendingRequests
+            .filter { request in
+                !userKeys(for: request.user).contains { existingKeys.contains($0) }
+            }
+            .map { request in
+                NeedinfoDisplayRequest(
+                    id: "pending-\(request.id)",
+                    flagID: nil,
+                    requestee: request.user.name,
+                    setter: nil,
+                    displayName: request.user.displayName
+                )
+            }
+        return existing + pending
     }
 
     private func isCurrentUser(_ requestee: String?) -> Bool {
@@ -1059,12 +1465,46 @@ private struct NeedinfoSection: View {
         if let email = me?.email, email.caseInsensitiveCompare(requestee) == .orderedSame { return true }
         return false
     }
+
+    private func clearAction(for request: NeedinfoDisplayRequest) -> (() -> Void)? {
+        guard let flagID = request.flagID else { return nil }
+        return {
+            hiddenRequestIDs.insert(flagID)
+            onUpdate(BugUpdate(flags: [
+                FlagUpdate(id: flagID, status: "X")
+            ]))
+        }
+    }
+
+    private func addPendingRequest(for user: User) {
+        let keys = userKeys(for: user)
+        guard !requests.contains(where: { request in
+            guard let key = normalizedUserKey(request.requestee) else { return false }
+            return keys.contains(key)
+        }) else { return }
+        pendingRequests.append(PendingNeedinfoRequest(user: user))
+    }
+
+    private func userKeys(for user: User) -> Set<String> {
+        Set([user.name, user.email].compactMap(normalizedUserKey))
+    }
+
+    private func normalizedUserKey(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else { return nil }
+        return value.lowercased()
+    }
+
+    private func clearPendingEdits() {
+        hiddenRequestIDs.removeAll()
+        pendingRequests.removeAll()
+    }
 }
 
 private struct NeedinfoRow: View {
-    let flag: Flag
+    let request: NeedinfoDisplayRequest
     let isMe: Bool
-    let onClear: () -> Void
+    let onClear: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1077,7 +1517,7 @@ private struct NeedinfoRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if isMe {
+            if isMe, let onClear {
                 Button("Clear", action: onClear)
                     .buttonStyle(.borderless)
                     .controlSize(.small)
@@ -1088,19 +1528,35 @@ private struct NeedinfoRow: View {
 
     private var displayName: String {
         if isMe { return "You" }
-        return User.displayName(for: flag.requestee)
+        if let displayName = request.displayName, !displayName.isEmpty {
+            return displayName
+        }
+        return User.displayName(for: request.requestee)
     }
 
     private var tooltip: String {
         var parts: [String] = []
-        if let setter = flag.setter, !setter.isEmpty {
+        if let setter = request.setter, !setter.isEmpty {
             parts.append("Requested by \(setter)")
         }
-        if let requestee = flag.requestee, !requestee.isEmpty {
+        if let requestee = request.requestee, !requestee.isEmpty {
             parts.append("→ \(requestee)")
         }
         return parts.joined(separator: "  ·  ")
     }
+}
+
+private struct NeedinfoDisplayRequest: Identifiable {
+    let id: String
+    let flagID: Int?
+    let requestee: String?
+    let setter: String?
+    let displayName: String?
+}
+
+private struct PendingNeedinfoRequest: Identifiable, Hashable {
+    let id = UUID()
+    let user: User
 }
 
 private struct UserSearchPopover: View {
