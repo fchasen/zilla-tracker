@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 func bugzillaBugID(from url: URL) -> Int? {
     guard url.host == "bugzilla.mozilla.org" else { return nil }
@@ -20,7 +25,10 @@ func bugzillaBugID(from url: URL) -> Int? {
 }
 
 private struct OpenExternalURLKey: EnvironmentKey {
-    static let defaultValue: OpenURLAction = OpenURLAction { _ in .systemAction }
+    static let defaultValue: OpenURLAction = OpenURLAction { url in
+        openSystemURL(url)
+        return .handled
+    }
 }
 
 extension EnvironmentValues {
@@ -42,9 +50,18 @@ private struct MozillaLinkInterceptor: ViewModifier {
                     workspace.navigate(to: .bug(id))
                     return .handled
                 }
-                return .systemAction
+                outerOpenURL(url)
+                return .handled
             })
     }
+}
+
+private func openSystemURL(_ url: URL) {
+    #if os(macOS)
+    NSWorkspace.shared.open(url)
+    #elseif os(iOS)
+    UIApplication.shared.open(url)
+    #endif
 }
 
 extension View {

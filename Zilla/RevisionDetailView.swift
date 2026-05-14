@@ -6,7 +6,7 @@ struct RevisionDetailView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
-    @Environment(\.openURL) private var openURL
+    @Environment(\.openExternalURL) private var openExternalURL
 
     let revisionID: Int
 
@@ -64,7 +64,7 @@ struct RevisionDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 if let revision, isAuthor(revision) {
                     Button {
-                        openURL(landoURL(for: revision))
+                        openExternalURL(landoURL(for: revision))
                     } label: {
                         Label("Lando", systemImage: "bird")
                     }
@@ -74,7 +74,7 @@ struct RevisionDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 if let revision, let url = revision.fields.uri {
                     Button {
-                        openURL(url)
+                        openExternalURL(url)
                     } label: {
                         Label("Open in Browser", systemImage: "arrow.up.right.square")
                     }
