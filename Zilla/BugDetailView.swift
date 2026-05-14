@@ -262,8 +262,10 @@ struct BugDetailView: View {
             }
             if BugStatuses.isUnassigned(bug.assignedTo), let me = auth.currentUser?.name {
                 Divider()
-                Button("Take") {
+                Button {
                     Task { await applyUpdate(BugUpdate(assignedTo: me)) }
+                } label: {
+                    Label("Take", systemImage: "person.crop.circle.badge.checkmark")
                 }
             }
         } label: {
