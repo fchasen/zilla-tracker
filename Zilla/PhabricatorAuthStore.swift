@@ -33,11 +33,14 @@ final class PhabricatorAuthStore {
     }
 
     func bootstrap() async {
-        guard let token = keychain.get(account: Self.keychainAccount) else {
+        guard let entry = keychain.getEntry(account: Self.keychainAccount) else {
             state = .signedOut
             return
         }
-        await client.setAuthentication(.apiToken(token))
+        if !entry.synchronizable {
+            try? keychain.set(entry.value, account: Self.keychainAccount)
+        }
+        await client.setAuthentication(.apiToken(entry.value))
         do {
             let user = try await client.whoami()
             state = .signedIn(user)

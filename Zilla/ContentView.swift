@@ -2274,12 +2274,11 @@ private struct TodoSidebarRow: View {
                 var nextPosition = (todoOrder.last?.position ?? -1) + 1
                 var inserted = false
                 for transfer in transfers where !todoOrder.contains(where: { $0.bugId == transfer.id }) {
-                    let entry = BugOrderEntry(
+                    modelContext.upsertBugOrderEntry(
                         endpointKey: BugOrderEntry.todoKey,
                         bugId: transfer.id,
                         position: nextPosition
                     )
-                    modelContext.insert(entry)
                     nextPosition += 1
                     inserted = true
                 }
@@ -2699,12 +2698,11 @@ struct BugListView: View {
     private func addBugToTodo(_ bugID: Bug.ID) {
         guard !todoOrder.contains(where: { $0.bugId == bugID }) else { return }
         let nextPosition = (todoOrder.last?.position ?? -1) + 1
-        let entry = BugOrderEntry(
+        modelContext.upsertBugOrderEntry(
             endpointKey: BugOrderEntry.todoKey,
             bugId: bugID,
             position: nextPosition
         )
-        modelContext.insert(entry)
     }
 
     private func removeBugFromTodo(_ bugID: Bug.ID) {

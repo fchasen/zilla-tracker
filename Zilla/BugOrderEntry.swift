@@ -6,21 +6,24 @@
 import Foundation
 import SwiftData
 
-@Model
-final class BugOrderEntry {
-    var endpointKey: String = ""
-    var bugId: Int = 0
-    var position: Int = 0
-    var addedAt: Date = Date()
-
-    init(endpointKey: String, bugId: Int, position: Int = 0, addedAt: Date = .now) {
-        self.endpointKey = endpointKey
-        self.bugId = bugId
-        self.position = position
-        self.addedAt = addedAt
-    }
-}
+typealias BugOrderEntry = ZillaSchemaV2.BugOrderEntry
 
 extension BugOrderEntry {
     static let todoKey = "todo"
+}
+
+extension ModelContext {
+    func upsertBugOrderEntry(endpointKey: String, bugId: Int, position: Int) {
+        let key = endpointKey
+        let id = bugId
+        var descriptor = FetchDescriptor<BugOrderEntry>(
+            predicate: #Predicate { $0.endpointKey == key && $0.bugId == id }
+        )
+        descriptor.fetchLimit = 1
+        if let existing = (try? fetch(descriptor))?.first {
+            existing.position = position
+            return
+        }
+        insert(BugOrderEntry(endpointKey: key, bugId: id, position: position))
+    }
 }

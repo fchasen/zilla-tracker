@@ -1,40 +1,7 @@
 import Foundation
 import SwiftData
 
-@Model
-final class InlineDraftBuffer {
-    @Attribute(.unique) var id: UUID = UUID()
-    var revisionID: Int
-    var diffID: Int
-    var path: String
-    var line: Int
-    var length: Int
-    var isNewFile: Bool
-    var replyTo: String?
-    var content: String
-    var updatedAt: Date
-
-    init(
-        revisionID: Int,
-        diffID: Int,
-        path: String,
-        line: Int,
-        length: Int,
-        isNewFile: Bool,
-        replyTo: String?,
-        content: String
-    ) {
-        self.revisionID = revisionID
-        self.diffID = diffID
-        self.path = path
-        self.line = line
-        self.length = length
-        self.isNewFile = isNewFile
-        self.replyTo = replyTo
-        self.content = content
-        self.updatedAt = .now
-    }
-}
+typealias InlineDraftBuffer = ZillaSchemaV2.InlineDraftBuffer
 
 struct InlineDraftKey: Hashable {
     let revisionID: Int

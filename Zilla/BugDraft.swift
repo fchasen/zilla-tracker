@@ -7,38 +7,9 @@ import Foundation
 import SwiftData
 import BugzillaKit
 
-@Model
-final class BugDraft {
-    @Attribute(.unique) var id: UUID = UUID()
-    var summary: String = ""
-    var bugDescription: String = ""
-    var product: String = ""
-    var componentName: String = ""
-    var version: String = "unspecified"
-    var type: String?
-    var severity: String?
-    var priority: String?
-    var assignedTo: String?
-    var keywordsCSV: String = ""
-    var whiteboard: String = ""
-    var blocks: [Int] = []
-    var createdAt: Date = Date()
-    var updatedAt: Date = Date()
+typealias BugDraft = ZillaSchemaV2.BugDraft
 
-    init(
-        product: String = "",
-        componentName: String = "",
-        blocks: [Int] = []
-    ) {
-        self.id = UUID()
-        self.product = product
-        self.componentName = componentName
-        self.blocks = blocks
-        let now = Date.now
-        self.createdAt = now
-        self.updatedAt = now
-    }
-
+extension BugDraft {
     var keywords: [String] {
         keywordsCSV
             .split(separator: ",")

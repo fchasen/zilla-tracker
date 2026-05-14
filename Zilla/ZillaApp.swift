@@ -20,6 +20,14 @@ struct ZillaApp: App {
     @State private var cache = ResourceCache()
     @State private var refreshScheduler: RevisionRefreshScheduler?
 
+    private let modelContainer: ModelContainer = {
+        do {
+            return try ModelContainer.zillaContainer()
+        } catch {
+            fatalError("Failed to initialize Zilla ModelContainer: \(error)")
+        }
+    }()
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -44,7 +52,7 @@ struct ZillaApp: App {
                 }
         }
         .defaultSize(width: 1600, height: 1024)
-        .modelContainer(for: [FollowedComponent.self, FollowedMetaBug.self, BugDraft.self, BugOrderEntry.self, InlineDraftBuffer.self])
+        .modelContainer(modelContainer)
         #if os(macOS)
         .commands {
             ZillaCommands(auth: auth, phab: phab, workspace: workspace, viewedBugs: viewedBugs)
@@ -66,7 +74,51 @@ struct ZillaApp: App {
             }
         }
         .defaultSize(width: 1280, height: 760)
+        .modelContainer(modelContainer)
         #endif
+    }
+}
+
+extension ModelContainer {
+    static func zillaContainer() throws -> ModelContainer {
+        let syncedSchema = Schema([
+            FollowedComponent.self,
+            FollowedMetaBug.self,
+            BugDraft.self,
+            BugOrderEntry.self
+        ])
+        let localSchema = Schema([InlineDraftBuffer.self])
+        let fullSchema = Schema(versionedSchema: ZillaSchemaV2.self)
+
+        let cloudConfig = ModelConfiguration(
+            "CloudSynced",
+            schema: syncedSchema,
+            cloudKitDatabase: .private("iCloud.com.fchasen.Zilla")
+        )
+        let localConfig = ModelConfiguration(
+            "Local",
+            schema: localSchema,
+            cloudKitDatabase: .none
+        )
+
+        do {
+            return try ModelContainer(
+                for: fullSchema,
+                migrationPlan: ZillaMigrationPlan.self,
+                configurations: cloudConfig, localConfig
+            )
+        } catch {
+            let localOnlyConfig = ModelConfiguration(
+                "CloudSynced",
+                schema: syncedSchema,
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(
+                for: fullSchema,
+                migrationPlan: ZillaMigrationPlan.self,
+                configurations: localOnlyConfig, localConfig
+            )
+        }
     }
 }
 
