@@ -22,6 +22,8 @@ struct BugStatusOption: Hashable {
 }
 
 enum BugStatuses {
+    static let unassignedUser = "nobody@mozilla.org"
+
     static let open: [BugStatusOption] = [
         .init(code: "NEW", label: "New"),
         .init(code: "ASSIGNED", label: "Assigned"),
@@ -746,30 +748,37 @@ struct BugMetadata: View {
     private var assigneeRow: some View {
         GridRow {
             Text("Assignee").foregroundStyle(.secondary)
-            Button {
-                showingAssignPicker = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text(User.displayName(for: effectiveAssignedTo, detail: effectiveAssignedToDetail))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .scaledFont(.caption2)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: Self.controlSpacing) {
+                Button {
+                    showingAssignPicker = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(User.displayName(for: effectiveAssignedTo, detail: effectiveAssignedToDetail))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.down")
+                            .scaledFont(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .frame(width: Self.metadataPickerWidth, alignment: .leading)
+                .help(effectiveAssignedTo ?? "")
+                .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
+                    UserSearchPopover { user in
+                        showingAssignPicker = false
+                        pendingAssignedTo = user.name
+                        pendingAssignedToDetail = user
+                        onUpdate(BugUpdate(assignedTo: user.name))
+                    }
+                }
+
+                clearButton(isVisible: !BugStatuses.isUnassigned(effectiveAssignedTo), label: "Assignee") {
+                    clearAssignee()
+                }
             }
-            .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help(effectiveAssignedTo ?? "")
-            .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
-                UserSearchPopover { user in
-                    showingAssignPicker = false
-                    pendingAssignedTo = user.name
-                    pendingAssignedToDetail = user
-                    onUpdate(BugUpdate(assignedTo: user.name))
-                }
-            }
         }
     }
 
@@ -804,6 +813,13 @@ struct BugMetadata: View {
 
     private var milestoneChoices: [String] {
         ReleaseTargetMilestonePlanner.inspectorChoices(for: product, current: effectiveTargetMilestone)
+    }
+
+    private func clearAssignee() {
+        showingAssignPicker = false
+        pendingAssignedTo = BugStatuses.unassignedUser
+        pendingAssignedToDetail = nil
+        onUpdate(BugUpdate(assignedTo: BugStatuses.unassignedUser))
     }
 
     private var product: Product? {
@@ -1560,6 +1576,12 @@ private struct PendingNeedinfoRequest: Identifiable, Hashable {
 }
 
 private struct UserSearchPopover: View {
+    #if os(macOS)
+    private static let popoverWidth: CGFloat = 320
+    private static let resultsMinHeight: CGFloat = 160
+    private static let resultsMaxHeight: CGFloat = 240
+    #endif
+
     let onPick: (User) -> Void
 
     @Environment(AuthStore.self) private var auth
@@ -1567,11 +1589,20 @@ private struct UserSearchPopover: View {
     @State private var matches: [User] = []
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var selectedUserID: Int?
+
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Search users…", text: $query)
                 .textFieldStyle(.roundedBorder)
+                .submitLabel(.done)
+                .focused($searchFocused)
+                .onSubmit { commitSelection() }
+                .onKeyPress(.return) { commitSelection() ? .handled : .ignored }
+                .onKeyPress(.upArrow) { moveSelection(-1) ? .handled : .ignored }
+                .onKeyPress(.downArrow) { moveSelection(1) ? .handled : .ignored }
                 .onChange(of: query) { _, value in
                     scheduleSearch(value)
                 }
@@ -1582,33 +1613,57 @@ private struct UserSearchPopover: View {
                     .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(matches) { user in
-                            Button {
-                                onPick(user)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(user.realName ?? user.name)
-                                        .scaledFont(.callout)
-                                    Text(user.name)
-                                        .scaledFont(.caption)
-                                        .foregroundStyle(.secondary)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(matches) { user in
+                                Button {
+                                    onPick(user)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(user.realName ?? user.name)
+                                            .scaledFont(.callout)
+                                        Text(user.name)
+                                            .scaledFont(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 6)
+                                    .background(rowHighlight(for: user))
+                                    .contentShape(Rectangle())
+                                    .id(user.id)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 6)
-                                .contentShape(Rectangle())
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onChange(of: selectedUserID) { _, new in
+                        if let new {
+                            withAnimation(.linear(duration: 0.05)) {
+                                proxy.scrollTo(new, anchor: .center)
+                            }
                         }
                     }
+#if os(iOS)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+#else
+                    .frame(minHeight: Self.resultsMinHeight, maxHeight: Self.resultsMaxHeight)
+#endif
                 }
-                .frame(maxHeight: 220)
             }
         }
         .padding(12)
-        .frame(width: 280)
+#if os(iOS)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+#else
+        .frame(width: Self.popoverWidth)
+#endif
+        .onAppear { searchFocused = true }
+        .onChange(of: matches) { _, _ in syncSelection() }
     }
 
     private func scheduleSearch(_ value: String) {
@@ -1616,6 +1671,7 @@ private struct UserSearchPopover: View {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 2 else {
             matches = []
+            selectedUserID = nil
             isSearching = false
             return
         }
@@ -1638,6 +1694,45 @@ private struct UserSearchPopover: View {
         } catch {
             matches = []
         }
+    }
+
+    @ViewBuilder
+    private func rowHighlight(for user: User) -> some View {
+        if selectedUserID == user.id {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(0.18))
+        }
+    }
+
+    @discardableResult
+    private func moveSelection(_ delta: Int) -> Bool {
+        guard !matches.isEmpty else { return false }
+        let ids = matches.map(\.id)
+        let currentIdx = ids.firstIndex(of: selectedUserID ?? -1) ?? -1
+        let target: Int
+        if currentIdx < 0 {
+            target = delta > 0 ? 0 : ids.count - 1
+        } else {
+            target = max(0, min(ids.count - 1, currentIdx + delta))
+        }
+        selectedUserID = ids[target]
+        return true
+    }
+
+    @discardableResult
+    private func commitSelection() -> Bool {
+        let id = selectedUserID ?? matches.first?.id
+        guard let id, let user = matches.first(where: { $0.id == id }) else {
+            return false
+        }
+        onPick(user)
+        return true
+    }
+
+    private func syncSelection() {
+        let ids = matches.map(\.id)
+        if let selectedUserID, ids.contains(selectedUserID) { return }
+        selectedUserID = ids.first
     }
 }
 
