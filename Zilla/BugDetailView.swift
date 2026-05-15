@@ -1937,7 +1937,7 @@ private struct DependenciesSection: View {
     }
 }
 
-private struct SeeAlsoList: View {
+struct SeeAlsoList: View {
     let urls: [String]
     let onOpenBug: (Bug.ID) -> Void
     let onAdd: () -> Void
@@ -1966,7 +1966,7 @@ private struct SeeAlsoList: View {
     }
 }
 
-private struct SeeAlsoRow: View {
+struct SeeAlsoRow: View {
     @Environment(Workspace.self) private var workspace
     @Environment(\.openURL) private var openURL
     let url: String
@@ -2059,17 +2059,38 @@ private struct SeeAlsoRow: View {
     }
 }
 
-private struct DependencyList: View {
+struct DependencyList: View {
     let title: String
-    let bugID: Bug.ID
+    let bugID: Bug.ID?
     let ids: [Int]
     let direction: BlockDirection
+    let emptyPlaceholder: String
     let onOpenBug: (Bug.ID) -> Void
     let onAdd: () -> Void
     let onRemove: (Bug.ID) -> Void
 
+    init(
+        title: String,
+        bugID: Bug.ID?,
+        ids: [Int],
+        direction: BlockDirection,
+        emptyPlaceholder: String = "Drop bugs here to add",
+        onOpenBug: @escaping (Bug.ID) -> Void,
+        onAdd: @escaping () -> Void,
+        onRemove: @escaping (Bug.ID) -> Void
+    ) {
+        self.title = title
+        self.bugID = bugID
+        self.ids = ids
+        self.direction = direction
+        self.emptyPlaceholder = emptyPlaceholder
+        self.onOpenBug = onOpenBug
+        self.onAdd = onAdd
+        self.onRemove = onRemove
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let list = VStack(alignment: .leading, spacing: 6) {
             InspectorSectionHeader(
                 title: title,
                 trailing: ids.count > 1 ? "\(ids.count)" : nil,
@@ -2077,7 +2098,7 @@ private struct DependencyList: View {
             )
             VStack(alignment: .leading, spacing: 4) {
                 if ids.isEmpty {
-                    Text("Drop bugs here to add")
+                    Text(emptyPlaceholder)
                         .scaledFont(.caption)
                         .foregroundStyle(.tertiary)
                         .padding(.vertical, 4)
@@ -2090,11 +2111,16 @@ private struct DependencyList: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .bugBlockDrop(target: bugID, fixed: direction)
+
+        if let bugID {
+            list.bugBlockDrop(target: bugID, fixed: direction)
+        } else {
+            list
+        }
     }
 }
 
-private struct DependencyRow: View {
+struct DependencyRow: View {
     @Environment(Workspace.self) private var workspace
     @Environment(\.openURL) private var openURL
     let id: Int
