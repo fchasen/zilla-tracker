@@ -34,6 +34,39 @@ final class BugSearchTests: XCTestCase {
         XCTAssertEqual(bug.accessibilitySeverity, "s2")
     }
 
+    func testGetBugDecodesGroups() async throws {
+        MockURLProtocol.handler = { request in
+            let body = #"""
+            {"bugs":[
+              {"id":1,"summary":"","status":"NEW","resolution":"",
+               "product":"Firefox","component":"General","keywords":[],
+               "blocks":[],"depends_on":[],"cc":[],"flags":[],
+               "groups":["mozilla-employee-confidential","core-security"]}
+            ]}
+            """#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 200), body)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        let bug = try await client.getBug(id: 1)
+        XCTAssertEqual(bug.groups, ["mozilla-employee-confidential", "core-security"])
+    }
+
+    func testGetBugDefaultsGroupsToEmpty() async throws {
+        MockURLProtocol.handler = { request in
+            let body = #"""
+            {"bugs":[
+              {"id":1,"summary":"","status":"NEW","resolution":"",
+               "product":"Firefox","component":"General","keywords":[],
+               "blocks":[],"depends_on":[],"cc":[],"flags":[]}
+            ]}
+            """#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 200), body)
+        }
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        let bug = try await client.getBug(id: 1)
+        XCTAssertEqual(bug.groups, [])
+    }
+
     func testGetBugByIdNotFoundEnvelope() async {
         MockURLProtocol.handler = { request in
             let body = #"{"error":true,"code":101,"message":"Bug 1 does not exist"}"#.data(using: .utf8)!

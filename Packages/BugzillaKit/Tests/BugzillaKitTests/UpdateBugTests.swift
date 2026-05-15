@@ -137,6 +137,41 @@ final class UpdateBugTests: XCTestCase {
         )
     }
 
+    func testAddGroupsSendsAddArray() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let groups = try XCTUnwrap(json["groups"] as? [String: Any])
+            XCTAssertEqual(groups["add"] as? [String], ["mozilla-employee-confidential"])
+            XCTAssertNil(groups["remove"])
+            XCTAssertNil(groups["set"])
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(
+            id: 1,
+            BugUpdate(groups: .add([BugGroup.mozillaEmployeeConfidential]))
+        )
+    }
+
+    func testRemoveGroupsSendsRemoveArray() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let groups = try XCTUnwrap(json["groups"] as? [String: Any])
+            XCTAssertEqual(groups["remove"] as? [String], ["mozilla-employee-confidential"])
+            XCTAssertNil(groups["add"])
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(
+            id: 1,
+            BugUpdate(groups: .remove([BugGroup.mozillaEmployeeConfidential]))
+        )
+    }
+
     func testAddDependsOnUsesSnakeCaseKey() async throws {
         MockURLProtocol.handler = { request in
             let body = request.bodyData ?? Data()

@@ -78,6 +78,39 @@ final class CreateBugTests: XCTestCase {
         XCTAssertEqual(id, 555)
     }
 
+    func testCreateBugOmitsGroupsWhenEmpty() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertNil(json["groups"])
+            return (httpResponse(for: request, status: 200), #"{"id":1}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.createBug(
+            BugCreate(product: "Firefox", component: "General", summary: "x")
+        )
+    }
+
+    func testCreateBugSendsGroupsArray() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["groups"] as? [String], ["mozilla-employee-confidential"])
+            return (httpResponse(for: request, status: 200), #"{"id":1}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.createBug(
+            BugCreate(
+                product: "Firefox",
+                component: "General",
+                summary: "x",
+                groups: [BugGroup.mozillaEmployeeConfidential]
+            )
+        )
+    }
+
     func testReturnsCreatedBugID() async throws {
         MockURLProtocol.handler = { request in
             return (httpResponse(for: request, status: 200), #"{"id":987654}"#.data(using: .utf8)!)

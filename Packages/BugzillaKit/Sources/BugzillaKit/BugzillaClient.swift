@@ -271,12 +271,13 @@ public extension BugzillaClient {
             let dependsOn: BugRelationUpdate?
             let seeAlso: SeeAlsoUpdate?
             let flags: [FlagUpdate]?
+            let groups: GroupsUpdate?
 
             enum CodingKeys: String, CodingKey {
                 case summary, status, resolution, dupeOf
                 case assignedTo, priority, severity, comment
                 case targetMilestone
-                case blocks, dependsOn, seeAlso, flags
+                case blocks, dependsOn, seeAlso, flags, groups
                 case points = "cfFxPoints"
                 case rank = "cfRank"
             }
@@ -298,6 +299,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
                 try c.encodeIfPresent(seeAlso, forKey: .seeAlso)
                 try c.encodeIfPresent(flags, forKey: .flags)
+                try c.encodeIfPresent(groups, forKey: .groups)
             }
         }
 
@@ -316,7 +318,8 @@ public extension BugzillaClient {
             blocks: update.blocks,
             dependsOn: update.dependsOn,
             seeAlso: update.seeAlso,
-            flags: update.flags
+            flags: update.flags,
+            groups: update.groups
         )
         let body = try encoder.encode(payload)
 
@@ -346,10 +349,11 @@ public extension BugzillaClient {
             let blocks: [Int]?
             let dependsOn: [Int]?
             let cc: [String]?
+            let groups: [String]?
 
             enum CodingKeys: String, CodingKey {
                 case product, component, summary, version, description, type
-                case severity, priority, assignedTo, keywords, whiteboard, blocks, dependsOn, cc
+                case severity, priority, assignedTo, keywords, whiteboard, blocks, dependsOn, cc, groups
             }
 
             func encode(to encoder: Encoder) throws {
@@ -368,6 +372,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(blocks, forKey: .blocks)
                 try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
                 try c.encodeIfPresent(cc, forKey: .cc)
+                try c.encodeIfPresent(groups, forKey: .groups)
             }
         }
 
@@ -385,7 +390,8 @@ public extension BugzillaClient {
             whiteboard: create.whiteboard,
             blocks: create.blocks.isEmpty ? nil : create.blocks,
             dependsOn: create.dependsOn.isEmpty ? nil : create.dependsOn,
-            cc: create.cc.isEmpty ? nil : create.cc
+            cc: create.cc.isEmpty ? nil : create.cc,
+            groups: create.groups.isEmpty ? nil : create.groups
         )
         let body = try encoder.encode(payload)
 

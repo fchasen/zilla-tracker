@@ -31,6 +31,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
     public let assignedToDetail: User?
     public let creatorDetail: User?
     public let attachments: [Attachment]
+    public let groups: [String]
 
     public init(
         id: ID,
@@ -60,7 +61,8 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         rank: Int? = nil,
         assignedToDetail: User? = nil,
         creatorDetail: User? = nil,
-        attachments: [Attachment] = []
+        attachments: [Attachment] = [],
+        groups: [String] = []
     ) {
         self.id = id
         self.summary = summary
@@ -90,6 +92,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.assignedToDetail = assignedToDetail
         self.creatorDetail = creatorDetail
         self.attachments = attachments
+        self.groups = groups
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -102,7 +105,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         case points = "cfFxPoints"
         case accessibilitySeverity = "cfAccessibilitySeverity"
         case rank = "cfRank"
-        case assignedToDetail, creatorDetail
+        case assignedToDetail, creatorDetail, groups
     }
 
     public init(from decoder: Decoder) throws {
@@ -141,6 +144,7 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
         self.assignedToDetail = try c.decodeIfPresent(User.self, forKey: .assignedToDetail)
         self.creatorDetail = try c.decodeIfPresent(User.self, forKey: .creatorDetail)
         self.attachments = try c.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        self.groups = try c.decodeIfPresent([String].self, forKey: .groups) ?? []
     }
 
     public var isMeta: Bool {
@@ -150,6 +154,10 @@ public struct Bug: Codable, Sendable, Hashable, Identifiable {
     public var hasPhabricatorPatch: Bool {
         attachments.contains { $0.contentType == "text/x-phabricator-request" && !$0.isObsolete }
     }
+}
+
+public enum BugGroup {
+    public static let mozillaEmployeeConfidential = "mozilla-employee-confidential"
 }
 
 public struct BugSearchResult: Codable, Sendable {
@@ -190,6 +198,37 @@ public struct BugRelationUpdate: Sendable, Equatable, Encodable {
 
     public static func remove(_ ids: [Bug.ID]) -> BugRelationUpdate {
         BugRelationUpdate(remove: ids)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case add, remove, set
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(add, forKey: .add)
+        try c.encodeIfPresent(remove, forKey: .remove)
+        try c.encodeIfPresent(set, forKey: .set)
+    }
+}
+
+public struct GroupsUpdate: Sendable, Equatable, Encodable {
+    public var add: [String]?
+    public var remove: [String]?
+    public var set: [String]?
+
+    public init(add: [String]? = nil, remove: [String]? = nil, set: [String]? = nil) {
+        self.add = add
+        self.remove = remove
+        self.set = set
+    }
+
+    public static func add(_ names: [String]) -> GroupsUpdate {
+        GroupsUpdate(add: names)
+    }
+
+    public static func remove(_ names: [String]) -> GroupsUpdate {
+        GroupsUpdate(remove: names)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -280,6 +319,7 @@ public struct BugUpdate: Sendable, Equatable {
     public var dependsOn: BugRelationUpdate?
     public var seeAlso: SeeAlsoUpdate?
     public var flags: [FlagUpdate]?
+    public var groups: GroupsUpdate?
 
     public init(
         summary: String? = nil,
@@ -297,7 +337,8 @@ public struct BugUpdate: Sendable, Equatable {
         blocks: BugRelationUpdate? = nil,
         dependsOn: BugRelationUpdate? = nil,
         seeAlso: SeeAlsoUpdate? = nil,
-        flags: [FlagUpdate]? = nil
+        flags: [FlagUpdate]? = nil,
+        groups: GroupsUpdate? = nil
     ) {
         self.summary = summary
         self.status = status
@@ -315,6 +356,7 @@ public struct BugUpdate: Sendable, Equatable {
         self.dependsOn = dependsOn
         self.seeAlso = seeAlso
         self.flags = flags
+        self.groups = groups
     }
 }
 
@@ -333,6 +375,7 @@ public struct BugCreate: Sendable, Equatable {
     public var blocks: [Int]
     public var dependsOn: [Int]
     public var cc: [String]
+    public var groups: [String]
 
     public init(
         product: String,
@@ -348,7 +391,8 @@ public struct BugCreate: Sendable, Equatable {
         whiteboard: String? = nil,
         blocks: [Int] = [],
         dependsOn: [Int] = [],
-        cc: [String] = []
+        cc: [String] = [],
+        groups: [String] = []
     ) {
         self.product = product
         self.component = component
@@ -364,6 +408,7 @@ public struct BugCreate: Sendable, Equatable {
         self.blocks = blocks
         self.dependsOn = dependsOn
         self.cc = cc
+        self.groups = groups
     }
 }
 
