@@ -241,6 +241,20 @@ struct BugDetailView: View {
                     dupePrompt = DupePromptIdentifier()
                 }
             }
+            Divider()
+            if bug.groups.contains(BugGroup.mozillaEmployeeConfidential) {
+                Button {
+                    Task { await applyUpdate(BugUpdate(groups: .remove([BugGroup.mozillaEmployeeConfidential]))) }
+                } label: {
+                    Label("Remove Confidential", systemImage: "lock.open")
+                }
+            } else {
+                Button {
+                    Task { await applyUpdate(BugUpdate(groups: .add([BugGroup.mozillaEmployeeConfidential]))) }
+                } label: {
+                    Label("Mark as Confidential", systemImage: "lock.fill")
+                }
+            }
         } label: {
             Label("Resolve", systemImage: "checkmark.circle")
         }
@@ -494,6 +508,10 @@ private struct BugHeader: View {
 
                 StatusPill(bug: bug)
 
+                if !bug.groups.isEmpty {
+                    SecurityPill(groups: bug.groups)
+                }
+
                 if bug.type?.lowercased() == "defect" {
                     MetaPill(
                         label: displaySeverity ?? "S?",
@@ -643,6 +661,26 @@ private struct MetaPill: View {
             .padding(.vertical, 3)
             .background(color.opacity(0.18), in: Capsule())
             .foregroundStyle(color)
+    }
+}
+
+private struct SecurityPill: View {
+    let groups: [String]
+
+    var body: some View {
+        Label(label, systemImage: "lock.fill")
+            .labelStyle(.titleAndIcon)
+            .scaledFont(.caption, weight: .semibold)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.orange.opacity(0.18), in: Capsule())
+            .foregroundStyle(.orange)
+            .help(groups.joined(separator: ", "))
+    }
+
+    private var label: String {
+        let onlyConfidential = groups == [BugGroup.mozillaEmployeeConfidential]
+        return onlyConfidential ? "Confidential" : "Restricted"
     }
 }
 
@@ -1239,6 +1277,11 @@ struct BugInspectorContent: View {
         VStack(alignment: .leading, spacing: 16) {
             BugMetadata(bug: bug, onUpdate: onUpdate)
 
+            if !bug.groups.isEmpty {
+                Divider()
+                SecuritySection(bug: bug, onUpdate: onUpdate)
+            }
+
             Divider()
             NeedinfoSection(bug: bug, onUpdate: onUpdate)
 
@@ -1800,6 +1843,53 @@ private struct WhiteboardSection: View {
                 .scaledFont(.callout, design: .monospaced)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct SecuritySection: View {
+    let bug: Bug
+    let onUpdate: (BugUpdate) -> Void
+
+    private var isConfidential: Bool {
+        bug.groups.contains(BugGroup.mozillaEmployeeConfidential)
+    }
+
+    private var otherGroups: [String] {
+        bug.groups.filter { $0 != BugGroup.mozillaEmployeeConfidential }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            InspectorSectionHeader(title: "Security")
+
+            if isConfidential {
+                HStack(spacing: 8) {
+                    Label("Confidential", systemImage: "lock.fill")
+                        .scaledFont(.callout)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Remove") {
+                        onUpdate(BugUpdate(groups: .remove([BugGroup.mozillaEmployeeConfidential])))
+                    }
+                    .buttonStyle(.borderless)
+                    .scaledFont(.caption)
+                }
+            }
+
+            if !otherGroups.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(otherGroups, id: \.self) { group in
+                        Label(group, systemImage: "lock.fill")
+                            .scaledFont(.caption, weight: .semibold)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.secondary.opacity(0.15), in: Capsule())
+                            .foregroundStyle(.secondary)
+                            .help("Bug is restricted to the \(group) group")
+                    }
+                }
+            }
         }
     }
 }
