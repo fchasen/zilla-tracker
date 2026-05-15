@@ -374,6 +374,7 @@ public struct BugCreate: Sendable, Equatable {
     public var whiteboard: String?
     public var blocks: [Int]
     public var dependsOn: [Int]
+    public var seeAlso: [String]
     public var cc: [String]
     public var groups: [String]
 
@@ -391,6 +392,7 @@ public struct BugCreate: Sendable, Equatable {
         whiteboard: String? = nil,
         blocks: [Int] = [],
         dependsOn: [Int] = [],
+        seeAlso: [String] = [],
         cc: [String] = [],
         groups: [String] = []
     ) {
@@ -407,6 +409,7 @@ public struct BugCreate: Sendable, Equatable {
         self.whiteboard = whiteboard
         self.blocks = blocks
         self.dependsOn = dependsOn
+        self.seeAlso = seeAlso
         self.cc = cc
         self.groups = groups
     }

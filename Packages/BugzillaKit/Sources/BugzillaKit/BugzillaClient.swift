@@ -348,12 +348,13 @@ public extension BugzillaClient {
             let whiteboard: String?
             let blocks: [Int]?
             let dependsOn: [Int]?
+            let seeAlso: [String]?
             let cc: [String]?
             let groups: [String]?
 
             enum CodingKeys: String, CodingKey {
                 case product, component, summary, version, description, type
-                case severity, priority, assignedTo, keywords, whiteboard, blocks, dependsOn, cc, groups
+                case severity, priority, assignedTo, keywords, whiteboard, blocks, dependsOn, seeAlso, cc, groups
             }
 
             func encode(to encoder: Encoder) throws {
@@ -371,6 +372,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(whiteboard, forKey: .whiteboard)
                 try c.encodeIfPresent(blocks, forKey: .blocks)
                 try c.encodeIfPresent(dependsOn, forKey: .dependsOn)
+                try c.encodeIfPresent(seeAlso, forKey: .seeAlso)
                 try c.encodeIfPresent(cc, forKey: .cc)
                 try c.encodeIfPresent(groups, forKey: .groups)
             }
@@ -390,6 +392,7 @@ public extension BugzillaClient {
             whiteboard: create.whiteboard,
             blocks: create.blocks.isEmpty ? nil : create.blocks,
             dependsOn: create.dependsOn.isEmpty ? nil : create.dependsOn,
+            seeAlso: create.seeAlso.isEmpty ? nil : create.seeAlso,
             cc: create.cc.isEmpty ? nil : create.cc,
             groups: create.groups.isEmpty ? nil : create.groups
         )
