@@ -6,7 +6,7 @@
 import Foundation
 import SwiftData
 
-typealias BugOrderEntry = ZillaSchemaV3.BugOrderEntry
+typealias BugOrderEntry = ZillaSchemaV4.BugOrderEntry
 
 extension BugOrderEntry {
     static let todoKey = "todo"

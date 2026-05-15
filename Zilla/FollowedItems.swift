@@ -7,8 +7,8 @@ import Foundation
 import SwiftData
 import BugzillaKit
 
-typealias FollowedComponent = ZillaSchemaV3.FollowedComponent
-typealias FollowedMetaBug = ZillaSchemaV3.FollowedMetaBug
+typealias FollowedComponent = ZillaSchemaV4.FollowedComponent
+typealias FollowedMetaBug = ZillaSchemaV4.FollowedMetaBug
 
 extension FollowedComponent {
     var ref: ComponentRef {

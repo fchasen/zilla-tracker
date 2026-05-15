@@ -7,7 +7,7 @@ import Foundation
 import SwiftData
 import BugzillaKit
 
-typealias BugDraft = ZillaSchemaV3.BugDraft
+typealias BugDraft = ZillaSchemaV4.BugDraft
 
 extension BugDraft {
     var keywords: [String] {

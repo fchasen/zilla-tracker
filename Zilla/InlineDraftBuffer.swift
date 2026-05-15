@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-typealias InlineDraftBuffer = ZillaSchemaV3.InlineDraftBuffer
+typealias InlineDraftBuffer = ZillaSchemaV4.InlineDraftBuffer
 
 struct InlineDraftKey: Hashable {
     let revisionID: Int
