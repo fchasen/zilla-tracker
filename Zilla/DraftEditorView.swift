@@ -150,7 +150,8 @@ struct DraftEditorView: View {
             assignedTo: draft.assignedTo?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             keywords: draft.keywords,
             whiteboard: draft.whiteboard.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            blocks: draft.blocks
+            blocks: draft.blocks,
+            groups: draft.isConfidential ? [BugGroup.mozillaEmployeeConfidential] : []
         )
 
         do {

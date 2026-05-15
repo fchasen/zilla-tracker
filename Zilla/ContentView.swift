@@ -1502,11 +1502,10 @@ private struct DraftMetadata: View {
 
     @State private var showComponentPicker = false
 
-    private static let typeOptions: [(code: String?, label: String)] = [
-        (nil, "—"),
-        ("defect", "Defect"),
-        ("enhancement", "Enhancement"),
-        ("task", "Task")
+    private static let typeOptions: [(code: String, label: String, symbol: String)] = [
+        ("defect", "Defect", "ant.fill"),
+        ("enhancement", "Enhancement", "sparkles"),
+        ("task", "Task", "clipboard")
     ]
 
     var body: some View {
@@ -1514,20 +1513,20 @@ private struct DraftMetadata: View {
             componentSection
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 10) {
                 typeRow
-                menuRow(
+                segmentedRow(
                     label: "Priority",
                     current: draft.priority,
-                    options: BugMetadata.priorityOptions
+                    options: ["P5", "P4", "P3", "P2", "P1"]
                 ) { value in
-                    draft.priority = (value == "--") ? nil : value
+                    draft.priority = value
                     draft.updatedAt = .now
                 }
-                menuRow(
+                segmentedRow(
                     label: "Severity",
                     current: draft.severity,
-                    options: BugMetadata.severityOptions
+                    options: ["S4", "S3", "S2", "S1"]
                 ) { value in
-                    draft.severity = (value == "--") ? nil : value
+                    draft.severity = value
                     draft.updatedAt = .now
                 }
                 assigneeRow
@@ -1536,6 +1535,8 @@ private struct DraftMetadata: View {
                 blocksRow
                 datesRow
             }
+            Divider()
+            securitySection
         }
         .scaledFont(.callout)
         .sheet(isPresented: $showComponentPicker) {
@@ -1544,6 +1545,36 @@ private struct DraftMetadata: View {
                 draft.componentName = component.name
                 draft.updatedAt = .now
             })
+        }
+    }
+
+    @ViewBuilder
+    private var securitySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            InspectorSectionHeader(title: "Security")
+            if draft.isConfidential {
+                HStack(spacing: 8) {
+                    Label("Confidential", systemImage: "lock.fill")
+                        .scaledFont(.callout)
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Remove") {
+                        draft.isConfidential = false
+                        draft.updatedAt = .now
+                    }
+                    .buttonStyle(.borderless)
+                    .scaledFont(.caption)
+                }
+            } else {
+                Button {
+                    draft.isConfidential = true
+                    draft.updatedAt = .now
+                } label: {
+                    Label("Confidential", systemImage: "lock")
+                        .scaledFont(.callout)
+                }
+                .buttonStyle(.borderless)
+            }
         }
     }
 
@@ -1587,61 +1618,76 @@ private struct DraftMetadata: View {
     private var typeRow: some View {
         GridRow {
             Text("Type").foregroundStyle(.secondary)
-            Menu {
-                ForEach(Self.typeOptions, id: \.label) { option in
-                    Button {
-                        draft.type = option.code
+            HStack(spacing: 6) {
+                Picker("Type", selection: Binding(
+                    get: { draft.type ?? "" },
+                    set: { value in
+                        draft.type = value.isEmpty ? nil : value
                         draft.updatedAt = .now
-                    } label: {
-                        if option.code == draft.type {
-                            Label(option.label, systemImage: "checkmark")
-                        } else {
-                            Text(option.label)
-                        }
+                    }
+                )) {
+                    ForEach(Self.typeOptions, id: \.code) { option in
+                        Image(systemName: option.symbol)
+                            .help(option.label)
+                            .accessibilityLabel(option.label)
+                            .tag(option.code)
                     }
                 }
-            } label: {
-                Text(typeLabel)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
+                clearButton(isVisible: draft.type != nil, label: "Type") {
+                    draft.type = nil
+                    draft.updatedAt = .now
+                }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private var typeLabel: String {
-        Self.typeOptions.first(where: { $0.code == draft.type })?.label ?? "—"
     }
 
     @ViewBuilder
-    private func menuRow(
+    private func segmentedRow(
         label: String,
         current: String?,
         options: [String],
-        onPick: @escaping (String) -> Void
+        onPick: @escaping (String?) -> Void
     ) -> some View {
-        let displayed = (current?.isEmpty == false ? current : nil) ?? "--"
         GridRow {
             Text(label).foregroundStyle(.secondary)
-            Menu {
-                ForEach(options, id: \.self) { value in
-                    Button {
-                        onPick(value)
-                    } label: {
-                        if value == current || (value == "--" && (current == nil || current?.isEmpty == true)) {
-                            Label(value, systemImage: "checkmark")
-                        } else {
-                            Text(value)
-                        }
+            HStack(spacing: 6) {
+                Picker(label, selection: Binding(
+                    get: { current ?? "" },
+                    set: { value in onPick(value.isEmpty ? nil : value) }
+                )) {
+                    ForEach(options, id: \.self) { value in
+                        Text(value).tag(value)
                     }
                 }
-            } label: {
-                Text(displayed)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
+                clearButton(isVisible: current != nil && current?.isEmpty == false, label: label) {
+                    onPick(nil)
+                }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func clearButton(isVisible: Bool, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .symbolRenderingMode(.hierarchical)
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(.secondary)
+        .opacity(isVisible ? 1 : 0)
+        .disabled(!isVisible)
+        .accessibilityHidden(!isVisible)
+        .help("Clear \(label)")
     }
 
     @ViewBuilder
