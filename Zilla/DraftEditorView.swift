@@ -151,6 +151,8 @@ struct DraftEditorView: View {
             keywords: draft.keywords,
             whiteboard: draft.whiteboard.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             blocks: draft.blocks,
+            dependsOn: draft.dependsOn,
+            seeAlso: draft.seeAlso,
             groups: draft.isConfidential ? [BugGroup.mozillaEmployeeConfidential] : []
         )
 

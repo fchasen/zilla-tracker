@@ -1500,7 +1500,16 @@ private struct DraftInspector: View {
 private struct DraftMetadata: View {
     @Bindable var draft: BugDraft
 
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+
     @State private var showComponentPicker = false
+    @State private var quickAddTarget: DraftQuickAddTarget?
+
+    private enum DraftQuickAddTarget: String, Identifiable {
+        case dependsOn, blocks, seeAlso
+        var id: String { rawValue }
+    }
 
     private static let typeOptions: [(code: String, label: String, symbol: String)] = [
         ("defect", "Defect", "ant.fill"),
@@ -1532,9 +1541,10 @@ private struct DraftMetadata: View {
                 assigneeRow
                 keywordsRow
                 whiteboardRow
-                blocksRow
                 datesRow
             }
+            Divider()
+            dependenciesSection
             Divider()
             securitySection
         }
@@ -1546,6 +1556,96 @@ private struct DraftMetadata: View {
                 draft.updatedAt = .now
             })
         }
+        .sheet(item: $quickAddTarget) { target in
+            QuickSearchSheet { pickedID in
+                quickAddTarget = nil
+                switch target {
+                case .dependsOn:
+                    if !draft.dependsOn.contains(pickedID) {
+                        draft.dependsOn.append(pickedID)
+                        draft.updatedAt = .now
+                    }
+                case .blocks:
+                    if !draft.blocks.contains(pickedID) {
+                        draft.blocks.append(pickedID)
+                        draft.updatedAt = .now
+                    }
+                case .seeAlso:
+                    let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(pickedID)"
+                    if !draft.seeAlso.contains(url) {
+                        draft.seeAlso.append(url)
+                        draft.updatedAt = .now
+                    }
+                }
+            }
+        }
+        .task(id: dependencyMetadataIDs) {
+            if !dependencyMetadataIDs.isEmpty {
+                await workspace.loadDependencyMetadata(ids: dependencyMetadataIDs, using: auth.client)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dependenciesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DependencyList(
+                title: "Depends on",
+                bugID: nil,
+                ids: draft.dependsOn,
+                direction: .dragBlocksTarget,
+                emptyPlaceholder: "No dependencies",
+                onOpenBug: { workspace.navigate(to: .bug($0)) },
+                onAdd: { quickAddTarget = .dependsOn },
+                onRemove: { id in
+                    draft.dependsOn.removeAll { $0 == id }
+                    draft.updatedAt = .now
+                }
+            )
+            DependencyList(
+                title: "Blocks",
+                bugID: nil,
+                ids: draft.blocks,
+                direction: .targetBlocksDrag,
+                emptyPlaceholder: "No blocked bugs",
+                onOpenBug: { workspace.navigate(to: .bug($0)) },
+                onAdd: { quickAddTarget = .blocks },
+                onRemove: { id in
+                    draft.blocks.removeAll { $0 == id }
+                    draft.updatedAt = .now
+                }
+            )
+            SeeAlsoList(
+                urls: draft.seeAlso,
+                onOpenBug: { workspace.navigate(to: .bug($0)) },
+                onAdd: { quickAddTarget = .seeAlso },
+                onRemove: { url in
+                    draft.seeAlso.removeAll { $0 == url }
+                    draft.updatedAt = .now
+                }
+            )
+        }
+    }
+
+    private var dependencyMetadataIDs: [Bug.ID] {
+        var ids = Set(draft.dependsOn + draft.blocks)
+        for url in draft.seeAlso {
+            if let id = bmoBugID(from: url) {
+                ids.insert(id)
+            }
+        }
+        return Array(ids).sorted()
+    }
+
+    private func bmoBugID(from url: String) -> Bug.ID? {
+        guard let comps = URLComponents(string: url),
+              let host = comps.host?.lowercased(),
+              host == "bugzilla.mozilla.org" else { return nil }
+        if let item = comps.queryItems?.first(where: { $0.name == "id" }),
+           let value = item.value {
+            return Int(value)
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -1723,17 +1823,6 @@ private struct DraftMetadata: View {
             TextField("[tag1][tag2]…", text: $draft.whiteboard)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: draft.whiteboard) { draft.updatedAt = .now }
-        }
-    }
-
-    @ViewBuilder
-    private var blocksRow: some View {
-        if !draft.blocks.isEmpty {
-            GridRow {
-                Text("Blocks").foregroundStyle(.secondary)
-                Text(draft.blocks.map { "#\($0)" }.joined(separator: ", "))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
     }
 
