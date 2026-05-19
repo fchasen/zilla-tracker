@@ -533,14 +533,17 @@ private struct BugHeader: View {
             .padding(.vertical, 2)
             .bugBlockDrop(target: bug.id)
             if isReporter {
-                TextField("Summary", text: $editedSummary)
+                TextField("Summary", text: $editedSummary, axis: .vertical)
                     .textFieldStyle(.plain)
                     .scaledFont(.title2)
                     .focused($summaryFocused)
-                    .lineLimit(1...3)
                     .accessibilityLabel("Bug summary")
                     .accessibilityHint("Press Return to save, Escape to cancel.")
-                    .onSubmit { commitSummary() }
+                    .onKeyPress(.return) {
+                        commitSummary()
+                        summaryFocused = false
+                        return .handled
+                    }
                     .onKeyPress(.escape) {
                         revertSummary()
                         summaryFocused = false
