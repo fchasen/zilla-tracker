@@ -9,8 +9,7 @@ struct RevisionDetailView: View {
     @Environment(\.openExternalURL) private var openExternalURL
 
     let revisionID: Int
-
-    @State private var actionSheet: RevisionActionSheetState?
+    private static let commentComposerAnchor = "revision-comment-composer"
 
     #if os(iOS)
     @State private var isPresentingCommentSheet: Bool = false
@@ -55,9 +54,7 @@ struct RevisionDetailView: View {
         .toolbar {
             if let revision, phab.isSignedIn {
                 ToolbarItem(placement: .primaryAction) {
-                    RevisionActionsMenu(revision: revision) { state in
-                        actionSheet = state
-                    }
+                    RevisionActionsMenu(revision: revision)
                     .disabled(workspace.isUpdatingRevision)
                 }
             }
@@ -108,13 +105,6 @@ struct RevisionDetailView: View {
             }
         }
         .onAppear { restoreCachedRevisionIfNeeded() }
-        .sheet(item: $actionSheet) { state in
-            RevisionActionSheet(state: state) { transactions in
-                if let error = await workspace.applyRevisionEdit(transactions: transactions, using: phab.client) {
-                    workspace.lastUpdateError = error.localizedDescription
-                }
-            }
-        }
         #if os(iOS)
         .sheet(isPresented: $isPresentingCommentSheet) {
             RevisionCommentSheet()
@@ -165,6 +155,7 @@ struct RevisionDetailView: View {
                     Divider()
                     #if os(macOS)
                     RevisionCommentComposer()
+                        .id(Self.commentComposerAnchor)
                     Divider()
                     #endif
                     RevisionDiffView()
@@ -178,6 +169,13 @@ struct RevisionDetailView: View {
                     proxy.scrollTo(scrollAnchor(for: path), anchor: .top)
                 }
                 workspace.pendingScrollToFile = nil
+            }
+            .onChange(of: workspace.pendingScrollToRevisionComment) { _, token in
+                guard token != nil else { return }
+                withAnimation(.snappy(duration: 0.25)) {
+                    proxy.scrollTo(Self.commentComposerAnchor, anchor: .center)
+                }
+                workspace.pendingScrollToRevisionComment = nil
             }
         }
     }

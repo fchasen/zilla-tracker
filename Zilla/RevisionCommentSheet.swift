@@ -14,6 +14,7 @@ struct RevisionCommentSheet: View {
             get: { workspace.loadedRevision.flatMap { workspace.revisionCommentDrafts[$0.id] } ?? "" },
             set: { newValue in
                 guard let id = workspace.loadedRevision?.id else { return }
+                workspace.revisionCommentErrors.removeValue(forKey: id)
                 if newValue.isEmpty {
                     workspace.revisionCommentDrafts.removeValue(forKey: id)
                 } else {

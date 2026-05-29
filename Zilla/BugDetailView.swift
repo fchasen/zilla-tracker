@@ -195,12 +195,11 @@ struct BugDetailView: View {
             Text(updateError ?? "")
         }
         .sheet(item: $dupePrompt) { _ in
-            DupeOfSheet { dupeOfID, comment in
+            DupeOfSheet { dupeOfID in
                 Task { await applyUpdate(BugUpdate(
                     status: "RESOLVED",
                     resolution: "DUPLICATE",
-                    dupeOf: dupeOfID,
-                    comment: comment.isEmpty ? nil : comment
+                    dupeOf: dupeOfID
                 )) }
             }
         }
@@ -3165,10 +3164,9 @@ struct DupePromptIdentifier: Identifiable {
 }
 
 struct DupeOfSheet: View {
-    let onConfirm: (Int, String) -> Void
+    let onConfirm: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var bugIdText: String = ""
-    @State private var comment: String = ""
 
     var body: some View {
         NavigationStack {
@@ -3176,11 +3174,6 @@ struct DupeOfSheet: View {
                 Section("Duplicate of") {
                     TextField("Bug ID", text: $bugIdText)
                         .textFieldStyle(.roundedBorder)
-                }
-                Section("Comment (optional)") {
-                    TextEditor(text: $comment)
-                        .scrollContentBackground(.hidden)
-                        .frame(minHeight: 80)
                 }
             }
             .navigationTitle("Mark as Duplicate")
@@ -3191,7 +3184,7 @@ struct DupeOfSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Confirm") {
                         guard let id = parsedID else { return }
-                        onConfirm(id, comment.trimmingCharacters(in: .whitespacesAndNewlines))
+                        onConfirm(id)
                         dismiss()
                     }
                     .disabled(parsedID == nil)
@@ -3200,7 +3193,7 @@ struct DupeOfSheet: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 440, minHeight: 320)
+        .frame(minWidth: 440, minHeight: 180)
         #endif
     }
 

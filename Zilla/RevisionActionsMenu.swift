@@ -5,7 +5,6 @@ struct RevisionActionsMenu: View {
     @Environment(Workspace.self) private var workspace
     @Environment(PhabricatorAuthStore.self) private var phab
     let revision: Revision
-    let onAction: (RevisionActionSheetState) -> Void
 
     var body: some View {
         Menu {
@@ -127,7 +126,57 @@ struct RevisionActionsMenu: View {
     }
 
     private func open(_ action: RevisionAction) {
-        onAction(RevisionActionSheetState(action: action))
+        Task {
+            switch action {
+            case .accept:
+                await acceptRevision()
+            case .reject:
+                await requestChanges()
+            default:
+                if let error = await workspace.applyRevisionEdit(transactions: [.action(action)], using: phab.client) {
+                    workspace.lastUpdateError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func acceptRevision() async {
+        var transactions: [RevisionEditTransaction] = [.action(.accept)]
+        let trimmed = (workspace.revisionCommentDrafts[revision.id] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            transactions.append(.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))))
+        }
+        workspace.revisionCommentErrors.removeValue(forKey: revision.id)
+        if let error = await workspace.applyRevisionEdit(transactions: transactions, using: phab.client) {
+            workspace.lastUpdateError = error.localizedDescription
+            return
+        }
+        if !trimmed.isEmpty {
+            workspace.revisionCommentDrafts.removeValue(forKey: revision.id)
+        }
+    }
+
+    private func requestChanges() async {
+        let trimmed = (workspace.revisionCommentDrafts[revision.id] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            workspace.revisionCommentErrors[revision.id] = "Enter a reason in the comment box before requesting changes."
+            workspace.pendingScrollToRevisionComment = UUID()
+            return
+        }
+        workspace.revisionCommentErrors.removeValue(forKey: revision.id)
+        if let error = await workspace.applyRevisionEdit(
+            transactions: [
+                .action(.reject),
+                .comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))
+            ],
+            using: phab.client
+        ) {
+            workspace.lastUpdateError = error.localizedDescription
+            return
+        }
+        workspace.revisionCommentDrafts.removeValue(forKey: revision.id)
     }
 
     private func publishDrafts() {

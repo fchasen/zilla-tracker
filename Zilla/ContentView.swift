@@ -529,6 +529,7 @@ final class Workspace {
 
     var bugCommentDrafts: [Bug.ID: String] = [:]
     var revisionCommentDrafts: [Int: String] = [:]
+    var revisionCommentErrors: [Int: String] = [:]
     /// Paths that should be expanded in the diff. ChangesetView reads from
     /// this set rather than local state so external triggers (e.g. clicking
     /// a file link in the activity log) can pop a collapsed diff open.
@@ -536,6 +537,7 @@ final class Workspace {
     /// When set, RevisionDetailView's ScrollViewReader will scroll the matching
     /// changeset row to the top, then clear this back to nil.
     var pendingScrollToFile: String?
+    var pendingScrollToRevisionComment: UUID?
 
     /// When true, the activity stream hides everything that isn't a comment
     /// (status changes, reviewer additions, rebases, etc.). Persisted across

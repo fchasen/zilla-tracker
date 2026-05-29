@@ -12,6 +12,7 @@ struct RevisionCommentComposer: View {
             get: { workspace.loadedRevision.flatMap { workspace.revisionCommentDrafts[$0.id] } ?? "" },
             set: { newValue in
                 guard let id = workspace.loadedRevision?.id else { return }
+                workspace.revisionCommentErrors.removeValue(forKey: id)
                 if newValue.isEmpty {
                     workspace.revisionCommentDrafts.removeValue(forKey: id)
                 } else {
@@ -32,6 +33,12 @@ struct RevisionCommentComposer: View {
             )
             .frame(minHeight: 100)
 
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             HStack {
                 Spacer()
                 Button {
@@ -50,9 +57,18 @@ struct RevisionCommentComposer: View {
         }
     }
 
+    private var error: String? {
+        workspace.loadedRevision.flatMap { workspace.revisionCommentErrors[$0.id] }
+    }
+
     private func post() async {
+        guard let id = workspace.loadedRevision?.id else { return }
         let trimmed = draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let id = workspace.loadedRevision?.id else { return }
+        guard !trimmed.isEmpty else {
+            workspace.revisionCommentErrors[id] = "Enter a comment before posting."
+            return
+        }
+        workspace.revisionCommentErrors.removeValue(forKey: id)
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
