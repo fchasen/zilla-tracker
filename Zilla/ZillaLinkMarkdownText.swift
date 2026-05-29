@@ -13,6 +13,7 @@ struct ZillaMarkdownText: View {
 
     var body: some View {
         StructuredText(markdown, parser: ZillaLinkMarkdownParser())
+            .textual.textSelection(.enabled)
     }
 }
 

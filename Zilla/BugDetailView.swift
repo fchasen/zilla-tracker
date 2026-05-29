@@ -48,6 +48,10 @@ enum BugStatuses {
               !raw.isEmpty else { return true }
         return raw.lowercased().contains("nobody")
     }
+
+    static func takeUpdate(assignedTo assignee: String) -> BugUpdate {
+        BugUpdate(status: "ASSIGNED", assignedTo: assignee)
+    }
 }
 
 struct BugDetailView: View {
@@ -275,7 +279,7 @@ struct BugDetailView: View {
             if BugStatuses.isUnassigned(bug.assignedTo), let me = auth.currentUser?.name {
                 Divider()
                 Button {
-                    Task { await applyUpdate(BugUpdate(assignedTo: me)) }
+                    Task { await applyUpdate(BugStatuses.takeUpdate(assignedTo: me)) }
                 } label: {
                     Label("Take", systemImage: "person.crop.circle.badge.checkmark")
                 }
@@ -574,6 +578,7 @@ private struct BugHeader: View {
                     .textSelection(.enabled)
             }
         }
+        .textSelection(.enabled)
     }
 
     private var isReporter: Bool {
@@ -3167,38 +3172,65 @@ struct DupeOfSheet: View {
     let onConfirm: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var bugIdText: String = ""
+    @FocusState private var bugIdFocused: Bool
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Duplicate of") {
+            VStack(alignment: .leading, spacing: 18) {
+                Label("Resolve as duplicate", systemImage: "arrow.triangle.merge")
+                    .scaledFont(.title3, weight: .semibold)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Duplicate of")
+                        .scaledFont(.subheadline, weight: .medium)
+                        .foregroundStyle(.secondary)
                     TextField("Bug ID", text: $bugIdText)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .scaledFont(.title3, design: .monospaced)
+                        .padding(10)
+                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(bugIdFocused ? 0.35 : 0.2), lineWidth: 1)
+                        )
+                        .focused($bugIdFocused)
+                        .onSubmit(confirm)
+                        #if os(iOS)
+                        .keyboardType(.numberPad)
+                        #endif
                 }
+
+                Spacer(minLength: 0)
             }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .navigationTitle("Mark as Duplicate")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Confirm") {
-                        guard let id = parsedID else { return }
-                        onConfirm(id)
-                        dismiss()
-                    }
+                    Button("Mark Duplicate", action: confirm)
                     .disabled(parsedID == nil)
                     .keyboardShortcut(.defaultAction)
                 }
             }
+            .onAppear { bugIdFocused = true }
         }
         #if os(macOS)
-        .frame(minWidth: 440, minHeight: 180)
+        .frame(minWidth: 420, minHeight: 220)
         #endif
     }
 
     private var parsedID: Int? {
-        Int(bugIdText.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let match = bugIdText.firstMatch(of: #/\d+/#) else { return nil }
+        return Int(match.0)
+    }
+
+    private func confirm() {
+        guard let id = parsedID else { return }
+        onConfirm(id)
+        dismiss()
     }
 }
 

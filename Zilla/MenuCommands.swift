@@ -157,7 +157,7 @@ struct ZillaCommands: Commands {
 
             Button("Take") {
                 guard let me = auth.currentUser?.name else { return }
-                applyUpdate(BugUpdate(assignedTo: me))
+                applyUpdate(BugStatuses.takeUpdate(assignedTo: me))
             }
             .disabled(workspace.loadedBug == nil
                 || !BugStatuses.isUnassigned(workspace.loadedBug?.assignedTo)

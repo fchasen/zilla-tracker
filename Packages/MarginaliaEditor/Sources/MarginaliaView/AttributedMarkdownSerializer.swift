@@ -158,7 +158,11 @@ public final class AttributedMarkdownSerializer {
             let bold = isBold(traits) && !paragraphImpliedBold(for: spec)
             let italic = isItalic(traits)
             if bold && italic {
-                prefix = "***"; suffix = "***"
+                if dialect == .remarkup {
+                    prefix = "//**"; suffix = "**//"
+                } else {
+                    prefix = "***"; suffix = "***"
+                }
             } else if bold {
                 prefix = "**"; suffix = "**"
             } else if italic {

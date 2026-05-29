@@ -61,6 +61,13 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
+    func testBoldItalicConversion() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("This is //**bold italic**// text"),
+            "This is ***bold italic*** text"
+        )
+    }
+
     func testHeaderConversion() {
         XCTAssertEqual(
             Remarkup.toCommonMark("= Top ="),

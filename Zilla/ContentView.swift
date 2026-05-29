@@ -2253,7 +2253,7 @@ private struct DraftListRow: View {
                     Text(draft.displaySubtitle)
                     if let firstBlocks = draft.blocks.first {
                         Text(verbatim: "·")
-                        Text("blocks #\(firstBlocks)")
+                        Text(verbatim: "blocks #\(firstBlocks)")
                     }
                     Text(verbatim: "·")
                     Text(draft.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .abbreviated))
@@ -2791,12 +2791,13 @@ struct BugListView: View {
 
     private func takeBug(_ bug: Bug, as username: String) {
         let client = auth.client
+        let update = BugStatuses.takeUpdate(assignedTo: username)
         Task {
             do {
-                _ = try await client.updateBug(id: bug.id, BugUpdate(assignedTo: username))
+                _ = try await client.updateBug(id: bug.id, update)
                 workspace.bugListRefreshToken = UUID()
                 if workspace.loadedBug?.id == bug.id {
-                    _ = await workspace.applyBugUpdate(BugUpdate(assignedTo: username), using: client)
+                    _ = await workspace.applyBugUpdate(update, using: client)
                 }
             } catch {
                 workspace.lastUpdateError = error.localizedDescription

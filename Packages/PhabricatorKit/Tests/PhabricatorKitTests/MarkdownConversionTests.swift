@@ -30,6 +30,20 @@ final class MarkdownConversionTests: XCTestCase {
         )
     }
 
+    func testBoldItalicConversion() {
+        XCTAssertEqual(
+            Markdown.toRemarkup("This is ***bold italic*** text"),
+            "This is //**bold italic**// text"
+        )
+    }
+
+    func testThematicBreakPassesThrough() {
+        XCTAssertEqual(
+            Markdown.toRemarkup("one\n\n***\n\ntwo"),
+            "one\n\n***\n\ntwo"
+        )
+    }
+
     func testUnderscoreBoldBecomesAsterisks() {
         XCTAssertEqual(
             Markdown.toRemarkup("__bold__ text"),

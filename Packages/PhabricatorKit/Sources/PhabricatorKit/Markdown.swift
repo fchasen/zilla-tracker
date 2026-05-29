@@ -131,6 +131,10 @@ public enum Markdown {
             "\(String(match.output.1))**\(String(match.output.2))**"
         }
 
+        working = working.replacing(#/(^|[^*])\*\*\*(?!\s|\*)([^*\n]+?)\*\*\*(?!\*)/#) { match in
+            "\(String(match.output.1))//**\(String(match.output.2))**//"
+        }
+
         working = working.replacing(#/(^|[^*])\*(?!\s|\*)([^*\n]+?)\*(?!\*)/#) { match in
             "\(String(match.output.1))//\(String(match.output.2))//"
         }

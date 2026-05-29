@@ -83,4 +83,9 @@ import MarginaliaSyntax
         let out = try roundTrip("This is //italic// word\n", dialect: .remarkup)
         #expect(out.contains("//italic//"))
     }
+
+    @Test func remarkupBoldItalic() throws {
+        let out = try roundTrip("This is //**bold italic**// word\n", dialect: .remarkup)
+        #expect(out.contains("//**bold italic**//"))
+    }
 }
