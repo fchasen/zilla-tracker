@@ -6,7 +6,6 @@
 import SwiftUI
 import ImageIO
 import BugzillaKit
-import Textual
 
 #if os(macOS)
 import AppKit
@@ -2393,7 +2392,7 @@ private struct DescriptionBlock: View {
                             .disabled(workspace.isUpdatingBug || !canSave)
                         }
                     } else if !stripped.isEmpty {
-                        StructuredText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
+                        ZillaMarkdownText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
                             .scaledFont(.body)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2582,7 +2581,7 @@ private struct CommentBlock: View {
             }
             .padding(.horizontal, narrow ? 12 : 0)
         } else if !stripped.isEmpty {
-            StructuredText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
+            ZillaMarkdownText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
                 .scaledFont(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
