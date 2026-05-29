@@ -15,6 +15,9 @@ final class BugSearchTests: XCTestCase {
             let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let includeFields = items.first { $0.name == "include_fields" }?.value ?? ""
             XCTAssertTrue(includeFields.contains("cf_accessibility_severity"))
+            XCTAssertTrue(includeFields.contains("attachments.content_type"))
+            XCTAssertFalse(includeFields.split(separator: ",").contains("attachments"))
+            XCTAssertFalse(includeFields.contains("attachments.data"))
             let body = #"""
             {"bugs":[
               {"id":1234567,"summary":"Hello","status":"NEW","resolution":"",

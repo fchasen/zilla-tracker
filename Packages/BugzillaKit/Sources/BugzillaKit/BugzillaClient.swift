@@ -215,7 +215,7 @@ public extension BugzillaClient {
             path: "bug/\(id)",
             query: [URLQueryItem(
                 name: "include_fields",
-                value: "_default,attachments,see_also,target_milestone,cf_fx_points,cf_accessibility_severity,cf_rank,assigned_to_detail,creator_detail"
+                value: Self.bugDetailIncludeFields.joined(separator: ",")
             )]
         )
         let response: Response = try await execute(endpoint)
@@ -224,6 +224,32 @@ public extension BugzillaClient {
         }
         return bug
     }
+
+    private static let bugDetailIncludeFields = [
+        "_default",
+        "see_also",
+        "target_milestone",
+        "cf_fx_points",
+        "cf_accessibility_severity",
+        "cf_rank",
+        "assigned_to_detail",
+        "creator_detail",
+        "attachments.id",
+        "attachments.bug_id",
+        "attachments.file_name",
+        "attachments.summary",
+        "attachments.description",
+        "attachments.content_type",
+        "attachments.creator",
+        "attachments.attacher",
+        "attachments.creation_time",
+        "attachments.last_change_time",
+        "attachments.size",
+        "attachments.is_obsolete",
+        "attachments.is_patch",
+        "attachments.is_private",
+        "attachments.flags"
+    ]
 
     func getBugs(ids: [Bug.ID]) async throws -> [Bug] {
         struct Response: Decodable { let bugs: [Bug] }

@@ -5,6 +5,7 @@
 
 import SwiftUI
 import ImageIO
+import AVKit
 import BugzillaKit
 
 #if os(macOS)
@@ -464,6 +465,22 @@ private func isPrimaryPatchAttachment(_ attachment: BugzillaKit.Attachment) -> B
 
 private func isImageAttachment(_ attachment: BugzillaKit.Attachment) -> Bool {
     attachment.contentType.hasPrefix("image/")
+}
+
+private func isMP4Attachment(_ attachment: BugzillaKit.Attachment) -> Bool {
+    let normalizedContentType = attachment.contentType
+        .split(separator: ";", maxSplits: 1)
+        .first
+        .map(String.init)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased() ?? ""
+    if normalizedContentType == "video/mp4" { return true }
+
+    let fileName = attachment.fileName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if fileName.hasSuffix(".mp4") { return true }
+
+    let summary = attachment.summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return summary.hasSuffix(".mp4")
 }
 
 private func attachmentURL(_ attachment: BugzillaKit.Attachment) -> URL? {
@@ -2366,6 +2383,8 @@ private struct DescriptionBlock: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if let attachment, isImageAttachment(attachment) {
                         AttachmentImagePreview(attachment: attachment)
+                    } else if let attachment, isMP4Attachment(attachment) {
+                        AttachmentVideoPreview(attachment: attachment)
                     }
                     if isEditing {
                         MarkdownEditor(
@@ -2550,6 +2569,8 @@ private struct CommentBlock: View {
     private func bodyContent(stripped: String, narrow: Bool) -> some View {
         if let attachment, isImageAttachment(attachment) {
             AttachmentImagePreview(attachment: attachment, cornerRadius: narrow ? 0 : 6)
+        } else if let attachment, isMP4Attachment(attachment) {
+            AttachmentVideoPreview(attachment: attachment, cornerRadius: narrow ? 0 : 6)
         } else if let attachment {
             AttachmentInlineLink(attachment: attachment)
                 .padding(.horizontal, narrow ? 12 : 0)
@@ -2783,6 +2804,186 @@ private struct AttachmentImagePreview: View {
 
     private struct DecodedAttachmentPreview: @unchecked Sendable {
         let image: CGImage
+    }
+}
+
+private struct AttachmentVideoPreview: View {
+    let attachment: BugzillaKit.Attachment
+    var cornerRadius: CGFloat = 6
+
+    private static let maxHeight: CGFloat = 360
+
+    @State private var player: AVPlayer?
+    @State private var naturalSize: CGSize?
+    @State private var isLoading = false
+    @State private var didFail = false
+
+    var body: some View {
+        if let url = attachmentURL(attachment) {
+            VStack(alignment: .leading, spacing: 6) {
+                if let player {
+                    videoSurface {
+                        VideoPlayer(player: player)
+                            .background(Color.secondary.opacity(0.12))
+                    }
+                } else {
+                    Button {
+                        Task { await loadAndPlay(from: url) }
+                    } label: {
+                        videoSurface {
+                            ZStack {
+                                Color.secondary.opacity(0.12)
+                                if isLoading {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: didFail ? "exclamationmark.triangle" : "play.circle.fill")
+                                        .font(.system(size: 42, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoading)
+                    .help(didFail ? "Retry loading video" : "Play attachment")
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "film")
+                        .foregroundStyle(.secondary)
+                    Text(label)
+                        .scaledFont(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Link(destination: url) {
+                        Label("Open in Bugzilla", systemImage: "arrow.up.right.square")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .linkPointerStyle()
+                    .help("Open attachment in Bugzilla")
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: maxDisplayWidth)
+            }
+            .onDisappear {
+                player?.pause()
+            }
+        } else {
+            AttachmentInlineLink(attachment: attachment)
+        }
+    }
+
+    private var aspectRatio: CGFloat {
+        guard let naturalSize, naturalSize.width > 0, naturalSize.height > 0 else {
+            return 16 / 9
+        }
+        return naturalSize.width / naturalSize.height
+    }
+
+    private var maxDisplayWidth: CGFloat {
+        let widthForMaxHeight = Self.maxHeight * aspectRatio
+        guard let naturalSize, naturalSize.width > 0 else {
+            return widthForMaxHeight
+        }
+        return min(naturalSize.width, widthForMaxHeight)
+    }
+
+    private func videoSurface<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            content()
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                .frame(maxWidth: maxDisplayWidth, maxHeight: Self.maxHeight)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                )
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func loadAndPlay(from url: URL) async {
+        guard !isLoading else { return }
+        isLoading = true
+        didFail = false
+        do {
+            let playableURL = try await playableVideoURL(from: url)
+            guard !Task.isCancelled else { return }
+            let asset = AVURLAsset(url: playableURL)
+            naturalSize = await videoSize(for: asset)
+            let item = AVPlayerItem(asset: asset)
+            let player = AVPlayer(playerItem: item)
+            self.player = player
+            isLoading = false
+            player.play()
+        } catch {
+            if !Task.isCancelled {
+                isLoading = false
+                didFail = true
+            }
+        }
+    }
+
+    private func playableVideoURL(from url: URL) async throws -> URL {
+        let fileURL = try Self.cachedVideoURL(for: attachment)
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            return fileURL
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+        let (downloadedURL, response) = try await URLSession.shared.download(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        if response.statusCode == 206 {
+            try? FileManager.default.removeItem(at: downloadedURL)
+            return url
+        }
+        guard (200..<300).contains(response.statusCode), response.mimeType?.hasPrefix("video/") == true else {
+            try? FileManager.default.removeItem(at: downloadedURL)
+            throw URLError(.cannotDecodeContentData)
+        }
+        return try Self.moveDownloadedVideo(from: downloadedURL, to: fileURL)
+    }
+
+    private func videoSize(for asset: AVURLAsset) async -> CGSize? {
+        do {
+            let tracks = try await asset.loadTracks(withMediaType: .video)
+            guard let track = tracks.first else { return nil }
+            let size = try await track.load(.naturalSize)
+            let transform = try await track.load(.preferredTransform)
+            let transformed = size.applying(transform)
+            return CGSize(width: abs(transformed.width), height: abs(transformed.height))
+        } catch {
+            return nil
+        }
+    }
+
+    private static func cachedVideoURL(for attachment: BugzillaKit.Attachment) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZillaAttachmentVideos", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let pathExtension = URL(fileURLWithPath: attachment.fileName).pathExtension
+        let suffix = pathExtension.isEmpty ? "mp4" : pathExtension
+        return directory.appendingPathComponent("attachment-\(attachment.id).\(suffix)")
+    }
+
+    private static func moveDownloadedVideo(from downloadedURL: URL, to fileURL: URL) throws -> URL {
+        let manager = FileManager.default
+        if manager.fileExists(atPath: fileURL.path) {
+            try manager.removeItem(at: fileURL)
+        }
+        try manager.moveItem(at: downloadedURL, to: fileURL)
+        return fileURL
+    }
+
+    private var label: String {
+        let summary = attachment.summary.trimmingCharacters(in: .whitespaces)
+        if !summary.isEmpty { return summary }
+        let name = attachment.fileName.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "Attachment #\(attachment.id)" : name
     }
 }
 
