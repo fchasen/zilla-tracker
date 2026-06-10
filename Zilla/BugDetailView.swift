@@ -200,7 +200,7 @@ struct BugDetailView: View {
             Text(updateError ?? "")
         }
         .sheet(item: $dupePrompt) { _ in
-            DupeOfSheet { dupeOfID in
+            DupeOfSheet(currentBugID: bug?.id) { dupeOfID in
                 Task { await applyUpdate(BugUpdate(
                     status: "RESOLVED",
                     resolution: "DUPLICATE",
@@ -3370,68 +3370,15 @@ struct DupePromptIdentifier: Identifiable {
 }
 
 struct DupeOfSheet: View {
+    var currentBugID: Bug.ID? = nil
     let onConfirm: (Int) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var bugIdText: String = ""
-    @FocusState private var bugIdFocused: Bool
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                Label("Resolve as duplicate", systemImage: "arrow.triangle.merge")
-                    .scaledFont(.title3, weight: .semibold)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Duplicate of")
-                        .scaledFont(.subheadline, weight: .medium)
-                        .foregroundStyle(.secondary)
-                    TextField("Bug ID", text: $bugIdText)
-                        .textFieldStyle(.plain)
-                        .scaledFont(.title3, design: .monospaced)
-                        .padding(10)
-                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(bugIdFocused ? 0.35 : 0.2), lineWidth: 1)
-                        )
-                        .focused($bugIdFocused)
-                        .onSubmit(confirm)
-                        #if os(iOS)
-                        .keyboardType(.numberPad)
-                        #endif
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .navigationTitle("Mark as Duplicate")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Mark Duplicate", action: confirm)
-                    .disabled(parsedID == nil)
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .onAppear { bugIdFocused = true }
-        }
-        #if os(macOS)
-        .frame(minWidth: 420, minHeight: 220)
-        #endif
-    }
-
-    private var parsedID: Int? {
-        guard let match = bugIdText.firstMatch(of: #/\d+/#) else { return nil }
-        return Int(match.0)
-    }
-
-    private func confirm() {
-        guard let id = parsedID else { return }
-        onConfirm(id)
-        dismiss()
+        QuickSearchSheet(
+            title: "Mark as Duplicate",
+            excludingBugID: currentBugID,
+            onPickBug: onConfirm
+        )
     }
 }
 

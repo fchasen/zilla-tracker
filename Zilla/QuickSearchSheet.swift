@@ -7,8 +7,9 @@ import SwiftUI
 import BugzillaKit
 
 struct QuickSearchSheet: View {
+    var title: String = "Quick Search"
+    var excludingBugID: Bug.ID? = nil
     let onPickBug: (Bug.ID) -> Void
-    var onPickUser: ((User) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthStore.self) private var auth
@@ -16,8 +17,7 @@ struct QuickSearchSheet: View {
     @State private var query: String = ""
     @State private var debouncedQuery: String = ""
     @State private var bugResults: [Bug] = []
-    @State private var userResults: [User] = []
-    @State private var pinnedUser: User?
+    @State private var resolvedUser: User?
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var selectedRowID: String?
@@ -28,12 +28,10 @@ struct QuickSearchSheet: View {
         case empty
         case bug(Bug.ID)
         case freetext(String)
-        case users(String)
-        case userBugs(User)
+        case userScoped(String)
     }
 
     private var mode: Mode {
-        if let user = pinnedUser { return .userBugs(user) }
         let trimmed = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .empty }
         if trimmed.hasPrefix("#") {
@@ -43,9 +41,14 @@ struct QuickSearchSheet: View {
         }
         if trimmed.hasPrefix("@") {
             let rest = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
-            return rest.isEmpty ? .empty : .users(rest)
+            return rest.isEmpty ? .empty : .userScoped(rest)
         }
         return .freetext(trimmed)
+    }
+
+    private var isUserScoped: Bool {
+        if case .userScoped = mode { return true }
+        return false
     }
 
     var body: some View {
@@ -61,7 +64,7 @@ struct QuickSearchSheet: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .navigationTitle("Quick Search")
+            .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -75,7 +78,6 @@ struct QuickSearchSheet: View {
         .task(id: searchKey) { await runSearch() }
         .onAppear { searchFocused = true }
         .onChange(of: bugResults) { _, _ in syncSelection() }
-        .onChange(of: userResults) { _, _ in syncSelection() }
     }
 
     private func debounce() async {
@@ -92,10 +94,6 @@ struct QuickSearchSheet: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            if let user = pinnedUser {
-                userChip(user)
-            }
-
             TextField(placeholderText, text: $query)
                 .textFieldStyle(.plain)
                 .scaledFont(.title3)
@@ -105,13 +103,6 @@ struct QuickSearchSheet: View {
                 .onKeyPress(.return) { commitSelection() ? .handled : .ignored }
                 .onKeyPress(.upArrow) { moveSelection(-1) ? .handled : .ignored }
                 .onKeyPress(.downArrow) { moveSelection(1) ? .handled : .ignored }
-                .onKeyPress(.delete) {
-                    if pinnedUser != nil && query.isEmpty {
-                        pinnedUser = nil
-                        return .handled
-                    }
-                    return .ignored
-                }
                 .onKeyPress(.escape) {
                     dismiss()
                     return .handled
@@ -122,33 +113,8 @@ struct QuickSearchSheet: View {
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func userChip(_ user: User) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "person.fill")
-                .imageScale(.small)
-            Text(user.displayHandle)
-                .lineLimit(1)
-            Button {
-                pinnedUser = nil
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .imageScale(.small)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Remove user filter")
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(.tint.opacity(0.18), in: Capsule())
-        .foregroundStyle(.tint)
-    }
-
     private var placeholderText: String {
-        if pinnedUser != nil {
-            return "Filter this user's bugs"
-        }
-        return "#bug · @user · text"
+        "#bug · @user · text"
     }
 
     @ViewBuilder
@@ -156,35 +122,60 @@ struct QuickSearchSheet: View {
         switch mode {
         case .empty:
             hint
-        case .users:
-            if isLoading && userResults.isEmpty {
-                loadingView
-            } else if let loadError {
-                errorView(loadError)
-            } else if userResults.isEmpty {
-                ContentUnavailableView(
-                    "No users",
-                    systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("Nothing matched that name.")
-                )
-            } else {
-                userList
-            }
-        case .bug, .freetext, .userBugs:
-            if isLoading && bugResults.isEmpty {
-                loadingView
-            } else if let loadError {
-                errorView(loadError)
-            } else if bugResults.isEmpty {
-                ContentUnavailableView(
-                    "No bugs",
-                    systemImage: "tray",
-                    description: Text("Nothing matches.")
-                )
-            } else {
+        case .bug, .freetext, .userScoped:
+            bugContent
+        }
+    }
+
+    @ViewBuilder
+    private var bugContent: some View {
+        if isLoading && bugResults.isEmpty {
+            loadingView
+        } else if let loadError {
+            errorView(loadError)
+        } else if isUserScoped && resolvedUser == nil {
+            ContentUnavailableView(
+                "No user",
+                systemImage: "person.crop.circle.badge.questionmark",
+                description: Text("Nothing matched that name.")
+            )
+        } else if bugResults.isEmpty {
+            ContentUnavailableView(
+                "No bugs",
+                systemImage: "tray",
+                description: Text(emptyBugsMessage)
+            )
+        } else {
+            VStack(spacing: 0) {
+                if let resolvedUser {
+                    resolvedUserHeader(resolvedUser)
+                    Divider()
+                }
                 bugList
             }
         }
+    }
+
+    private func resolvedUserHeader(_ user: User) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "person.fill")
+                .imageScale(.small)
+                .foregroundStyle(.tint)
+            Text("Bugs involving \(user.displayHandle)")
+                .scaledFont(.caption, weight: .medium)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private var emptyBugsMessage: String {
+        if let resolvedUser {
+            return "No open bugs involving \(resolvedUser.displayHandle)."
+        }
+        return "Nothing matches."
     }
 
     private var hint: some View {
@@ -197,7 +188,7 @@ struct QuickSearchSheet: View {
             hintRow(
                 symbol: "at",
                 title: "@user",
-                description: "Find a Bugzilla user, then drill into their bugs."
+                description: "Scope results to a user's bugs."
             )
             hintRow(
                 symbol: "text.magnifyingglass",
@@ -261,29 +252,6 @@ struct QuickSearchSheet: View {
         }
     }
 
-    private var userList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(userResults, id: \.id) { user in
-                        let id = "user:\(user.id)"
-                        QuickSearchUserRow(user: user)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(rowHighlight(for: id))
-                            .contentShape(Rectangle())
-                            .id(id)
-                            .onTapGesture { pickUser(user) }
-                    }
-                }
-            }
-            .onChange(of: selectedRowID) { _, new in
-                if let new { withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) } }
-            }
-        }
-    }
-
     @ViewBuilder
     private func rowHighlight(for id: String) -> some View {
         if selectedRowID == id {
@@ -297,16 +265,14 @@ struct QuickSearchSheet: View {
         let mode: String
         let bugID: Int?
         let text: String
-        let userName: String?
     }
 
     private var searchKey: SearchKey {
         switch mode {
-        case .empty: return SearchKey(mode: "empty", bugID: nil, text: "", userName: nil)
-        case .bug(let id): return SearchKey(mode: "bug", bugID: id, text: "", userName: nil)
-        case .freetext(let text): return SearchKey(mode: "freetext", bugID: nil, text: text, userName: nil)
-        case .users(let text): return SearchKey(mode: "users", bugID: nil, text: text, userName: nil)
-        case .userBugs(let user): return SearchKey(mode: "userBugs", bugID: nil, text: debouncedQuery, userName: user.name)
+        case .empty: return SearchKey(mode: "empty", bugID: nil, text: "")
+        case .bug(let id): return SearchKey(mode: "bug", bugID: id, text: "")
+        case .freetext(let text): return SearchKey(mode: "freetext", bugID: nil, text: text)
+        case .userScoped(let text): return SearchKey(mode: "userScoped", bugID: nil, text: text)
         }
     }
 
@@ -314,17 +280,17 @@ struct QuickSearchSheet: View {
         loadError = nil
         switch mode {
         case .empty:
+            resolvedUser = nil
             bugResults = []
-            userResults = []
             isLoading = false
         case .bug(let id):
+            resolvedUser = nil
             await loadBug(id: id)
         case .freetext(let text):
+            resolvedUser = nil
             await loadFreetext(text)
-        case .users(let prefix):
-            await loadUsers(matching: prefix)
-        case .userBugs:
-            await loadUserBugs()
+        case .userScoped(let term):
+            await loadUserScoped(term)
         }
     }
 
@@ -333,15 +299,12 @@ struct QuickSearchSheet: View {
         defer { isLoading = false }
         do {
             let bug = try await auth.client.getBug(id: id)
-            bugResults = [bug]
-            userResults = []
+            bugResults = applyingExclusion([bug])
         } catch BugzillaError.notFound {
             bugResults = []
-            userResults = []
         } catch is CancellationError {
         } catch {
             bugResults = []
-            userResults = []
             loadError = error.localizedDescription
         }
     }
@@ -355,74 +318,48 @@ struct QuickSearchSheet: View {
         query.includeFields = Self.bugIncludeFields
         do {
             let result = try await auth.client.searchBugs(query)
-            bugResults = result.bugs
-            userResults = []
+            bugResults = applyingExclusion(result.bugs)
         } catch is CancellationError {
         } catch {
-            bugResults = []
-            userResults = []
-            loadError = error.localizedDescription
-        }
-    }
-
-    private func loadUsers(matching prefix: String) async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            let users = try await auth.client.searchUsers(match: prefix, limit: 25)
-            userResults = users
-            bugResults = []
-        } catch is CancellationError {
-        } catch {
-            userResults = []
             bugResults = []
             loadError = error.localizedDescription
         }
     }
 
-    private func loadUserBugs() async {
-        guard let user = pinnedUser else { return }
+    private func loadUserScoped(_ term: String) async {
         isLoading = true
         defer { isLoading = false }
-        var query = BugQuery(
-            resolution: ["---"],
-            userInvolved: user.name
-        )
-        query.limit = 30
-        query.order = "changeddate DESC"
-        query.includeFields = Self.bugIncludeFields
-        let trimmed = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            query.quicksearch = trimmed
-        }
         do {
+            let users = try await auth.client.searchUsers(match: term, limit: 5)
+            guard let user = users.first else {
+                resolvedUser = nil
+                bugResults = []
+                return
+            }
+            resolvedUser = user
+            var query = BugQuery(
+                resolution: ["---"],
+                userInvolved: user.name
+            )
+            query.limit = 30
+            query.order = "changeddate DESC"
+            query.includeFields = Self.bugIncludeFields
             let result = try await auth.client.searchBugs(query)
-            bugResults = result.bugs
-            userResults = []
+            bugResults = applyingExclusion(result.bugs)
         } catch is CancellationError {
         } catch {
             bugResults = []
-            userResults = []
             loadError = error.localizedDescription
         }
     }
 
-    private func pickUser(_ user: User) {
-        if let onPickUser {
-            onPickUser(user)
-            dismiss()
-            return
-        }
-        pinnedUser = user
-        query = ""
-        debouncedQuery = ""
-        userResults = []
-        bugResults = []
-        searchFocused = true
+    private func applyingExclusion(_ bugs: [Bug]) -> [Bug] {
+        guard let excludingBugID else { return bugs }
+        return bugs.filter { $0.id != excludingBugID }
     }
 
     private var orderedRowIDs: [String] {
-        bugResults.map { "bug:\($0.id)" } + userResults.map { "user:\($0.id)" }
+        bugResults.map { "bug:\($0.id)" }
     }
 
     @discardableResult
@@ -447,11 +384,6 @@ struct QuickSearchSheet: View {
         if id.hasPrefix("bug:"), let bugID = Int(id.dropFirst(4)) {
             onPickBug(bugID)
             dismiss()
-            return true
-        }
-        if id.hasPrefix("user:"), let userID = Int(id.dropFirst(5)),
-           let user = userResults.first(where: { $0.id == userID }) {
-            pickUser(user)
             return true
         }
         return false
@@ -516,36 +448,6 @@ private struct QuickSearchBugRow: View {
         case "ASSIGNED", "IN_PROGRESS": return .blue
         default: return .secondary
         }
-    }
-}
-
-private struct QuickSearchUserRow: View {
-    let user: User
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.crop.circle")
-                .foregroundStyle(.secondary)
-                .imageScale(.large)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(user.realName ?? user.name)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    if let nick = user.nick, !nick.isEmpty {
-                        Text(":\(nick)")
-                    }
-                    Text(user.name)
-                        .truncationMode(.middle)
-                }
-                .scaledFont(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 2)
     }
 }
 

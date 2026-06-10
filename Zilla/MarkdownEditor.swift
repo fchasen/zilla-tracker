@@ -56,10 +56,7 @@ struct MarkdownEditor: View {
         }
         .disabled(isDisabled)
         .sheet(isPresented: $showingLinkPicker) {
-            QuickSearchSheet(
-                onPickBug: { bugID in insertBugLink(bugID) },
-                onPickUser: { user in insertUserMention(user) }
-            )
+            QuickSearchSheet { bugID in insertBugLink(bugID) }
         }
         .sheet(isPresented: $showingSearchfoxPicker) {
             SearchfoxPickerSheet { hit, symbol in
@@ -229,18 +226,6 @@ struct MarkdownEditor: View {
         restorePendingSelection()
         controller?.insertLink(label: label, url: url)
         pushMarkdownToBinding()
-    }
-
-    private func insertUserMention(_ user: User) {
-        restorePendingSelection()
-        controller?.insert(text: ":\(mentionHandle(for: user))")
-        pushMarkdownToBinding()
-    }
-
-    private func mentionHandle(for user: User) -> String {
-        if let nick = user.nick, !nick.isEmpty { return nick }
-        let local = user.name.split(separator: "@").first.map(String.init) ?? user.name
-        return local
     }
 
     private func focusHostTextView() {
