@@ -322,6 +322,7 @@ final class Workspace {
             if oldValue != sidebarSelection {
                 activeRevisionID = nil
                 detailPath = []
+                searchText = ""
             }
         }
     }
@@ -510,6 +511,7 @@ final class Workspace {
     }()
 
     var cache: ResourceCache?
+    var bugIndex: BugIndexStore?
 
     // Active revision (loaded once per selection; shared with the inspector).
     private(set) var loadedRevision: Revision?
@@ -613,6 +615,7 @@ final class Workspace {
                 loadedBug = try await bugTask
                 loadedComments = try await commentsTask
             }
+            if let loadedBug { bugIndex?.record(loadedBug, source: .seen) }
         } catch is CancellationError {
             return
         } catch {
@@ -665,12 +668,16 @@ final class Workspace {
                 if let cache {
                     if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
                         loadedBug = refreshed
+                        bugIndex?.record(refreshed, source: .seen)
                     }
                     if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
                         loadedComments = refreshed
                     }
                 } else {
-                    if let refreshed = try? await client.getBug(id: id) { loadedBug = refreshed }
+                    if let refreshed = try? await client.getBug(id: id) {
+                        loadedBug = refreshed
+                        bugIndex?.record(refreshed, source: .seen)
+                    }
                     if let refreshed = try? await client.comments(bugID: id) { loadedComments = refreshed }
                 }
             }
@@ -2269,6 +2276,7 @@ private struct DraftListRow: View {
 private struct FollowedComponentEntry: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
+    @Environment(BugIndexStore.self) private var bugIndex
     let followed: FollowedComponent
     let onAddMetaBug: () -> Void
 
@@ -2352,6 +2360,9 @@ private struct FollowedComponentEntry: View {
         }
         Divider()
         Button("Remove", role: .destructive) {
+            bugIndex.removeSource(
+                .component(product: followed.product, component: followed.componentName)
+            )
             modelContext.delete(followed)
         }
     }
@@ -2932,7 +2943,7 @@ struct BugListView: View {
     private static let bugIncludeFields = [
         "id", "summary", "status", "resolution", "product", "component",
         "assigned_to", "priority", "severity", "keywords", "type",
-        "last_change_time", "creation_time", "cf_rank",
+        "last_change_time", "creation_time", "cf_rank", "groups",
         "attachments.id", "attachments.content_type", "attachments.is_obsolete"
     ]
 
@@ -3052,6 +3063,7 @@ struct BugListView: View {
             }
             totalMatches = result.totalMatches
             canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
+            indexFollowedComponentBugs(result.bugs)
             await fetchDependents(for: result.bugs.filter { Self.isMetaSummary($0.summary) }.map(\.id))
         } catch is CancellationError {
             return
@@ -3077,6 +3089,7 @@ struct BugListView: View {
             bugs.append(contentsOf: appended)
             if let total = result.totalMatches { totalMatches = total }
             canLoadMore = hasMore(loaded: bugs.count, fetched: result.bugs.count, total: result.totalMatches ?? totalMatches)
+            indexFollowedComponentBugs(appended)
             await fetchDependents(for: appended.filter { Self.isMetaSummary($0.summary) }.map(\.id))
         } catch is CancellationError {
             return
@@ -3084,6 +3097,14 @@ struct BugListView: View {
             loadError = error.localizedDescription
             canLoadMore = false
         }
+    }
+
+    private func indexFollowedComponentBugs(_ fetched: [Bug]) {
+        guard case .component(let ref)? = selection else { return }
+        workspace.bugIndex?.record(
+            fetched,
+            source: .component(product: ref.product, component: ref.component)
+        )
     }
 
     private func fetchDependents(for metaIDs: [Bug.ID]) async {

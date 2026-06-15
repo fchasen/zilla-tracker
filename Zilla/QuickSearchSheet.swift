@@ -13,10 +13,11 @@ struct QuickSearchSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthStore.self) private var auth
+    @Environment(BugIndexStore.self) private var bugIndex
 
     @State private var query: String = ""
     @State private var debouncedQuery: String = ""
-    @State private var bugResults: [Bug] = []
+    @State private var bugResults: [QuickSearchResult] = []
     @State private var resolvedUser: User?
     @State private var isLoading = false
     @State private var loadError: String?
@@ -230,9 +231,9 @@ struct QuickSearchSheet: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(bugResults, id: \.id) { bug in
-                        let id = "bug:\(bug.id)"
-                        QuickSearchBugRow(bug: bug)
+                    ForEach(bugResults, id: \.id) { result in
+                        let id = "bug:\(result.id)"
+                        QuickSearchBugRow(result: result)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,7 +241,7 @@ struct QuickSearchSheet: View {
                             .contentShape(Rectangle())
                             .id(id)
                             .onTapGesture {
-                                onPickBug(bug.id)
+                                onPickBug(result.id)
                                 dismiss()
                             }
                     }
@@ -295,21 +296,24 @@ struct QuickSearchSheet: View {
     }
 
     private func loadBug(id: Bug.ID) async {
+        let local = bugIndex.record(for: id).map { [QuickSearchResult(record: $0)] } ?? []
+        bugResults = applyingExclusion(local)
         isLoading = true
         defer { isLoading = false }
         do {
             let bug = try await auth.client.getBug(id: id)
-            bugResults = applyingExclusion([bug])
+            bugResults = applyingExclusion([QuickSearchResult(bug: bug)])
         } catch BugzillaError.notFound {
             bugResults = []
         } catch is CancellationError {
         } catch {
-            bugResults = []
-            loadError = error.localizedDescription
+            if local.isEmpty { loadError = error.localizedDescription }
         }
     }
 
     private func loadFreetext(_ text: String) async {
+        let local = localResults(for: text)
+        bugResults = applyingExclusion(local)
         isLoading = true
         defer { isLoading = false }
         var query = BugQuery(quicksearch: text)
@@ -318,11 +322,11 @@ struct QuickSearchSheet: View {
         query.includeFields = Self.bugIncludeFields
         do {
             let result = try await auth.client.searchBugs(query)
-            bugResults = applyingExclusion(result.bugs)
+            let network = result.bugs.map(QuickSearchResult.init(bug:))
+            bugResults = applyingExclusion(merge(network: network, local: local))
         } catch is CancellationError {
         } catch {
-            bugResults = []
-            loadError = error.localizedDescription
+            if local.isEmpty { loadError = error.localizedDescription }
         }
     }
 
@@ -345,7 +349,7 @@ struct QuickSearchSheet: View {
             query.order = "changeddate DESC"
             query.includeFields = Self.bugIncludeFields
             let result = try await auth.client.searchBugs(query)
-            bugResults = applyingExclusion(result.bugs)
+            bugResults = applyingExclusion(result.bugs.map(QuickSearchResult.init(bug:)))
         } catch is CancellationError {
         } catch {
             bugResults = []
@@ -353,9 +357,25 @@ struct QuickSearchSheet: View {
         }
     }
 
-    private func applyingExclusion(_ bugs: [Bug]) -> [Bug] {
-        guard let excludingBugID else { return bugs }
-        return bugs.filter { $0.id != excludingBugID }
+    private func localResults(for text: String) -> [QuickSearchResult] {
+        bugIndex.localMatches(for: text).map(QuickSearchResult.init(record:))
+    }
+
+    private func merge(network: [QuickSearchResult], local: [QuickSearchResult]) -> [QuickSearchResult] {
+        var seen = Set<Int>()
+        var merged: [QuickSearchResult] = []
+        for result in network where seen.insert(result.id).inserted {
+            merged.append(result)
+        }
+        for result in local where seen.insert(result.id).inserted {
+            merged.append(result)
+        }
+        return merged
+    }
+
+    private func applyingExclusion(_ results: [QuickSearchResult]) -> [QuickSearchResult] {
+        guard let excludingBugID else { return results }
+        return results.filter { $0.id != excludingBugID }
     }
 
     private var orderedRowIDs: [String] {
@@ -401,8 +421,35 @@ struct QuickSearchSheet: View {
     ]
 }
 
+struct QuickSearchResult: Identifiable, Hashable {
+    let id: Int
+    let summary: String
+    let status: String
+    let product: String
+    let component: String
+    let type: String?
+
+    init(bug: Bug) {
+        id = bug.id
+        summary = bug.summary
+        status = bug.status
+        product = bug.product
+        component = bug.component
+        type = bug.type
+    }
+
+    init(record: IndexedBugRecord) {
+        id = record.id
+        summary = record.summary
+        status = record.status
+        product = record.product
+        component = record.component
+        type = record.type
+    }
+}
+
 private struct QuickSearchBugRow: View {
-    let bug: Bug
+    let result: QuickSearchResult
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -412,17 +459,17 @@ private struct QuickSearchBugRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(bug.summary)
+                Text(result.summary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
-                    BugTypePill(type: bug.type)
-                    Text(verbatim: "\(bug.id)")
+                    BugTypePill(type: result.type)
+                    Text(verbatim: "\(result.id)")
                     Text(verbatim: "·")
-                    Text(bug.status.bugzillaTitleCased)
+                    Text(result.status.bugzillaTitleCased)
                     Text(verbatim: "·")
-                    Text("\(bug.product) :: \(bug.component)")
+                    Text("\(result.product) :: \(result.component)")
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -434,7 +481,7 @@ private struct QuickSearchBugRow: View {
     }
 
     private var isClosed: Bool {
-        ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
+        ["RESOLVED", "VERIFIED", "CLOSED"].contains(result.status.uppercased())
     }
 
     private var statusIcon: String {
@@ -444,7 +491,7 @@ private struct QuickSearchBugRow: View {
 
     private var statusColor: Color {
         if isClosed { return .green }
-        switch bug.status.uppercased() {
+        switch result.status.uppercased() {
         case "ASSIGNED", "IN_PROGRESS": return .blue
         default: return .secondary
         }

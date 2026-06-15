@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import CoreSpotlight
 import BugzillaKit
 import Textual
 
@@ -18,6 +19,7 @@ struct ZillaApp: App {
     @State private var viewedBugs = ViewedBugsStore()
     @State private var viewedRevisions = ViewedRevisionsStore()
     @State private var cache = ResourceCache()
+    @State private var bugIndex = BugIndexStore()
     @State private var refreshScheduler: RevisionRefreshScheduler?
 
     private let modelContainer: ModelContainer = {
@@ -38,12 +40,17 @@ struct ZillaApp: App {
                 .environment(viewedBugs)
                 .environment(viewedRevisions)
                 .environment(cache)
+                .environment(bugIndex)
                 .task {
                     workspace.cache = cache
+                    workspace.bugIndex = bugIndex
                     auth.cacheClearHook = { [weak cache] in cache?.clear() }
                     phab.cacheClearHook = { [weak cache] in cache?.clear() }
                     await auth.bootstrap()
                     await phab.bootstrap()
+                    if auth.isSignedIn {
+                        Task { await bugIndex.backfill(viewedIDs: viewedBugs.ids, using: auth.client) }
+                    }
                     if refreshScheduler == nil {
                         let s = RevisionRefreshScheduler(workspace: workspace, phab: phab)
                         s.start()
@@ -71,6 +78,7 @@ struct ZillaApp: App {
                 .environment(viewedBugs)
                 .environment(viewedRevisions)
                 .environment(cache)
+                .environment(bugIndex)
             }
         }
         .defaultSize(width: 1280, height: 760)
@@ -141,6 +149,11 @@ struct RootView: View {
             guard current == .active, previous != .active else { return }
             workspace.bugListRefreshToken = UUID()
             workspace.revisionListRefreshToken = UUID()
+        }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                  let bugID = BugIndexStore.bugID(from: identifier) else { return }
+            workspace.selectedBugID = bugID
         }
     }
 }
