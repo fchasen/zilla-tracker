@@ -3100,11 +3100,12 @@ struct BugListView: View {
     }
 
     private func indexFollowedComponentBugs(_ fetched: [Bug]) {
-        guard case .component(let ref)? = selection else { return }
-        workspace.bugIndex?.record(
-            fetched,
-            source: .component(product: ref.product, component: ref.component)
-        )
+        guard case .component(let ref)? = selection, !fetched.isEmpty,
+              let bugIndex = workspace.bugIndex else { return }
+        let source = BugIndexSource.component(product: ref.product, component: ref.component)
+        Task(priority: .background) { @MainActor in
+            bugIndex.record(fetched, source: source)
+        }
     }
 
     private func fetchDependents(for metaIDs: [Bug.ID]) async {

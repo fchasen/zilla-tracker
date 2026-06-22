@@ -12,6 +12,7 @@ struct DraftEditorView: View {
 
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
+    @Environment(ResourceCache.self) private var cache
     @Environment(\.modelContext) private var modelContext
     @Query private var matchingDrafts: [BugDraft]
 
@@ -45,7 +46,7 @@ struct DraftEditorView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Summary").scaledFont(.headline)
-                    TextField("What's the bug?", text: $draft.summary, axis: .vertical)
+                    TextField("", text: $draft.summary, axis: .vertical)
                         .textFieldStyle(.plain)
                         .scaledFont(.title3)
                         .padding(10)
@@ -162,7 +163,9 @@ struct DraftEditorView: View {
             workspace.selectedDraftID = nil
             workspace.sidebarSelection = .smart(.myBugs)
             workspace.smartFilters[.myBugs] = .reported
+            workspace.smartSorts[.myBugs] = .newest
             workspace.selectedBugID = newID
+            cache.invalidateBugSearches()
             workspace.bugListRefreshToken = UUID()
         } catch {
             submitError = error.localizedDescription

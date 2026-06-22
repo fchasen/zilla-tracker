@@ -168,6 +168,21 @@ final class ResourceCache {
         if changed { version &+= 1 }
     }
 
+    func invalidateBugSearches() {
+        var changed = false
+        let keys = entries.keys.filter { key in
+            if case .bugSearch = key { return true }
+            if case .bugCount = key { return true }
+            return false
+        }
+        for key in keys {
+            cancelInflight(for: key)
+            lastAccessed.removeValue(forKey: key)
+            if entries.removeValue(forKey: key) != nil { changed = true }
+        }
+        if changed { version &+= 1 }
+    }
+
     func invalidateRevision(id: Int) {
         var changed = false
         for key in [
