@@ -1514,6 +1514,8 @@ private struct DraftMetadata: View {
 
     @State private var showComponentPicker = false
     @State private var quickAddTarget: DraftQuickAddTarget?
+    @State private var showingAssignPicker = false
+    @State private var assignedToDetail: User?
 
     private enum DraftQuickAddTarget: String, Identifiable {
         case dependsOn, blocks, seeAlso
@@ -1803,16 +1805,51 @@ private struct DraftMetadata: View {
     private var assigneeRow: some View {
         GridRow {
             Text("Assignee").foregroundStyle(.secondary)
-            TextField("default assignee", text: Binding(
-                get: { draft.assignedTo ?? "" },
-                set: { newValue in
-                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    draft.assignedTo = trimmed.isEmpty ? nil : newValue
+            HStack(spacing: 6) {
+                Button {
+                    showingAssignPicker = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(assigneeLabel)
+                            .foregroundStyle(hasAssignee ? .primary : .secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.down")
+                            .scaledFont(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(draft.assignedTo ?? "")
+                .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
+                    UserSearchPopover { user in
+                        showingAssignPicker = false
+                        assignedToDetail = user
+                        draft.assignedTo = user.name
+                        draft.updatedAt = .now
+                    }
+                }
+
+                clearButton(isVisible: hasAssignee, label: "Assignee") {
+                    showingAssignPicker = false
+                    assignedToDetail = nil
+                    draft.assignedTo = nil
                     draft.updatedAt = .now
                 }
-            ))
-            .textFieldStyle(.roundedBorder)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var hasAssignee: Bool {
+        !(draft.assignedTo ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var assigneeLabel: String {
+        guard let assigned = draft.assignedTo, !assigned.isEmpty else { return "default assignee" }
+        let detail = assignedToDetail?.name == assigned ? assignedToDetail : nil
+        return User.displayName(for: assigned, detail: detail)
     }
 
     @ViewBuilder

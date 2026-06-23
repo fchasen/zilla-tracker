@@ -1643,7 +1643,7 @@ private struct PendingNeedinfoRequest: Identifiable, Hashable {
     let user: User
 }
 
-private struct UserSearchPopover: View {
+struct UserSearchPopover: View {
     #if os(macOS)
     private static let popoverWidth: CGFloat = 320
     private static let resultsMinHeight: CGFloat = 160
