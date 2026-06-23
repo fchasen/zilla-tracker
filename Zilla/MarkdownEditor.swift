@@ -3,7 +3,7 @@ import BugzillaKit
 import SwiftProse
 import PhabricatorKit
 import SearchfoxKit
-import FolioCodeView
+import FolioReview
 import FolioHighlight
 #if canImport(AppKit) && os(macOS)
 import AppKit

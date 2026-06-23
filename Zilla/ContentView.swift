@@ -10,7 +10,7 @@ import SwiftData
 import UniformTypeIdentifiers
 import BugzillaKit
 import PhabricatorKit
-import FolioCodeView
+import FolioReview
 import os
 #if os(macOS)
 import AppKit

@@ -13,7 +13,7 @@ There is no staging configuration; both hosts are hard-coded as defaults.
 
 ## Building
 
-The project is an Xcode workspace (`Zilla.xcodeproj`) containing the app and five local Swift packages. The Rust UniFFI bridge for Searchfox is committed in-tree as a pre-built `xcframework`, so a fresh clone builds without a Rust toolchain.
+The project is an Xcode workspace (`Zilla.xcodeproj`) containing the app and its local Swift packages, plus remote SwiftPM dependencies: `Textual` (Markdown rendering), `SwiftProse` (the Markdown editor), and `FolioReview` (the diff/code viewer). The Rust UniFFI bridge for Searchfox is committed in-tree as a pre-built `xcframework`, so a fresh clone builds without a Rust toolchain.
 
 ```sh
 # macOS app
@@ -28,8 +28,6 @@ xcodebuild -project Zilla.xcodeproj -scheme Zilla -destination 'platform=macOS' 
 # Library tests (no Xcode required)
 swift test --package-path Packages/BugzillaKit
 swift test --package-path Packages/PhabricatorKit
-swift test --package-path Packages/FolioCodeView
-swift test --package-path Packages/MarginaliaEditor
 ```
 
 ## Repository layout
@@ -38,12 +36,10 @@ swift test --package-path Packages/MarginaliaEditor
 Zilla/                 The macOS/iOS app target
 ZillaTests/            App-level XCTests
 ZillaUITests/          UI tests
-Packages/              Local Swift packages (linked by the app)
+Packages/              Local Swift packages
   BugzillaKit/         Bugzilla REST client
   PhabricatorKit/      Phabricator Conduit client
   SearchfoxKit/        Generated UniFFI bindings for searchfox-lib
-  FolioCodeView/       Side-by-side and unified diff viewer with inline comments
-  MarginaliaEditor/    TextKit 2 live Markdown / Remarkup editor
 Tools/
   searchfox-bridge/    Rust crate that produces SearchfoxKit via cargo swift
   regenerate-tree-sitter-*.sh
@@ -92,9 +88,9 @@ Sandboxed app with `com.apple.security.network.client`. Keychain access uses gen
 
 ## Conventions
 
-- App deployment target is `MACOSX_DEPLOYMENT_TARGET = 26.4`. Local packages target macOS 14 / iOS 17 (BugzillaKit, PhabricatorKit, FolioCodeView, MarginaliaEditor) or macOS 10.15 / iOS 13 (SearchfoxKit).
+- App deployment target is `MACOSX_DEPLOYMENT_TARGET = 26.4`. Local packages target macOS 14 / iOS 17 (BugzillaKit, PhabricatorKit) or macOS 10.15 / iOS 13 (SearchfoxKit). The remote `FolioReview` package targets macOS 14 / iOS 17; the remote `SwiftProse` editor targets macOS 26 / iOS 26.
 - BMO and Conduit JSON use snake_case; both clients translate to/from idiomatic camelCase via `KeyDecodingStrategy.convertFromSnakeCase`.
-- Reuse the rich UI primitives that already exist (the comment composer, the `MarginaliaEditor` markdown editor, `FolioView` for diffs) instead of building parallel inputs.
+- Reuse the rich UI primitives that already exist (the comment composer, the `SwiftProse` markdown editor, `FolioView` for diffs) instead of building parallel inputs.
 
 ## License
 

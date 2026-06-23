@@ -1,7 +1,7 @@
 import SwiftUI
 import PhabricatorKit
 import Textual
-import FolioCodeView
+import FolioReview
 import FolioModel
 import FolioHighlight
 
