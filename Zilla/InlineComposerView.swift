@@ -85,6 +85,10 @@ struct InlineComposerView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(.background)
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
         } else {
             inner
         }
