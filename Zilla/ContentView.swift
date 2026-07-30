@@ -1353,6 +1353,7 @@ struct ContentView: View {
                     routeView(route)
                 }
         }
+        .navigationSplitViewColumnWidth(min: 160, ideal: 320)
         #else
         rootDetailView
             .sheet(isPresented: pushedRouteSheetBinding) {
