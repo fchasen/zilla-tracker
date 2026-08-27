@@ -78,7 +78,7 @@ struct RevisionCommentComposer: View {
             transactions: [.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))],
             using: phab.client
         ) {
-            workspace.lastUpdateError = error.localizedDescription
+            workspace.revisionCommentErrors[id] = error.localizedDescription
             return
         }
         let current = workspace.revisionCommentDrafts[id] ?? ""

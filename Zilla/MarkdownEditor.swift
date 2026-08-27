@@ -82,7 +82,10 @@ struct MarkdownEditor: View {
             )
             .onProseControllerReady { c in
                 configureController(c)
-                if autoFocus { focusHostTextView() }
+                if autoFocus { focusHostTextView(disabled: isDisabled) }
+            }
+            .onChange(of: isDisabled) { _, nowDisabled in
+                if autoFocus, !nowDisabled { focusHostTextView(disabled: nowDisabled) }
             }
             .frame(minHeight: minHeight)
             .overlay {
@@ -225,22 +228,21 @@ struct MarkdownEditor: View {
         let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)"
         restorePendingSelection()
         controller?.insertLink(label: "bug \(bugID)", url: url)
-        pushMarkdownToBinding()
     }
 
     private func insertMarkdownLink(label: String, url: String) {
         restorePendingSelection()
         controller?.insertLink(label: label, url: url)
-        pushMarkdownToBinding()
     }
 
-    private func focusHostTextView() {
+    private func focusHostTextView(disabled: Bool) {
         #if canImport(UIKit)
-        guard !didAutoFocus else { return }
+        guard !didAutoFocus, !disabled else { return }
         Task { @MainActor in
             for _ in 0..<10 {
-                if let view = controller?.hostTextView as? UIView, view.window != nil {
-                    view.becomeFirstResponder()
+                if didAutoFocus { return }
+                if let view = controller?.hostTextView as? UIView, view.window != nil,
+                   view.becomeFirstResponder() {
                     didAutoFocus = true
                     return
                 }
@@ -259,7 +261,6 @@ struct MarkdownEditor: View {
         }
         restorePendingSelection()
         controller?.insertLink(label: label, url: hit.url)
-        pushMarkdownToBinding()
     }
 
     private func capturePendingSelection() {
@@ -270,11 +271,6 @@ struct MarkdownEditor: View {
         guard let selection = pendingInsertionSelection else { return }
         controller?.setSelection(selection)
         pendingInsertionSelection = nil
-    }
-
-    private func pushMarkdownToBinding() {
-        guard let md = controller?.markdown(), md != text else { return }
-        text = md
     }
 
     @ViewBuilder
@@ -521,7 +517,6 @@ struct MarkdownEditor: View {
             .replaceText(range: session.context.range, with: NSAttributedString(string: item.replacementText))
         ]))
         completionPlugin?.cancel(controller: controller)
-        pushMarkdownToBinding()
     }
 }
 

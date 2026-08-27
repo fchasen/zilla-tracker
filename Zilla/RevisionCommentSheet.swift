@@ -9,6 +9,8 @@ struct RevisionCommentSheet: View {
 
     @State private var isPosting: Bool = false
 
+    private var isBusy: Bool { isPosting || workspace.isUpdatingRevision }
+
     private var draftBinding: Binding<String> {
         Binding(
             get: { workspace.loadedRevision.flatMap { workspace.revisionCommentDrafts[$0.id] } ?? "" },
@@ -25,7 +27,7 @@ struct RevisionCommentSheet: View {
     }
 
     private var canPost: Bool {
-        !draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isPosting
+        !draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy
     }
 
     var body: some View {
@@ -34,12 +36,19 @@ struct RevisionCommentSheet: View {
                 MarkdownEditor(
                     text: draftBinding,
                     minHeight: 240,
-                    isDisabled: isPosting,
+                    isDisabled: isBusy,
                     bordered: false,
                     autoFocus: true,
                     autolinksReferences: true,
                     mentionCompletionContext: workspace.revisionMentionCompletionContext
                 )
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
                 Spacer(minLength: 0)
             }
             .navigationTitle("New comment")
@@ -64,18 +73,26 @@ struct RevisionCommentSheet: View {
         }
     }
 
+    private var error: String? {
+        workspace.loadedRevision.flatMap { workspace.revisionCommentErrors[$0.id] }
+    }
+
     private func post() async {
         guard let id = workspace.loadedRevision?.id else { return }
         let submitted = draftBinding.wrappedValue
         let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else {
+            workspace.revisionCommentErrors[id] = "Enter a comment before posting."
+            return
+        }
+        workspace.revisionCommentErrors.removeValue(forKey: id)
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
             transactions: [.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))],
             using: phab.client
         ) {
-            workspace.lastUpdateError = error.localizedDescription
+            workspace.revisionCommentErrors[id] = error.localizedDescription
             return
         }
         let current = workspace.revisionCommentDrafts[id] ?? ""

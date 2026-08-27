@@ -431,12 +431,38 @@ private struct BoardBugInspector: View {
 
     @State private var bug: Bug?
     @State private var comments: [Comment] = []
+    @State private var loadedBugID: Bug.ID?
     @State private var isLoading = false
     @State private var loadError: String?
-    @State private var composerText = ""
-    @State private var isPostingComment = false
-    @State private var composerError: String?
+    @State private var postingBugIDs: Set<Bug.ID> = []
+    @State private var composerErrors: [Bug.ID: String] = [:]
     @State private var updateError: String?
+
+    private var composerTextBinding: Binding<String> {
+        Binding(
+            get: { bugID.flatMap { workspace.bugCommentDrafts[$0] } ?? "" },
+            set: { newValue in
+                guard let id = bugID else { return }
+                if newValue.isEmpty {
+                    workspace.bugCommentDrafts.removeValue(forKey: id)
+                } else {
+                    workspace.bugCommentDrafts[id] = newValue
+                }
+            }
+        )
+    }
+
+    private var composerText: String {
+        composerTextBinding.wrappedValue
+    }
+
+    private var isPostingComment: Bool {
+        bugID.map { postingBugIDs.contains($0) } ?? false
+    }
+
+    private var composerError: String? {
+        bugID.flatMap { composerErrors[$0] }
+    }
 
     var body: some View {
         Group {
@@ -458,7 +484,7 @@ private struct BoardBugInspector: View {
                     bug: bug,
                     comments: comments,
                     loadError: loadError,
-                    composerText: $composerText,
+                    composerText: composerTextBinding,
                     isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
@@ -482,39 +508,50 @@ private struct BoardBugInspector: View {
             message: { Text(updateError ?? "") }
         )
         .task(id: bugID) {
-            composerError = nil
-            composerText = ""
+            if let bugID { composerErrors.removeValue(forKey: bugID) }
             await load(force: false)
         }
     }
 
     private func load(force: Bool) async {
         guard let bugID else {
+            loadedBugID = nil
             bug = nil
             comments = []
             loadError = nil
             return
         }
+        loadedBugID = bugID
         viewedBugs.markViewed(bugID)
         isLoading = true
         loadError = nil
-        defer { isLoading = false }
+        defer {
+            if loadedBugID == bugID { isLoading = false }
+        }
         do {
             async let bugTask = cache.bug(id: bugID, force: force, using: auth.client) { refreshed in
-                if self.bugID == bugID {
-                    bug = refreshed
+                MainActor.assumeIsolated {
+                    if loadedBugID == bugID {
+                        bug = refreshed
+                    }
                 }
             }
             async let commentsTask = cache.comments(bugID: bugID, force: force, using: auth.client) { refreshed in
-                if self.bugID == bugID {
-                    comments = refreshed
+                MainActor.assumeIsolated {
+                    if loadedBugID == bugID {
+                        comments = refreshed
+                    }
                 }
             }
-            bug = try await bugTask
-            comments = try await commentsTask
+            let loadedBug = try await bugTask
+            let loadedComments = try await commentsTask
+            guard loadedBugID == bugID else { return }
+            bug = loadedBug
+            comments = loadedComments
         } catch is CancellationError {
             return
         } catch {
+            guard loadedBugID == bugID else { return }
             bug = nil
             comments = []
             loadError = error.localizedDescription
@@ -536,21 +573,41 @@ private struct BoardBugInspector: View {
         let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let bugID else { return }
 
-        isPostingComment = true
-        composerError = nil
-        defer { isPostingComment = false }
+        postingBugIDs.insert(bugID)
+        composerErrors.removeValue(forKey: bugID)
+        defer { postingBugIDs.remove(bugID) }
 
+        let client = auth.client
         do {
-            _ = try await auth.client.addComment(
+            _ = try await client.addComment(
                 bugID: bugID,
                 text: CommentMarkdown.autolinkReferences(in: trimmed),
                 isMarkdown: true
             )
-            composerText = DraftConsumption.remainder(after: submitted, in: composerText) ?? ""
-            cache.invalidate(.comments(bugID: bugID))
-            comments = try await cache.comments(bugID: bugID, force: true, using: auth.client)
         } catch {
-            composerError = error.localizedDescription
+            composerErrors[bugID] = error.localizedDescription
+            return
+        }
+
+        let current = workspace.bugCommentDrafts[bugID] ?? ""
+        if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
+            workspace.bugCommentDrafts[bugID] = remainder
+        } else {
+            workspace.bugCommentDrafts.removeValue(forKey: bugID)
+        }
+
+        cache.invalidate(.comments(bugID: bugID))
+        do {
+            let refreshed = try await cache.comments(bugID: bugID, force: true, using: client)
+            if loadedBugID == bugID {
+                comments = refreshed
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            if loadedBugID == bugID {
+                loadError = error.localizedDescription
+            }
         }
     }
 }
