@@ -7,6 +7,8 @@ struct RevisionCommentComposer: View {
 
     @State private var isPosting: Bool = false
 
+    private var isBusy: Bool { isPosting || workspace.isUpdatingRevision }
+
     private var draftBinding: Binding<String> {
         Binding(
             get: { workspace.loadedRevision.flatMap { workspace.revisionCommentDrafts[$0.id] } ?? "" },
@@ -27,7 +29,7 @@ struct RevisionCommentComposer: View {
             InspectorSectionHeader(title: "Add comment")
             MarkdownEditor(
                 text: draftBinding,
-                isDisabled: isPosting,
+                isDisabled: isBusy,
                 autolinksReferences: true,
                 mentionCompletionContext: workspace.revisionMentionCompletionContext
             )
@@ -52,7 +54,7 @@ struct RevisionCommentComposer: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPosting)
+                .disabled(draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy)
             }
         }
     }
@@ -63,7 +65,8 @@ struct RevisionCommentComposer: View {
 
     private func post() async {
         guard let id = workspace.loadedRevision?.id else { return }
-        let trimmed = draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = draftBinding.wrappedValue
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             workspace.revisionCommentErrors[id] = "Enter a comment before posting."
             return
@@ -78,6 +81,11 @@ struct RevisionCommentComposer: View {
             workspace.lastUpdateError = error.localizedDescription
             return
         }
-        workspace.revisionCommentDrafts.removeValue(forKey: id)
+        let current = workspace.revisionCommentDrafts[id] ?? ""
+        if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
+            workspace.revisionCommentDrafts[id] = remainder
+        } else {
+            workspace.revisionCommentDrafts.removeValue(forKey: id)
+        }
     }
 }

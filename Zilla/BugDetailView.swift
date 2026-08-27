@@ -312,7 +312,8 @@ struct BugDetailView: View {
     }
 
     private func postComment() async {
-        let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = composerText
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let id = bugID else { return }
 
         isPostingComment = true
@@ -326,7 +327,12 @@ struct BugDetailView: View {
                 text: CommentMarkdown.autolinkReferences(in: trimmed),
                 isMarkdown: true
             )
-            workspace.bugCommentDrafts.removeValue(forKey: id)
+            let current = workspace.bugCommentDrafts[id] ?? ""
+            if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
+                workspace.bugCommentDrafts[id] = remainder
+            } else {
+                workspace.bugCommentDrafts.removeValue(forKey: id)
+            }
             await workspace.refreshLoadedComments(using: client)
         } catch {
             composerError = error.localizedDescription
@@ -576,6 +582,9 @@ private struct BugHeader: View {
                         revertSummary()
                         summaryFocused = false
                     }
+                    .onChange(of: workspace.bugUpdateGeneration) { _, _ in
+                        if !summaryFocused { editedSummary = bug.summary }
+                    }
                     .onChange(of: bug.summary) { _, new in
                         guard !summaryFocused, !workspace.isUpdatingBug else { return }
                         editedSummary = new
@@ -800,10 +809,8 @@ struct BugMetadata: View {
         .onChange(of: bug.id) { _, _ in
             clearPendingEdits()
         }
-        .onChange(of: workspace.isUpdatingBug) { _, isUpdating in
-            if !isUpdating {
-                clearPendingEdits()
-            }
+        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
+            clearPendingEdits()
         }
     }
 
@@ -1244,11 +1251,14 @@ private struct MetadataSegmentedPicker: NSViewRepresentable {
             control.segmentCount = options.count
         }
 
+        let isEnabled = context.environment.isEnabled
+        control.isEnabled = isEnabled
+
         for index in options.indices {
             if control.label(forSegment: index) != options[index] {
                 control.setLabel(options[index], forSegment: index)
             }
-            control.setEnabled(true, forSegment: index)
+            control.setEnabled(isEnabled, forSegment: index)
         }
 
         let selectedSegment = options.firstIndex(of: selection) ?? -1
@@ -1373,10 +1383,8 @@ struct BugInspectorContent: View {
         .onChange(of: bug.id) { _, _ in
             clearPendingInspectorEdits()
         }
-        .onChange(of: workspace.isUpdatingBug) { _, isUpdating in
-            if !isUpdating {
-                clearPendingInspectorEdits()
-            }
+        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
+            clearPendingInspectorEdits()
         }
     }
 
@@ -1505,10 +1513,8 @@ private struct NeedinfoSection: View {
         .onChange(of: bug.id) { _, _ in
             clearPendingEdits()
         }
-        .onChange(of: workspace.isUpdatingBug) { _, isUpdating in
-            if !isUpdating {
-                clearPendingEdits()
-            }
+        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
+            clearPendingEdits()
         }
     }
 

@@ -16,7 +16,6 @@ struct DraftEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var matchingDrafts: [BugDraft]
 
-    @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var showDiscardConfirm = false
     @FocusState private var summaryFocused: Bool
@@ -25,6 +24,8 @@ struct DraftEditorView: View {
         self.draftID = draftID
         self._matchingDrafts = Query(filter: #Predicate<BugDraft> { $0.id == draftID })
     }
+
+    private var isSubmitting: Bool { workspace.isSubmittingDraft(draftID) }
 
     var body: some View {
         if let draft = matchingDrafts.first {
@@ -56,6 +57,7 @@ struct DraftEditorView: View {
                                 .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                         )
                         .focused($summaryFocused)
+                        .disabled(isSubmitting)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -132,10 +134,10 @@ struct DraftEditorView: View {
     }
 
     private func submit(_ draft: BugDraft) async {
-        guard draft.isReadyToSubmit else { return }
-        isSubmitting = true
+        guard draft.isReadyToSubmit, !isSubmitting else { return }
         submitError = nil
-        defer { isSubmitting = false }
+        workspace.beginDraftSubmit(draftID)
+        defer { workspace.endDraftSubmit(draftID) }
 
         let payload = BugCreate(
             product: draft.product,
@@ -160,11 +162,13 @@ struct DraftEditorView: View {
         do {
             let newID = try await auth.client.createBug(payload)
             modelContext.delete(draft)
-            workspace.selectedDraftID = nil
-            workspace.sidebarSelection = .smart(.myBugs)
-            workspace.smartFilters[.myBugs] = .reported
-            workspace.smartSorts[.myBugs] = .newest
-            workspace.selectedBugID = newID
+            if workspace.selectedDraftID == draftID {
+                workspace.selectedDraftID = nil
+                workspace.sidebarSelection = .smart(.myBugs)
+                workspace.smartFilters[.myBugs] = .reported
+                workspace.smartSorts[.myBugs] = .newest
+                workspace.selectedBugID = newID
+            }
             cache.invalidateBugSearches()
             workspace.bugListRefreshToken = UUID()
         } catch {
@@ -173,6 +177,7 @@ struct DraftEditorView: View {
     }
 
     private func discard(_ draft: BugDraft) {
+        guard !isSubmitting else { return }
         modelContext.delete(draft)
         workspace.selectedDraftID = nil
     }

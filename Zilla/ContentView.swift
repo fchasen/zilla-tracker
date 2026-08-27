@@ -343,6 +343,24 @@ final class Workspace {
         }
     }
     var selectedDraftID: UUID?
+
+    // Set for the duration of a draft submit. Lives here rather than in
+    // DraftEditorView's @State because DraftInspector is a sibling view that
+    // must freeze too — its fields are folded into the payload before the await.
+    private(set) var submittingDraftIDs: Set<UUID> = []
+
+    func beginDraftSubmit(_ id: UUID) {
+        submittingDraftIDs.insert(id)
+    }
+
+    func endDraftSubmit(_ id: UUID) {
+        submittingDraftIDs.remove(id)
+    }
+
+    func isSubmittingDraft(_ id: UUID) -> Bool {
+        submittingDraftIDs.contains(id)
+    }
+
     var activeRevisionID: Int? {
         didSet {
             if oldValue != activeRevisionID {
@@ -497,8 +515,26 @@ final class Workspace {
     // Bug list loading flag, used by the (now centralized) refresh button.
     var isLoadingBugList: Bool = false
 
-    // Bug-update flag, drives the toolbar progress indicator.
-    private(set) var isUpdatingBug = false
+    private var bugUpdateDepth = 0
+
+    // Bumped only when the last concurrent bug write settles. Views key
+    // optimistic-edit clearing off this rather than off `isUpdatingBug`, so one
+    // write finishing cannot discard another's pending value.
+    private(set) var bugUpdateGeneration = 0
+
+    var isUpdatingBug: Bool { bugUpdateDepth > 0 }
+
+    private func beginBugUpdate() {
+        bugUpdateDepth += 1
+    }
+
+    private func endBugUpdate() {
+        bugUpdateDepth -= 1
+        if bugUpdateDepth <= 0 {
+            bugUpdateDepth = 0
+            bugUpdateGeneration &+= 1
+        }
+    }
 
     var lastLinkError: String?
 
@@ -525,7 +561,21 @@ final class Workspace {
     private(set) var changesetContent: [Int: ChangesetContentSource] = [:]
     private(set) var isLoadingRevision = false
     private(set) var revisionLoadError: String?
-    private(set) var isUpdatingRevision = false
+
+    private var revisionUpdateDepth = 0
+
+    var isUpdatingRevision: Bool { revisionUpdateDepth > 0 }
+
+    private func beginRevisionUpdate() {
+        revisionUpdateDepth += 1
+    }
+
+    private func endRevisionUpdate() {
+        revisionUpdateDepth -= 1
+        if revisionUpdateDepth <= 0 {
+            revisionUpdateDepth = 0
+        }
+    }
 
     var activeInlineComposer: ActiveInlineComposer?
 
@@ -649,6 +699,13 @@ final class Workspace {
         return true
     }
 
+    @MainActor
+    func withBugUpdate<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
+        beginBugUpdate()
+        defer { endBugUpdate() }
+        return try await body()
+    }
+
     @discardableResult
     @MainActor
     func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
@@ -659,8 +716,8 @@ final class Workspace {
     @discardableResult
     @MainActor
     func applyBugUpdate(id: Bug.ID, _ update: BugUpdate, using client: BugzillaClient) async -> Error? {
-        isUpdatingBug = true
-        defer { isUpdatingBug = false }
+        beginBugUpdate()
+        defer { endBugUpdate() }
         do {
             _ = try await client.updateBug(id: id, update)
             cache?.invalidateBug(id: id)
@@ -697,8 +754,8 @@ final class Workspace {
         if loadedBug?.id == target, loadedBug?.dependsOn.contains(source) == true {
             return nil
         }
-        isUpdatingBug = true
-        defer { isUpdatingBug = false }
+        beginBugUpdate()
+        defer { endBugUpdate() }
         do {
             _ = try await client.updateBug(
                 id: source,
@@ -742,8 +799,8 @@ final class Workspace {
         newText: String,
         using client: BugzillaClient
     ) async -> Error? {
-        isUpdatingBug = true
-        defer { isUpdatingBug = false }
+        beginBugUpdate()
+        defer { endBugUpdate() }
         do {
             try await client.updateComment(bugID: bugID, commentID: commentID, newText: newText)
             cache?.invalidate(.comments(bugID: bugID))
@@ -1059,8 +1116,8 @@ final class Workspace {
         using client: PhabricatorClient
     ) async -> Error? {
         guard let revision = loadedRevision else { return nil }
-        isUpdatingRevision = true
-        defer { isUpdatingRevision = false }
+        beginRevisionUpdate()
+        defer { endRevisionUpdate() }
         do {
             _ = try await client.editRevision(objectIdentifier: revision.phid, transactions: transactions)
             cache?.invalidateRevision(id: revision.id)
@@ -1483,6 +1540,7 @@ private struct BugInspector: View {
 private struct DraftInspector: View {
     let draftID: UUID
 
+    @Environment(Workspace.self) private var workspace
     @Query private var matchingDrafts: [BugDraft]
 
     init(draftID: UUID) {
@@ -1496,6 +1554,7 @@ private struct DraftInspector: View {
                 DraftMetadata(draft: draft)
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(workspace.isSubmittingDraft(draft.id))
             }
         } else {
             ContentUnavailableView(
@@ -2271,6 +2330,7 @@ private struct AllDraftsList: View {
                                     }
                                     modelContext.delete(draft)
                                 }
+                                .disabled(workspace.isSubmittingDraft(draft.id))
                             }
                     }
                 }
@@ -2842,14 +2902,10 @@ struct BugListView: View {
         let client = auth.client
         let update = BugStatuses.takeUpdate(assignedTo: username)
         Task {
-            do {
-                _ = try await client.updateBug(id: bug.id, update)
-                workspace.bugListRefreshToken = UUID()
-                if workspace.loadedBug?.id == bug.id {
-                    _ = await workspace.applyBugUpdate(update, using: client)
-                }
-            } catch {
+            if let error = await workspace.applyBugUpdate(id: bug.id, update, using: client) {
                 workspace.lastUpdateError = error.localizedDescription
+            } else {
+                workspace.bugListRefreshToken = UUID()
             }
         }
     }
@@ -2860,11 +2916,13 @@ struct BugListView: View {
         }
         let client = auth.client
         Task {
-            do {
-                _ = try await client.updateBug(id: bugID, BugUpdate(rank: rank))
-                cache.invalidateBug(id: bugID)
-            } catch {
-                workspace.lastUpdateError = error.localizedDescription
+            await workspace.withBugUpdate {
+                do {
+                    _ = try await client.updateBug(id: bugID, BugUpdate(rank: rank))
+                    cache.invalidateBug(id: bugID)
+                } catch {
+                    workspace.lastUpdateError = error.localizedDescription
+                }
             }
             workspace.bugListRefreshToken = UUID()
         }

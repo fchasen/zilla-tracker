@@ -124,7 +124,9 @@ struct InlineComposerSheet: View {
     }
 
     private func post() async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = text
+        let key = draftKey
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let body = Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))
         isPosting = true
@@ -156,10 +158,16 @@ struct InlineComposerSheet: View {
             workspace.lastUpdateError = error.localizedDescription
             return
         }
-        if let key = draftKey {
-            modelContext.clearInlineDraft(key)
+        if let key {
+            let current = modelContext.loadInlineDraft(key)?.content ?? text
+            let remainder = DraftConsumption.remainder(after: submitted, in: current)
+            if let remainder {
+                modelContext.saveInlineDraft(key, length: length, content: remainder)
+            } else {
+                modelContext.clearInlineDraft(key)
+            }
+            text = remainder ?? ""
         }
-        text = ""
         workspace.cancelInlineComposer()
         dismiss()
     }

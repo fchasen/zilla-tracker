@@ -139,7 +139,7 @@ struct ZillaCommands: Commands {
                     }
                 }
             }
-            .disabled(workspace.loadedBug == nil)
+            .disabled(workspace.loadedBug == nil || workspace.isUpdatingBug)
 
             Menu("Resolve as") {
                 ForEach(BugStatuses.resolutions, id: \.code) { option in
@@ -148,12 +148,12 @@ struct ZillaCommands: Commands {
                     }
                 }
             }
-            .disabled(workspace.loadedBug == nil || isClosed)
+            .disabled(workspace.loadedBug == nil || isClosed || workspace.isUpdatingBug)
 
             Button("Mark as Duplicate…") {
                 workspace.dupePromptRequested = true
             }
-            .disabled(workspace.loadedBug == nil || isClosed)
+            .disabled(workspace.loadedBug == nil || isClosed || workspace.isUpdatingBug)
 
             Button("Take") {
                 guard let me = auth.currentUser?.name else { return }
@@ -161,7 +161,8 @@ struct ZillaCommands: Commands {
             }
             .disabled(workspace.loadedBug == nil
                 || !BugStatuses.isUnassigned(workspace.loadedBug?.assignedTo)
-                || auth.currentUser == nil)
+                || auth.currentUser == nil
+                || workspace.isUpdatingBug)
         }
 
         CommandMenu("Account") {

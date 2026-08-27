@@ -142,8 +142,8 @@ struct RevisionActionsMenu: View {
 
     private func acceptRevision() async {
         var transactions: [RevisionEditTransaction] = [.action(.accept)]
-        let trimmed = (workspace.revisionCommentDrafts[revision.id] ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = workspace.revisionCommentDrafts[revision.id] ?? ""
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             transactions.append(.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))))
         }
@@ -153,13 +153,13 @@ struct RevisionActionsMenu: View {
             return
         }
         if !trimmed.isEmpty {
-            workspace.revisionCommentDrafts.removeValue(forKey: revision.id)
+            consumeDraft(submitted)
         }
     }
 
     private func requestChanges() async {
-        let trimmed = (workspace.revisionCommentDrafts[revision.id] ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = workspace.revisionCommentDrafts[revision.id] ?? ""
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             workspace.revisionCommentErrors[revision.id] = "Enter a reason in the comment box before requesting changes."
             workspace.pendingScrollToRevisionComment = UUID()
@@ -176,7 +176,16 @@ struct RevisionActionsMenu: View {
             workspace.lastUpdateError = error.localizedDescription
             return
         }
-        workspace.revisionCommentDrafts.removeValue(forKey: revision.id)
+        consumeDraft(submitted)
+    }
+
+    private func consumeDraft(_ submitted: String) {
+        let current = workspace.revisionCommentDrafts[revision.id] ?? ""
+        if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
+            workspace.revisionCommentDrafts[revision.id] = remainder
+        } else {
+            workspace.revisionCommentDrafts.removeValue(forKey: revision.id)
+        }
     }
 
     private func publishDrafts() {

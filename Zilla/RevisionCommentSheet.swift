@@ -65,8 +65,10 @@ struct RevisionCommentSheet: View {
     }
 
     private func post() async {
-        let trimmed = draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let id = workspace.loadedRevision?.id else { return }
+        guard let id = workspace.loadedRevision?.id else { return }
+        let submitted = draftBinding.wrappedValue
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         isPosting = true
         defer { isPosting = false }
         if let error = await workspace.applyRevisionEdit(
@@ -76,7 +78,12 @@ struct RevisionCommentSheet: View {
             workspace.lastUpdateError = error.localizedDescription
             return
         }
-        workspace.revisionCommentDrafts.removeValue(forKey: id)
+        let current = workspace.revisionCommentDrafts[id] ?? ""
+        if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
+            workspace.revisionCommentDrafts[id] = remainder
+        } else {
+            workspace.revisionCommentDrafts.removeValue(forKey: id)
+        }
         dismiss()
     }
 }

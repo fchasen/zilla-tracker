@@ -532,7 +532,8 @@ private struct BoardBugInspector: View {
     }
 
     private func postComment() async {
-        let trimmed = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = composerText
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let bugID else { return }
 
         isPostingComment = true
@@ -545,7 +546,7 @@ private struct BoardBugInspector: View {
                 text: CommentMarkdown.autolinkReferences(in: trimmed),
                 isMarkdown: true
             )
-            composerText = ""
+            composerText = DraftConsumption.remainder(after: submitted, in: composerText) ?? ""
             cache.invalidate(.comments(bugID: bugID))
             comments = try await cache.comments(bugID: bugID, force: true, using: auth.client)
         } catch {

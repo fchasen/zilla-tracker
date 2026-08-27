@@ -98,7 +98,9 @@ struct InlineComposerHost: View {
     }
 
     private func post() async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submitted = text
+        let key = draftKey
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let body = Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))
         isPosting = true
@@ -130,10 +132,19 @@ struct InlineComposerHost: View {
             workspace.lastUpdateError = error.localizedDescription
             return
         }
-        if let key = draftKey {
-            modelContext.clearInlineDraft(key)
+        if let key {
+            let current = modelContext.loadInlineDraft(key)?.content ?? text
+            let remainder = DraftConsumption.remainder(after: submitted, in: current)
+            if let remainder {
+                modelContext.saveInlineDraft(key, length: length, content: remainder)
+            } else {
+                modelContext.clearInlineDraft(key)
+            }
+            text = remainder ?? ""
         }
-        text = ""
+        // A successful post rotates the inline's PHID — create mints one the
+        // composer never sees, edit deletes and recreates — so the composer
+        // closes rather than let a second Post duplicate the draft.
         workspace.cancelInlineComposer()
     }
 }
