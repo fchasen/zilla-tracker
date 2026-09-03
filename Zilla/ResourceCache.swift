@@ -17,6 +17,7 @@ enum CacheKey: Hashable, Sendable {
     case dependencyMeta(Bug.ID)
     case phabUser
     case revisionSearch(RevisionQuery)
+    case revisionSearchPages(RevisionQuery)
     case revision(Int)
     case revisionDiff(Int)
     case revisionTransactions(Int)
@@ -44,8 +45,8 @@ extension CacheKey {
         case .fileContent:
             return .fileContent
         case .whoami, .selectableProducts, .bug, .bugSearch, .bugCount,
-             .dependencyMeta, .phabUser, .revisionSearch, .revision,
-             .revisionStack, .phabricatorUser:
+             .dependencyMeta, .phabUser, .revisionSearch, .revisionSearchPages,
+             .revision, .revisionStack, .phabricatorUser:
             return nil
         }
     }
@@ -61,7 +62,7 @@ extension CacheKey {
             return 5 * 60
         // Bug / list searches — tighter freshness because list contents
         // change as the user works elsewhere.
-        case .bug, .comments, .bugSearch, .bugCount, .revisionSearch:
+        case .bug, .comments, .bugSearch, .bugCount, .revisionSearch, .revisionSearchPages:
             return 60
         case .dependencyMeta:
             return 24 * 60 * 60
@@ -76,7 +77,7 @@ extension CacheKey {
             return 7 * 24 * 60 * 60
         case .revision, .revisionDiff, .revisionTransactions, .revisionStack:
             return 60 * 60
-        case .bug, .comments, .bugSearch, .bugCount, .revisionSearch:
+        case .bug, .comments, .bugSearch, .bugCount, .revisionSearch, .revisionSearchPages:
             return 10 * 60
         case .dependencyMeta:
             return 7 * 24 * 60 * 60
@@ -88,6 +89,13 @@ extension CacheKey {
 
 enum CacheError: Error {
     case typeMismatch
+}
+
+struct RevisionPage: Sendable {
+    static let defaultMaxPages = 5
+
+    let revisions: [Revision]
+    let truncated: Bool
 }
 
 @MainActor
@@ -408,6 +416,32 @@ extension ResourceCache {
     ) async throws -> RevisionSearchResult {
         try await fetch(key: .revisionSearch(query), force: force, onRefresh: onRefresh) {
             try await client.searchRevisions(query)
+        }
+    }
+
+    func revisionSearchAllPages(
+        _ query: RevisionQuery,
+        maxPages: Int = RevisionPage.defaultMaxPages,
+        force: Bool = false,
+        using client: PhabricatorClient,
+        onRefresh: ((RevisionPage) -> Void)? = nil
+    ) async throws -> RevisionPage {
+        try await fetch(key: .revisionSearchPages(query), force: force, onRefresh: onRefresh) {
+            var revisions: [Revision] = []
+            var cursor: String?
+            var pages = 0
+            repeat {
+                var page = query
+                page.after = cursor
+                let result = try await client.searchRevisions(page)
+                revisions.append(contentsOf: result.data)
+                cursor = result.cursor.after
+                pages += 1
+                if cursor != nil, pages >= maxPages {
+                    return RevisionPage(revisions: revisions, truncated: true)
+                }
+            } while cursor != nil
+            return RevisionPage(revisions: revisions, truncated: false)
         }
     }
 

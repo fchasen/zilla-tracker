@@ -73,18 +73,35 @@ final class RevisionDecodingTests: XCTestCase {
         XCTAssertEqual(envelope.errorCode, "ERR-INVALID-AUTH")
     }
 
-    func testActiveQueryConstrainsByAuthorAndOpenStatuses() throws {
-        let query = RevisionQuery.active(authorPHID: "PHID-USER-aaa")
+    func testAuthoredQueryConstrainsByAuthorAndOpenStatuses() throws {
+        let query = RevisionQuery.authored(authorPHID: "PHID-USER-aaa")
         XCTAssertEqual(query.constraints?.authorPHIDs, ["PHID-USER-aaa"])
         XCTAssertEqual(query.constraints?.statuses, RevisionStatus.Value.openValues)
         XCTAssertEqual(query.order, "updated")
     }
 
-    func testReviewingQueryConstrainsByResponsibleAndNeedsReview() throws {
+    func testReviewingQueryConstrainsByResponsibleAndOpenStatuses() throws {
         let query = RevisionQuery.reviewing(responsiblePHID: "PHID-USER-bbb")
         XCTAssertEqual(query.constraints?.responsiblePHIDs, ["PHID-USER-bbb"])
-        XCTAssertEqual(query.constraints?.statuses, [RevisionStatus.Value.needsReview])
+        XCTAssertEqual(query.constraints?.statuses, RevisionStatus.Value.openValues)
         XCTAssertEqual(query.attachments?.reviewers, true)
+    }
+
+    func testReviewingQueryHonoursExplicitStatuses() throws {
+        let query = RevisionQuery.reviewing(
+            responsiblePHID: "PHID-USER-bbb",
+            statuses: [RevisionStatus.Value.needsReview]
+        )
+        XCTAssertEqual(query.constraints?.statuses, [RevisionStatus.Value.needsReview])
+    }
+
+    func testPresetsRequestAFullPage() throws {
+        XCTAssertEqual(RevisionQuery.authored(authorPHID: "a").limit, RevisionQuery.pageSize)
+        XCTAssertEqual(RevisionQuery.reviewing(responsiblePHID: "a").limit, RevisionQuery.pageSize)
+        XCTAssertEqual(
+            RevisionQuery.landed(authorPHID: "a", since: Date(timeIntervalSince1970: 0)).limit,
+            RevisionQuery.pageSize
+        )
     }
 
     func testLandedQueryConstrainsByAuthorPublishedAndModifiedStart() throws {
@@ -121,7 +138,7 @@ final class RevisionDecodingTests: XCTestCase {
     }
 
     func testWrapParamsPreservesExistingFields() throws {
-        let query = RevisionQuery.active(authorPHID: "PHID-USER-aaa")
+        let query = RevisionQuery.authored(authorPHID: "PHID-USER-aaa")
         let encoder = PhabricatorClient.makeEncoder()
         let json = try PhabricatorClient.wrapParams(query, token: "api-xyz", encoder: encoder)
         XCTAssertTrue(json.contains("\"__conduit__\""))

@@ -160,7 +160,7 @@ struct RevisionListView: View {
         let query: RevisionQuery = {
             switch list {
             case .active:
-                return .active(authorPHID: phid, statuses: filter.queryStatuses)
+                return .authored(authorPHID: phid, statuses: filter.queryStatuses)
             case .review:
                 return .reviewing(responsiblePHID: phid, statuses: filter.queryStatuses)
             case .landed:

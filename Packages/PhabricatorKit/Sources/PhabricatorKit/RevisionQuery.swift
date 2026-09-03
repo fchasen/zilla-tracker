@@ -84,13 +84,16 @@ public struct RevisionQuery: Sendable, Hashable, Encodable {
 }
 
 public extension RevisionQuery {
-    static func active(authorPHID: String, statuses: [String]? = nil) -> RevisionQuery {
+    static let pageSize = 100
+
+    static func authored(authorPHID: String, statuses: [String]? = nil) -> RevisionQuery {
         RevisionQuery(
             constraints: Constraints(
                 authorPHIDs: [authorPHID],
                 statuses: statuses ?? RevisionStatus.Value.openValues
             ),
-            order: "updated"
+            order: "updated",
+            limit: pageSize
         )
     }
 
@@ -98,10 +101,11 @@ public extension RevisionQuery {
         RevisionQuery(
             constraints: Constraints(
                 responsiblePHIDs: [responsiblePHID],
-                statuses: statuses ?? [RevisionStatus.Value.needsReview]
+                statuses: statuses ?? RevisionStatus.Value.openValues
             ),
             attachments: Attachments(reviewers: true),
-            order: "updated"
+            order: "updated",
+            limit: pageSize
         )
     }
 
@@ -112,7 +116,8 @@ public extension RevisionQuery {
                 statuses: [RevisionStatus.Value.published],
                 modifiedStart: Int(since.timeIntervalSince1970)
             ),
-            order: "updated"
+            order: "updated",
+            limit: pageSize
         )
     }
 }
