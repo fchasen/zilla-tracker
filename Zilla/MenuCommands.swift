@@ -79,15 +79,23 @@ struct ZillaCommands: Commands {
                 .keyboardShortcut("1", modifiers: .command)
             Button("Needs Info") { workspace.sidebarSelection = .smart(.needsReview) }
                 .keyboardShortcut("2", modifiers: .command)
+            Button("Todo") { workspace.sidebarSelection = .smart(.todo) }
+                .keyboardShortcut("3", modifiers: .command)
 
             Divider()
 
-            Button("Patches") { workspace.sidebarSelection = .revisions(.patches) }
-                .keyboardShortcut("3", modifiers: .command)
-                .disabled(!phab.isSignedIn)
             Button("Reviews") { workspace.sidebarSelection = .revisions(.reviews) }
                 .keyboardShortcut("4", modifiers: .command)
                 .disabled(!phab.isSignedIn)
+            Button("Patches") { workspace.sidebarSelection = .revisions(.patches) }
+                .keyboardShortcut("5", modifiers: .command)
+                .disabled(!phab.isSignedIn)
+            Button("Landed Patches") {
+                workspace.patchScope = .landed
+                workspace.sidebarSelection = .revisions(.patches)
+            }
+            .keyboardShortcut("5", modifiers: [.command, .option])
+            .disabled(!phab.isSignedIn)
 
             Divider()
 
