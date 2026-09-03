@@ -13,18 +13,19 @@ struct RevisionListView: View {
 
     let list: RevisionList
 
-    @State private var revisions: [Revision] = []
+    @State private var allRevisions: [Revision] = []
+    @State private var isTruncated = false
     @State private var isLoading: Bool = false
     @State private var loadError: String?
     @State private var lastSeenRefreshToken: UUID?
-    @State private var lastSeenList: RevisionList?
+    @State private var lastSeenIdentity: LoadIdentity?
 
     var body: some View {
         @Bindable var workspace = workspace
         Group {
             if !phab.isSignedIn {
                 signedOutPlaceholder
-            } else if isLoading && revisions.isEmpty {
+            } else if isLoading && allRevisions.isEmpty {
                 ProgressView().controlSize(.large)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
@@ -34,15 +35,26 @@ struct RevisionListView: View {
                     description: Text(error)
                 )
                 .textSelection(.enabled)
-            } else if revisions.isEmpty {
+            } else if allRevisions.isEmpty {
                 ContentUnavailableView(
                     "No revisions",
                     systemImage: "tray",
                     description: Text(emptyDescription)
                 )
+            } else if displayedRevisions.isEmpty && !trimmedSearch.isEmpty {
+                ContentUnavailableView.search(text: trimmedSearch)
+            } else if displayedRevisions.isEmpty {
+                ContentUnavailableView {
+                    Label("No revisions in the selected groups", systemImage: "person.2.slash")
+                } description: {
+                    Text("Every reviewer group is hidden by the current filter.")
+                } actions: {
+                    Button("Show All") { workspace.hiddenReviewerScopeIDs = [] }
+                        .buttonStyle(.borderedProminent)
+                }
             } else {
                 List(selection: revisionSelectionBinding) {
-                    ForEach(revisions) { revision in
+                    ForEach(displayedRevisions) { revision in
                         RevisionRow(
                             revision: revision,
                             showsUnseenIndicator: list == .reviews,
@@ -50,6 +62,11 @@ struct RevisionListView: View {
                             viewerProjectPHIDs: list == .reviews ? phab.viewerProjectPHIDs : []
                         )
                             .tag(Optional(revision.id))
+                    }
+                    if isTruncated {
+                        Text("Showing the first \(RevisionPage.defaultMaxPages * RevisionQuery.pageSize) revisions.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -75,30 +92,134 @@ struct RevisionListView: View {
                 .help("Refresh")
                 .disabled(isLoading || !phab.isSignedIn)
             }
-            if list != .patches || workspace.patchScope == .active {
+            if list == .patches {
+                ToolbarItem(placement: .primaryAction) {
+                    patchScopeMenu
+                }
+            }
+            if list == .reviews, reviewerScopeEntries.count > 1 {
+                ToolbarItem(placement: .primaryAction) {
+                    reviewerScopeMenu
+                }
+            }
+            if !isLandedPatches {
                 ToolbarItem(placement: .primaryAction) {
                     filterMenu
                 }
             }
         }
-        .task(id: TaskKey(list: list, signedIn: phab.isSignedIn, refresh: workspace.revisionListRefreshToken, filter: workspace.revisionStatusFilter(for: list))) {
+        .searchable(text: $workspace.searchText, prompt: Text(searchPrompt))
+        .task(id: taskKey) {
             let current = workspace.revisionListRefreshToken
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
-            let listChanged = lastSeenList != nil && lastSeenList != list
+            let identity = loadIdentity
+            let identityChanged = lastSeenIdentity != nil && lastSeenIdentity != identity
             lastSeenRefreshToken = current
-            lastSeenList = list
-            if listChanged {
-                revisions = []
+            lastSeenIdentity = identity
+            if identityChanged {
+                allRevisions = []
+                isTruncated = false
                 loadError = nil
             }
             await load(force: force)
         }
     }
 
+    private var isLandedPatches: Bool {
+        list == .patches && workspace.patchScope == .landed
+    }
+
+    private var trimmedSearch: String {
+        workspace.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var searchPrompt: String {
+        list == .reviews ? "Search reviews" : "Search patches"
+    }
+
+    private var displayedRevisions: [Revision] {
+        var result = allRevisions
+        if list == .reviews, let viewerPHID = phab.currentUser?.phid,
+           !workspace.hiddenReviewerScopeIDs.isEmpty {
+            let hidden = workspace.hiddenReviewerScopeIDs
+            let projects = phab.viewerProjectPHIDs
+            result = result.filter { revision in
+                let scopes = ReviewerScope.scopes(
+                    for: revision,
+                    viewerPHID: viewerPHID,
+                    viewerProjectPHIDs: projects
+                )
+                return !scopes.allSatisfy { hidden.contains($0.id) }
+            }
+        }
+        let needle = trimmedSearch
+        if !needle.isEmpty {
+            result = result.filter { revisionMatches($0, search: needle) }
+        }
+        return result
+    }
+
+    private var reviewerScopeEntries: [(scope: ReviewerScope, title: String)] {
+        guard list == .reviews, let viewerPHID = phab.currentUser?.phid else { return [] }
+        return ReviewerScope.present(
+            in: allRevisions,
+            viewerPHID: viewerPHID,
+            viewerProjectPHIDs: phab.viewerProjectPHIDs,
+            name: { phab.projectName($0) }
+        )
+    }
+
     private var revisionSelectionBinding: Binding<Int?> {
         Binding(
             get: { workspace.activeRevisionID },
             set: { workspace.activeRevisionID = $0 }
+        )
+    }
+
+    private var patchScopeMenu: some View {
+        @Bindable var workspace = workspace
+        return Menu {
+            Picker(selection: $workspace.patchScope) {
+                ForEach(PatchScope.allCases) { option in
+                    Label(option.title, systemImage: option.systemImage).tag(option)
+                }
+            } label: {
+                EmptyView()
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label(workspace.patchScope.title, systemImage: workspace.patchScope.systemImage)
+        }
+        .help("Show active or landed patches")
+    }
+
+    private var reviewerScopeMenu: some View {
+        Menu {
+            ForEach(reviewerScopeEntries, id: \.scope.id) { entry in
+                Toggle(entry.title, isOn: reviewerScopeBinding(entry.scope))
+            }
+            if !workspace.hiddenReviewerScopeIDs.isEmpty {
+                Divider()
+                Button("Show All") { workspace.hiddenReviewerScopeIDs = [] }
+            }
+        } label: {
+            Label("Reviewers", systemImage: workspace.hiddenReviewerScopeIDs.isEmpty
+                ? "person.2"
+                : "person.2.fill")
+        }
+        .help("Filter by reviewer group")
+    }
+
+    private func reviewerScopeBinding(_ scope: ReviewerScope) -> Binding<Bool> {
+        Binding(
+            get: { !workspace.hiddenReviewerScopeIDs.contains(scope.id) },
+            set: { isOn in
+                if isOn {
+                    workspace.hiddenReviewerScopeIDs.remove(scope.id)
+                } else {
+                    workspace.hiddenReviewerScopeIDs.insert(scope.id)
+                }
+            }
         )
     }
 
@@ -130,7 +251,11 @@ struct RevisionListView: View {
     private var emptyDescription: String {
         switch list {
         case .reviews: return "No revisions waiting for your review."
-        case .patches: return "No open revisions you authored."
+        case .patches:
+            switch workspace.patchScope {
+            case .active: return "No open revisions you authored."
+            case .landed: return "No revisions landed in the last week."
+            }
         }
     }
 
@@ -149,19 +274,28 @@ struct RevisionListView: View {
 
     private func load(force: Bool) async {
         guard phab.isSignedIn, let phid = phab.currentUser?.phid else {
-            revisions = []
+            allRevisions = []
+            isTruncated = false
             return
         }
         isLoading = true
         loadError = nil
         defer { isLoading = false }
-        let filter = workspace.revisionStatusFilter(for: list)
+        let filter = effectiveFilter
         let query: RevisionQuery = {
             switch list {
             case .reviews:
                 return .reviewing(responsiblePHID: phid, statuses: filter.queryStatuses)
             case .patches:
-                return .authored(authorPHID: phid, statuses: filter.queryStatuses)
+                switch workspace.patchScope {
+                case .active:
+                    return .authored(authorPHID: phid, statuses: filter.queryStatuses)
+                case .landed:
+                    let cal = Calendar.current
+                    let anchor = cal.dateInterval(of: .hour, for: .now)?.start ?? .now
+                    let oneWeekAgo = cal.date(byAdding: .day, value: -7, to: anchor) ?? anchor
+                    return .landed(authorPHID: phid, since: oneWeekAgo)
+                }
             }
         }()
         do {
@@ -169,9 +303,10 @@ struct RevisionListView: View {
             let next = list == .reviews
                 ? page.revisions.filter { $0.fields.authorPHID != phid }
                 : page.revisions
-            if revisions != next {
-                revisions = next
+            if allRevisions != next {
+                allRevisions = next
             }
+            isTruncated = page.truncated
         } catch is CancellationError {
             return
         } catch {
@@ -179,8 +314,30 @@ struct RevisionListView: View {
         }
     }
 
-    private struct TaskKey: Hashable {
+    private var effectiveFilter: RevisionStatusFilter {
+        isLandedPatches ? .all : workspace.revisionStatusFilter(for: list)
+    }
+
+    private var loadIdentity: LoadIdentity {
+        LoadIdentity(list: list, scope: list == .patches ? workspace.patchScope : .active)
+    }
+
+    private var taskKey: TaskKey {
+        TaskKey(
+            identity: loadIdentity,
+            signedIn: phab.isSignedIn,
+            refresh: workspace.revisionListRefreshToken,
+            filter: effectiveFilter
+        )
+    }
+
+    private struct LoadIdentity: Hashable {
         let list: RevisionList
+        let scope: PatchScope
+    }
+
+    private struct TaskKey: Hashable {
+        let identity: LoadIdentity
         let signedIn: Bool
         let refresh: UUID
         let filter: RevisionStatusFilter
