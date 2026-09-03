@@ -80,6 +80,16 @@ struct MarkdownEditor: View {
                     isEditable: !isDisabled
                 )
             )
+            .inlineContentRules(CommentLabels.proseRules)
+            .inlineContentProvider { content in
+                guard case let .custom(kind, label, systemImage) = content,
+                      kind == CommentLabels.inlineContentKind
+                else { return ChipAttachment.make(for: content) }
+                let attachment = CommentLabelAttachment()
+                attachment.systemImage = systemImage
+                attachment.name = label
+                return attachment
+            }
             .onProseControllerReady { c in
                 configureController(c)
                 if autoFocus { focusHostTextView(disabled: isDisabled) }
@@ -198,6 +208,26 @@ struct MarkdownEditor: View {
             .divider,
         ]
 
+        let labelMenu: [SwiftProseEditor.ToolbarItem] = mentionCompletionContext.source == .phabricator
+            ? [
+                .menu(
+                    id: "commentLabel",
+                    label: "Label",
+                    systemImage: "tag",
+                    topLevel: true,
+                    entries: CommentLabels.all.map { label in
+                        SwiftProseEditor.MenuEntry(
+                            id: label.name,
+                            title: label.name,
+                            systemImage: label.systemImage,
+                            action: { insertCommentLabel(label) }
+                        )
+                    }
+                ),
+                .divider,
+            ]
+            : []
+
         let linkInsert: SwiftProseEditor.ToolbarItem = .custom(
             id: "linkInsert",
             label: "Insert Link",
@@ -219,9 +249,38 @@ struct MarkdownEditor: View {
             }
         )
 
-        return leading
+        return leading + labelMenu
             + SwiftProseEditor.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
             + [.spacer, modeToggle]
+    }
+
+    /// Labels lead their comment, so the token goes at the start of the
+    /// paragraph the caret is in — replacing a label already there rather than
+    /// stacking a second one.
+    private func insertCommentLabel(_ label: CommentLabels.Label) {
+        guard let controller else { return }
+        controller.setSelection(existingLabelRange(in: controller))
+        controller.insertMarkdown(CommentLabels.insertionText(for: label), label: "Insert Label")
+    }
+
+    /// The span the new token replaces: an existing leading label plus the
+    /// space after it, or an empty range at the paragraph's start.
+    private func existingLabelRange(in controller: EditorController) -> NSRange {
+        let storage = controller.textStorage
+        let text = storage.string as NSString
+        let caret = min(controller.currentSelection.location, text.length)
+        let paragraph = text.paragraphRange(for: NSRange(location: caret, length: 0))
+        let start = paragraph.location
+        guard start < text.length,
+              let leaf = storage.nodePath(at: start)?.leaf,
+              leaf.type == InlineContentNode.type,
+              leaf.attrs[InlineContentNode.kindAttr]?.stringValue == CommentLabels.inlineContentKind
+        else { return NSRange(location: start, length: 0) }
+        var length = 1
+        if start + 1 < NSMaxRange(paragraph), text.character(at: start + 1) == 32 {
+            length = 2
+        }
+        return NSRange(location: start, length: length)
     }
 
     private func insertBugLink(_ bugID: Bug.ID) {

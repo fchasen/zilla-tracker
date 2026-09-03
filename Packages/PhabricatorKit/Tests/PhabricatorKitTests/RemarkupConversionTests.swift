@@ -595,6 +595,73 @@ final class RemarkupConversionTests: XCTestCase {
         )
     }
 
+    func testNavEmbedWithoutIconStaysPlainText() {
+        XCTAssertEqual(Remarkup.toCommonMark("{nav name=Lemons}"), "Lemons")
+    }
+
+    func testNavEmbedRequiresASeparatorAfterTheKeyword() {
+        XCTAssertEqual(Remarkup.toCommonMark("{navigate}"), "{navigate}")
+    }
+
+    // MARK: - conventional comment labels
+
+    /// phab-conventional-comments emits a double space after `{nav,`; the whole
+    /// token has to survive byte-for-byte so an edited comment reposts unchanged.
+    func testCommentLabelPassesThroughVerbatim() {
+        let remarkup = "{nav,  icon=sticky-note, name=note:} looks good"
+        XCTAssertEqual(Remarkup.toCommonMark(remarkup), remarkup)
+    }
+
+    func testCommentLabelSingleSpacePassesThroughVerbatim() {
+        let remarkup = "{nav, icon=sticky-note, name=note:} looks good"
+        XCTAssertEqual(Remarkup.toCommonMark(remarkup), remarkup)
+    }
+
+    func testCommentLabelSpaceSeparatedPassesThroughVerbatim() {
+        let remarkup = "{nav icon=sticky-note, name=note:} looks good"
+        XCTAssertEqual(Remarkup.toCommonMark(remarkup), remarkup)
+    }
+
+    func testCommentLabelIsProtectedFromTheOtherInlineRules() {
+        XCTAssertEqual(
+            Remarkup.toCommonMark("{nav, icon=bug, name=T123 and **stars**} plain T456"),
+            "{nav, icon=bug, name=T123 and **stars**} plain [T456](https://phabricator.services.mozilla.com/T456)"
+        )
+    }
+
+    func testTwoCommentLabelsOnOneLineBothSurvive() {
+        let remarkup = "{nav, icon=bug, name=issue:} and {nav,  icon=comment, name=note:}"
+        XCTAssertEqual(Remarkup.toCommonMark(remarkup), remarkup)
+    }
+
+    func testCommentLabelInsideACodeSpanIsUntouched() {
+        let remarkup = "`{nav, icon=sticky-note, name=note:}` literal"
+        XCTAssertEqual(Remarkup.toCommonMark(remarkup), remarkup)
+    }
+
+    func testCommentLabelRoundTripsByteForByte() {
+        for remarkup in [
+            "{nav,  icon=sticky-note, name=note:} looks good",
+            "{nav, icon=exclamation-triangle, name=issue:} this breaks",
+            "{nav icon=thumbs-up, name=praise:} nice",
+            "{nav, icon=bug, name=T123 and **stars**} tail"
+        ] {
+            XCTAssertEqual(
+                Markdown.toRemarkup(Remarkup.toCommonMark(remarkup)),
+                remarkup,
+                "round trip changed \(remarkup)"
+            )
+        }
+    }
+
+    func testMarkdownToRemarkupLeavesACommentLabelAlone() {
+        let markdown = "{nav,  icon=sticky-note, name=note:} see **this**"
+        XCTAssertEqual(
+            Markdown.toRemarkup(markdown),
+            "{nav,  icon=sticky-note, name=note:} see **this**"
+        )
+    }
+
     func testKeyEmbedSingle() {
         XCTAssertEqual(
             Remarkup.toCommonMark("Press {key M} to view"),

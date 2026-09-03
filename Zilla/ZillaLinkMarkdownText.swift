@@ -55,9 +55,9 @@ struct ZillaLinkChipTarget: Hashable, Sendable {
 
             if run.link == nil, !run.isZillaPreformatted {
                 let text = String(attributedString[run.range].characters)
-                let replacements = supportedURLMatches(in: text)
+                let replacements = inlineReplacements(in: text)
                 if !replacements.isEmpty {
-                    appendReplacingBareURLs(
+                    appendReplacingPlainTextMatches(
                         in: text,
                         replacements: replacements,
                         attributes: run.attributes,
@@ -80,9 +80,18 @@ struct ZillaLinkChipTarget: Hashable, Sendable {
         return replacement
     }
 
-    private static func appendReplacingBareURLs(
+    private static func attachmentString(
+        for target: ZillaCommentLabelTarget,
+        attributes: AttributeContainer
+    ) -> AttributedString {
+        var replacement = AttributedString("\u{FFFC}", attributes: attributes)
+        replacement.textual.attachment = AnyAttachment(ZillaCommentLabelAttachment(target: target))
+        return replacement
+    }
+
+    private static func appendReplacingPlainTextMatches(
         in text: String,
-        replacements: [(range: NSRange, target: ZillaLinkChipTarget)],
+        replacements: [(range: NSRange, replacement: ZillaInlineReplacement)],
         attributes: AttributeContainer,
         into output: inout AttributedString
     ) {
@@ -90,18 +99,40 @@ struct ZillaLinkChipTarget: Hashable, Sendable {
         var cursor = 0
 
         for replacement in replacements {
+            guard replacement.range.location >= cursor else { continue }
             if replacement.range.location > cursor {
                 let prefixRange = NSRange(location: cursor, length: replacement.range.location - cursor)
                 output.append(AttributedString(nsText.substring(with: prefixRange), attributes: attributes))
             }
 
-            output.append(attachmentString(for: replacement.target, attributes: attributes))
+            switch replacement.replacement {
+            case .chip(let target):
+                output.append(attachmentString(for: target, attributes: attributes))
+            case .commentLabel(let target):
+                output.append(attachmentString(for: target, attributes: attributes))
+            }
             cursor = replacement.range.location + replacement.range.length
         }
 
         if cursor < nsText.length {
             output.append(AttributedString(nsText.substring(from: cursor), attributes: attributes))
         }
+    }
+
+    /// `appendReplacingPlainTextMatches` walks a single forward cursor, so the
+    /// two scanners' results have to be merged in ascending order.
+    private static func inlineReplacements(
+        in text: String
+    ) -> [(range: NSRange, replacement: ZillaInlineReplacement)] {
+        let chips = supportedURLMatches(in: text).map { ($0.range, ZillaInlineReplacement.chip($0.target)) }
+        let labels = CommentLabels.matches(in: text).map {
+            ($0.range, ZillaInlineReplacement.commentLabel(
+                ZillaCommentLabelTarget(icon: $0.icon, name: $0.name)
+            ))
+        }
+        return (chips + labels)
+            .sorted { $0.0.location < $1.0.location }
+            .map { (range: $0.0, replacement: $0.1) }
     }
 
     private static func supportedURLMatches(in text: String) -> [(range: NSRange, target: ZillaLinkChipTarget)] {
@@ -193,6 +224,59 @@ struct ZillaLinkChipTarget: Hashable, Sendable {
             .queryItems?
             .first { $0.name == name }?
             .value
+    }
+}
+
+/// A conventional-comment label. Rendered as a bare glyph — no capsule, no
+/// text — because the icon alone reads as the label, and the nine of them are
+/// distinguishable at a glance. Bug and Searchfox chips keep their capsules,
+/// where an ant on its own would say nothing.
+nonisolated struct ZillaCommentLabelTarget: Hashable, Sendable {
+    let icon: String
+    let name: String
+
+    var systemImage: String { PhabricatorIcons.systemImage(for: icon) }
+}
+
+private enum ZillaInlineReplacement {
+    case chip(ZillaLinkChipTarget)
+    case commentLabel(ZillaCommentLabelTarget)
+}
+
+private struct ZillaCommentLabelAttachment: Attachment {
+    let target: ZillaCommentLabelTarget
+
+    var description: String {
+        target.name
+    }
+
+    var selectionStyle: AttachmentSelectionStyle {
+        .text
+    }
+
+    var body: some View {
+        ZillaCommentLabelView(target: target)
+    }
+
+    func baselineOffset(in _: TextEnvironmentValues) -> CGFloat {
+        -1
+    }
+
+    func sizeThatFits(_: ProposedViewSize, in _: TextEnvironmentValues) -> CGSize {
+        // Textual scales the drawn symbol into exactly this rect, so the ratio
+        // has to match the glyph's own or it distorts.
+        CGSize(width: 15, height: 13)
+    }
+}
+
+private struct ZillaCommentLabelView: View {
+    let target: ZillaCommentLabelTarget
+
+    var body: some View {
+        Image(systemName: target.systemImage)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .help(target.name)
     }
 }
 

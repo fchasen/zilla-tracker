@@ -93,6 +93,11 @@ enum CommentMarkdown {
         var protected: [String] = []
         var working = text
 
+        // A `{nav, ...}` comment label is remarkup passed through verbatim; a
+        // reference inside its name is part of the label, not a link.
+        working = working.replacing(#/\{nav(?:\s+|\s*,\s*)[^}\n]+\}/#) { match in
+            protect(String(match.0), in: &protected)
+        }
         working = working.replacing(#/!\[[^\]]*\]\([^)\s]+\)/#) { match in
             protect(String(match.0), in: &protected)
         }

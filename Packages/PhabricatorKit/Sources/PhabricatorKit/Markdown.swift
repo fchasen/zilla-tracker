@@ -105,6 +105,14 @@ public enum Markdown {
         var protected: [String] = []
         var working = text
 
+        // A `{nav, icon=..., name=...}` comment label is already remarkup; the
+        // rules below would treat its punctuation as markdown.
+        working = working.replacing(#/\{nav(?:\s+|\s*,\s*)[^}\n]+\}/#) { match in
+            let placeholder = makePlaceholder(index: protected.count)
+            protected.append(String(match.0))
+            return placeholder
+        }
+
         working = working.replacing(#/!\[([^\]]+)\]\(([^)\s]+)\)/#) { match in
             "[[\(String(match.output.2)) | \(String(match.output.1))]]"
         }

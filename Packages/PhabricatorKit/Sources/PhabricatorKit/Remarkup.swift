@@ -262,15 +262,26 @@ public enum Remarkup {
             let opts = parseEmbedOptions(match.output.1.map(String.init) ?? "")
             return "[meme: \(opts["src"] ?? "image")]"
         }
-        working = working.replacing(#/\{nav\s+([^}]+)\}/#) { match in
-            let raw = String(match.output.1)
-            let names = raw.split(separator: ">").compactMap { segment -> String? in
-                let trimmed = segment.trimmingCharacters(in: .whitespaces)
-                guard !trimmed.isEmpty else { return nil }
-                if trimmed.contains("=") {
-                    return parseEmbedOptions(trimmed)["name"] ?? trimmed
-                }
-                return trimmed
+        // Also matches the comma form `{nav, icon=..., name=...}` that
+        // phab-conventional-comments emits (with a double space, which the
+        // verbatim path below preserves). A single segment carrying an icon is
+        // a comment label: it has no CommonMark equivalent, so it passes
+        // through untouched and the renderers recognise the token itself.
+        // Multi-segment and icon-less navs stay arrow-joined text.
+        working = working.replacing(#/\{nav(?:\s+|\s*,\s*)([^}\n]+)\}/#) { match in
+            let segments = String(match.output.1)
+                .split(separator: ">")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if segments.count == 1,
+               let icon = parseEmbedOptions(segments[0])["icon"],
+               !icon.isEmpty {
+                let placeholder = makePlaceholder(index: protected.count)
+                protected.append(String(match.0))
+                return placeholder
+            }
+            let names = segments.map { segment in
+                segment.contains("=") ? (parseEmbedOptions(segment)["name"] ?? segment) : segment
             }
             return names.joined(separator: " → ")
         }
