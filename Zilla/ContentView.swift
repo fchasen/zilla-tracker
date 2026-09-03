@@ -2379,10 +2379,15 @@ private struct FollowedComponentEntry: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
     @Environment(BugIndexStore.self) private var bugIndex
+    @Environment(AuthStore.self) private var auth
+    @Environment(ResourceCache.self) private var cache
+    @Environment(Workspace.self) private var workspace
     let followed: FollowedComponent
     let onAddMetaBug: () -> Void
 
     @State private var isDropTarget = false
+    @State private var triageCount: Int?
+    @State private var lastSeenRefreshToken: UUID?
     @AppStorage private var isExpanded: Bool
 
     init(followed: FollowedComponent, onAddMetaBug: @escaping () -> Void) {
@@ -2402,8 +2407,16 @@ private struct FollowedComponentEntry: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             Label("Open Bugs", systemImage: "tray.full")
                 .tag(SidebarSelection.component(followed.ref))
-            Label("Triage", systemImage: "ant")
-                .tag(SidebarSelection.componentTriage(followed.ref))
+            Label {
+                HStack {
+                    Text("Triage")
+                    Spacer()
+                    SidebarCount(value: triageCount)
+                }
+            } icon: {
+                Image(systemName: "ant")
+            }
+            .tag(SidebarSelection.componentTriage(followed.ref))
             Label("Board", systemImage: "rectangle.3.group")
                 .tag(SidebarSelection.componentBoard(followed.ref))
             ForEach(metas) { meta in
@@ -2428,8 +2441,29 @@ private struct FollowedComponentEntry: View {
                 moveMetas(metas, from: source, to: destination)
             }
         } label: {
-            FollowedComponentRow(followed: followed)
-                .contextMenu { componentMenu }
+            FollowedComponentRow(
+                followed: followed,
+                triageCount: isExpanded ? nil : triageCount
+            )
+            .contextMenu { componentMenu }
+        }
+        .task(id: TriageCountKey(
+            ref: followed.ref,
+            signedIn: auth.isSignedIn,
+            login: auth.currentUser?.name,
+            refresh: workspace.bugListRefreshToken
+        )) {
+            let current = workspace.bugListRefreshToken
+            let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
+            lastSeenRefreshToken = current
+            triageCount = await sidebarBugCount(
+                .triage(in: followed.ref),
+                defaultFilter: .open,
+                login: auth.isSignedIn ? auth.currentUser?.name : nil,
+                force: force,
+                cache: cache,
+                client: auth.client
+            )
         }
         .background(
             isDropTarget
@@ -2469,6 +2503,13 @@ private struct FollowedComponentEntry: View {
         }
     }
 
+    private struct TriageCountKey: Hashable {
+        let ref: ComponentRef
+        let signedIn: Bool
+        let login: String?
+        let refresh: UUID
+    }
+
     private func moveMetas(_ metas: [FollowedMetaBug], from source: IndexSet, to destination: Int) {
         var items = metas
         items.move(fromOffsets: source, toOffset: destination)
@@ -2480,14 +2521,19 @@ private struct FollowedComponentEntry: View {
 
 private struct FollowedComponentRow: View {
     let followed: FollowedComponent
+    var triageCount: Int?
 
     var body: some View {
         Label {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(followed.componentName).lineLimit(1)
-                Text(followed.product)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(followed.componentName).lineLimit(1)
+                    Text(followed.product)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                SidebarCount(value: triageCount)
             }
         } icon: {
             Image(systemName: "square.stack.3d.up")
