@@ -99,7 +99,6 @@ struct BugLinkTransfer: Codable, Transferable {
 enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
     case myBugs
     case needsReview
-    case triage
     case todo
 
     var id: String { rawValue }
@@ -108,7 +107,6 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .myBugs: return "My Bugs"
         case .needsReview: return "Needs Info"
-        case .triage: return "Triage"
         case .todo: return "Todo"
         }
     }
@@ -117,32 +115,7 @@ enum SmartEndpoint: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .myBugs: return "tray"
         case .needsReview: return "flag"
-        case .triage: return "ant"
         case .todo: return "checklist"
-        }
-    }
-}
-
-enum ReviewList: String, CaseIterable, Hashable, Identifiable {
-    case review
-    case active
-    case landed
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .active: return "Active"
-        case .review: return "Review"
-        case .landed: return "Landed"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .active: return "doc.text"
-        case .review: return "checkmark.seal"
-        case .landed: return "shippingbox"
         }
     }
 }
@@ -194,7 +167,7 @@ enum RevisionStatusFilter: String, CaseIterable, Identifiable, Hashable {
 enum SidebarSelection: Hashable {
     case smart(SmartEndpoint)
     case allDrafts
-    case review(ReviewList)
+    case revisions(RevisionList)
     case component(ComponentRef)
     case componentTriage(ComponentRef)
     case componentBoard(ComponentRef)
@@ -410,19 +383,42 @@ final class Workspace {
     var metaBugFilter: BugStatusFilter = .open
     var bugListRefreshToken: UUID = UUID()
     var revisionListRefreshToken: UUID = UUID()
-    var revisionStatusFilters: [ReviewList: RevisionStatusFilter] = [:]
+    var revisionStatusFilters: [RevisionList: RevisionStatusFilter] = [:]
 
-    func revisionStatusFilter(for list: ReviewList) -> RevisionStatusFilter {
+    func revisionStatusFilter(for list: RevisionList) -> RevisionStatusFilter {
         revisionStatusFilters[list] ?? Self.defaultRevisionStatusFilter(for: list)
     }
 
-    private static func defaultRevisionStatusFilter(for list: ReviewList) -> RevisionStatusFilter {
+    private static func defaultRevisionStatusFilter(for list: RevisionList) -> RevisionStatusFilter {
         switch list {
-        case .active: return .all
-        case .review: return .needsReview
-        case .landed: return .all
+        case .reviews: return .needsReview
+        case .patches: return .all
         }
     }
+
+    var patchScope: PatchScope = PatchScope(
+        rawValue: UserDefaults.standard.string(forKey: Workspace.patchScopeStorageKey) ?? ""
+    ) ?? .active {
+        didSet {
+            guard oldValue != patchScope else { return }
+            UserDefaults.standard.set(patchScope.rawValue, forKey: Workspace.patchScopeStorageKey)
+        }
+    }
+
+    var hiddenReviewerScopeIDs: Set<String> = Set(
+        UserDefaults.standard.stringArray(forKey: Workspace.hiddenReviewerScopesStorageKey) ?? []
+    ) {
+        didSet {
+            guard oldValue != hiddenReviewerScopeIDs else { return }
+            UserDefaults.standard.set(
+                hiddenReviewerScopeIDs.sorted(),
+                forKey: Workspace.hiddenReviewerScopesStorageKey
+            )
+        }
+    }
+
+    static let patchScopeStorageKey = "revisions.patchScope"
+    static let hiddenReviewerScopesStorageKey = "reviews.hiddenReviewerScopes"
 
     var fontScaleStep: Int = FontScale.clamp(
         (UserDefaults.standard.object(forKey: FontScale.storageKey) as? Int) ?? FontScale.defaultStep
@@ -459,7 +455,7 @@ final class Workspace {
                 return metaBugFilter
             case .component, .componentTriage, .componentBoard:
                 return componentFilter
-            case .allDrafts, .review, .none:
+            case .allDrafts, .revisions, .none:
                 return .all
             }
         }
@@ -471,7 +467,7 @@ final class Workspace {
                 metaBugFilter = newValue
             case .component, .componentTriage, .componentBoard:
                 componentFilter = newValue
-            case .allDrafts, .review, .none:
+            case .allDrafts, .revisions, .none:
                 break
             }
         }
@@ -480,14 +476,13 @@ final class Workspace {
     private static func defaultSort(for endpoint: SmartEndpoint) -> BugListSort {
         switch endpoint {
         case .myBugs: return .rank
-        case .triage: return .newest
         default: return .recent
         }
     }
 
     private static func defaultFilter(for endpoint: SmartEndpoint) -> BugStatusFilter {
         switch endpoint {
-        case .myBugs, .triage: return .open
+        case .myBugs: return .open
         default: return .all
         }
     }
@@ -635,6 +630,7 @@ final class Workspace {
         selectedDraftID = nil
         activeRevisionID = nil
         searchText = ""
+        hiddenReviewerScopeIDs = []
         clearLoadedBug()
         #if os(macOS)
         showInspector = true
@@ -1281,8 +1277,6 @@ final class Workspace {
             return .myBugs
         case .smart(.needsReview):
             return .needsReviewFromMe
-        case .smart(.triage):
-            return .triage
         case .smart(.todo):
             return BugQuery()
         case .component(let ref), .componentBoard(let ref):
@@ -1291,7 +1285,7 @@ final class Workspace {
             return .triage(in: ref)
         case .metaBug(let id):
             return .blockedBy(metaBug: id)
-        case .allDrafts, .review:
+        case .allDrafts, .revisions:
             return BugQuery()
         }
     }
@@ -1389,7 +1383,7 @@ struct ContentView: View {
     private var contentColumn: some View {
         @Bindable var workspace = workspace
         switch workspace.sidebarSelection {
-        case .review(let list):
+        case .revisions(let list):
             RevisionListView(list: list)
         case .componentBoard(let ref):
             ComponentReleaseBoardView(component: ref)
@@ -1453,7 +1447,7 @@ struct ContentView: View {
             RevisionDetailView(revisionID: id)
         } else if workspace.sidebarSelection == .allDrafts, let id = workspace.selectedDraftID {
             DraftEditorView(draftID: id)
-        } else if case .review(let list) = workspace.sidebarSelection {
+        } else if case .revisions(let list) = workspace.sidebarSelection {
             EmptyStateIcon(systemName: list.systemImage)
         } else {
             BugDetailView(bugID: workspace.selectedBugID)
@@ -1484,7 +1478,7 @@ struct ContentView: View {
             return "New bug in \(ref.component)"
         case .metaBug(let id):
             return "New bug blocking #\(id)"
-        case .smart, .allDrafts, .review, .none:
+        case .smart, .allDrafts, .revisions, .none:
             return "New bug…"
         }
     }
@@ -1502,7 +1496,7 @@ struct ContentView: View {
                 draft.componentName = parent.componentName
             }
             draft.blocks = [bugId]
-        case .smart, .allDrafts, .review, .none:
+        case .smart, .allDrafts, .revisions, .none:
             break
         }
         modelContext.insert(draft)
@@ -1944,6 +1938,32 @@ private struct DraftMetadata: View {
 
 // MARK: - Sidebar
 
+struct SidebarCount: View {
+    let value: Int?
+
+    var body: some View {
+        if let value, value > 0 {
+            Text("\(value)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+@MainActor
+private func sidebarBugCount(
+    _ query: BugQuery,
+    defaultFilter: BugStatusFilter,
+    login: String?,
+    force: Bool,
+    cache: ResourceCache,
+    client: BugzillaClient
+) async -> Int? {
+    guard let login, !login.isEmpty else { return nil }
+    let counted = defaultFilter.apply(to: query).substitutingMe(with: login)
+    return try? await cache.bugCount(counted, force: force, using: client)
+}
+
 struct Sidebar: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AuthStore.self) private var auth
@@ -1960,9 +1980,7 @@ struct Sidebar: View {
     @State private var addMetaBugTarget: FollowedComponent?
     @State private var showAddComponent = false
     @State private var needsInfoCount: Int?
-    @State private var triageCount: Int?
 
-    @AppStorage("sidebar.section.review.expanded") private var reviewExpanded = true
     @AppStorage("sidebar.section.components.expanded") private var componentsExpanded = true
 
     var body: some View {
@@ -1975,9 +1993,6 @@ struct Sidebar: View {
                         } else if endpoint == .needsReview {
                             smartEndpointRow(endpoint, count: needsInfoCount)
                                 .tag(SidebarSelection.smart(endpoint))
-                        } else if endpoint == .triage {
-                            smartEndpointRow(endpoint, count: triageCount)
-                                .tag(SidebarSelection.smart(endpoint))
                         } else {
                             smartEndpointRow(endpoint)
                                 .tag(SidebarSelection.smart(endpoint))
@@ -1985,30 +2000,14 @@ struct Sidebar: View {
                     }
                     Label("Drafts", systemImage: "square.and.pencil")
                     .tag(SidebarSelection.allDrafts)
-                }
-
-                Section(isExpanded: $reviewExpanded) {
-                    ForEach(ReviewList.allCases) { item in
-                        if item == .review {
-                            Label {
-                                HStack {
-                                    Text(item.title)
-                                    Spacer()
-                                    if unseenReviewCount > 0 {
-                                        UnseenReviewBadge(count: unseenReviewCount)
-                                    }
-                                }
-                            } icon: {
-                                Image(systemName: item.systemImage)
-                            }
-                            .tag(SidebarSelection.review(item))
-                        } else {
-                            Label(item.title, systemImage: item.systemImage)
-                                .tag(SidebarSelection.review(item))
+                    revisionListRow(.reviews) {
+                        if unseenReviewCount > 0 {
+                            UnseenReviewBadge(count: unseenReviewCount)
                         }
                     }
-                } header: {
-                    Text("Review")
+                    revisionListRow(.patches) {
+                        SidebarCount(value: needsChangesCount)
+                    }
                 }
 
                 Section(isExpanded: $componentsExpanded) {
@@ -2060,21 +2059,17 @@ struct Sidebar: View {
                 autoFollowOwnedComponents(for: login)
             }
         }
-        .task(id: triageCountKey) {
-            await loadTriageCount(force: false)
-        }
         .task(id: workspace.bugListRefreshToken) {
-            await loadTriageCount(force: true)
             await loadNeedsInfoCount(force: true)
         }
         .task(id: needsInfoCountKey) {
             await loadNeedsInfoCount(force: false)
         }
-        .task(id: reviewBadgeKey) {
-            await loadReviewBadge(force: false)
+        .task(id: revisionBadgeKey) {
+            await loadRevisionBadges(force: false)
         }
         .task(id: workspace.revisionListRefreshToken) {
-            await loadReviewBadge(force: true)
+            await loadRevisionBadges(force: true)
         }
         #if os(macOS)
         .onChange(of: unseenReviewCount, initial: true) { _, new in
@@ -2088,37 +2083,31 @@ struct Sidebar: View {
             HStack {
                 Text(endpoint.title)
                 Spacer()
-                if let count, count > 0 {
-                    Text("\(count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                SidebarCount(value: count)
             }
         } icon: {
             Image(systemName: endpoint.systemImage)
         }
     }
 
+    private func revisionListRow<Accessory: View>(
+        _ list: RevisionList,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
+        Label {
+            HStack {
+                Text(list.title)
+                Spacer()
+                accessory()
+            }
+        } icon: {
+            Image(systemName: list.systemImage)
+        }
+        .tag(SidebarSelection.revisions(list))
+    }
+
     private var visibleSmartEndpoints: [SmartEndpoint] {
         SmartEndpoint.allCases
-    }
-
-    private var followedComponentRefs: [ComponentRef] {
-        followedComponents.map(\.ref)
-    }
-
-    private struct TriageCountKey: Hashable {
-        let signedIn: Bool
-        let login: String?
-        let componentRefs: [ComponentRef]
-    }
-
-    private var triageCountKey: TriageCountKey {
-        TriageCountKey(
-            signedIn: auth.isSignedIn,
-            login: auth.currentUser?.name,
-            componentRefs: followedComponentRefs
-        )
     }
 
     private struct NeedsInfoCountKey: Hashable {
@@ -2131,26 +2120,6 @@ struct Sidebar: View {
             signedIn: auth.isSignedIn,
             login: auth.currentUser?.name
         )
-    }
-
-    private func countQuery(_ query: BugQuery, defaultFilter: BugStatusFilter, force: Bool) async -> Int? {
-        guard auth.isSignedIn, let login = auth.currentUser?.name else { return nil }
-        var countQuery = defaultFilter.apply(to: query)
-        countQuery = countQuery.substitutingMe(with: login)
-        return try? await cache.bugCount(countQuery, force: force, using: auth.client)
-    }
-
-    private func loadTriageCount(force: Bool) async {
-        guard auth.isSignedIn, auth.currentUser?.name != nil else {
-            triageCount = nil
-            return
-        }
-        guard !followedComponentRefs.isEmpty else {
-            triageCount = 0
-            return
-        }
-
-        triageCount = await countQuery(.triage(in: followedComponentRefs), defaultFilter: .open, force: force)
     }
 
     private func autoFollowOwnedComponents(for login: String) {
@@ -2177,44 +2146,79 @@ struct Sidebar: View {
             return
         }
 
-        needsInfoCount = await countQuery(.needsReviewFromMe, defaultFilter: .all, force: force)
+        needsInfoCount = await sidebarBugCount(
+            .needsReviewFromMe,
+            defaultFilter: .all,
+            login: auth.currentUser?.name,
+            force: force,
+            cache: cache,
+            client: auth.client
+        )
     }
 
     private var reviewQuery: RevisionQuery? {
         guard let phid = phab.currentUser?.phid else { return nil }
-        return .reviewing(responsiblePHID: phid, statuses: nil)
+        return .reviewing(responsiblePHID: phid, statuses: [RevisionStatus.Value.needsReview])
     }
 
-    private struct ReviewBadgeKey: Hashable {
+    private var patchesQuery: RevisionQuery? {
+        guard let phid = phab.currentUser?.phid else { return nil }
+        return .authored(authorPHID: phid, statuses: nil)
+    }
+
+    private struct RevisionBadgeKey: Hashable {
         let signedIn: Bool
         let phid: String?
     }
 
-    private var reviewBadgeKey: ReviewBadgeKey {
-        ReviewBadgeKey(
+    private var revisionBadgeKey: RevisionBadgeKey {
+        RevisionBadgeKey(
             signedIn: phab.isSignedIn,
             phid: phab.currentUser?.phid
         )
     }
 
     private var unseenReviewCount: Int {
-        guard let query = reviewQuery,
-              let result: RevisionSearchResult = cache.get(.revisionSearch(query)) else {
+        guard let viewerPHID = phab.currentUser?.phid,
+              let query = reviewQuery,
+              let page: RevisionPage = cache.get(.revisionSearchPages(query)) else {
             return 0
         }
-        let viewerPHID = phab.currentUser?.phid
         var count = 0
-        for revision in result.data {
+        for revision in page.revisions {
             if revision.fields.authorPHID == viewerPHID { continue }
             if viewedRevisions.contains(revision.id) { continue }
+            let scopes = ReviewerScope.scopes(
+                for: revision,
+                viewerPHID: viewerPHID,
+                viewerProjectPHIDs: phab.viewerProjectPHIDs
+            )
+            if scopes.allSatisfy({ workspace.hiddenReviewerScopeIDs.contains($0.id) }) { continue }
             count += 1
         }
         return count
     }
 
-    private func loadReviewBadge(force: Bool) async {
-        guard phab.isSignedIn, let query = reviewQuery else { return }
-        _ = try? await cache.revisionSearch(query, force: force, using: phab.client)
+    private var needsChangesCount: Int? {
+        guard let query = patchesQuery,
+              let page: RevisionPage = cache.get(.revisionSearchPages(query)) else {
+            return nil
+        }
+        return page.revisions.filter {
+            $0.fields.status.value == RevisionStatus.Value.needsRevision
+        }.count
+    }
+
+    private func loadRevisionBadges(force: Bool) async {
+        guard phab.isSignedIn else { return }
+        async let reviews: Void = warmRevisionBadge(reviewQuery, force: force)
+        async let patches: Void = warmRevisionBadge(patchesQuery, force: force)
+        _ = await (reviews, patches)
+    }
+
+    private func warmRevisionBadge(_ query: RevisionQuery?, force: Bool) async {
+        guard let query else { return }
+        _ = try? await cache.revisionSearchAllPages(query, force: force, using: phab.client)
     }
 
     private func moveComponents(from source: IndexSet, to destination: Int) {
@@ -2398,7 +2402,7 @@ private struct FollowedComponentEntry: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             Label("Open Bugs", systemImage: "tray.full")
                 .tag(SidebarSelection.component(followed.ref))
-            Label("Triage", systemImage: SmartEndpoint.triage.systemImage)
+            Label("Triage", systemImage: "ant")
                 .tag(SidebarSelection.componentTriage(followed.ref))
             Label("Board", systemImage: "rectangle.3.group")
                 .tag(SidebarSelection.componentBoard(followed.ref))
@@ -2503,11 +2507,7 @@ private struct TodoSidebarRow: View {
             HStack {
                 Text(SmartEndpoint.todo.title)
                 Spacer()
-                if !todoOrder.isEmpty {
-                    Text("\(todoOrder.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                SidebarCount(value: todoOrder.count)
             }
         } icon: {
             Image(systemName: SmartEndpoint.todo.systemImage)
@@ -2622,14 +2622,6 @@ struct BugListView: View {
 
     private var isTodo: Bool {
         selection == .smart(.todo)
-    }
-
-    private var isGlobalTriage: Bool {
-        selection == .smart(.triage)
-    }
-
-    private var followedComponentRefs: [ComponentRef] {
-        followedComponents.map(\.ref)
     }
 
     var body: some View {
@@ -3013,7 +3005,6 @@ struct BugListView: View {
             filter: workspace.bugStatusFilter,
             refresh: workspace.bugListRefreshToken,
             signedIn: auth.isSignedIn,
-            triageComponentRefs: isGlobalTriage ? followedComponentRefs : [],
             todoIDs: isTodo ? todoOrder.map(\.bugId) : []
         )
     }
@@ -3032,7 +3023,7 @@ struct BugListView: View {
             }
             return "Meta \(id)"
         case .allDrafts: return "Drafts"
-        case .review(let r): return r.title
+        case .revisions(let list): return list.title
         }
     }
 
@@ -3048,7 +3039,7 @@ struct BugListView: View {
         let filter = workspace.bugStatusFilter
         var query = selection == .smart(.myBugs) && filter == .reported
             ? .reportedByMe
-            : (isGlobalTriage ? .triage(in: followedComponentRefs) : workspace.bugQuery(for: selection))
+            : workspace.bugQuery(for: selection)
         query = filter.apply(to: query)
         if let login = auth.currentUser?.name {
             query = query.substitutingMe(with: login)
@@ -3080,15 +3071,6 @@ struct BugListView: View {
         guard auth.isSignedIn else {
             bugs = []
             totalMatches = nil
-            canLoadMore = false
-            loadError = nil
-            return
-        }
-
-        if isGlobalTriage && followedComponentRefs.isEmpty {
-            bugs = []
-            dependents = [:]
-            totalMatches = 0
             canLoadMore = false
             loadError = nil
             return
@@ -3251,7 +3233,6 @@ private struct BugListLoadKey: Hashable {
     let filter: BugStatusFilter
     let refresh: UUID
     let signedIn: Bool
-    let triageComponentRefs: [ComponentRef]
     let todoIDs: [Int]
 }
 

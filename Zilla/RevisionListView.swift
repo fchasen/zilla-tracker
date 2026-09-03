@@ -11,13 +11,13 @@ struct RevisionListView: View {
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(ResourceCache.self) private var cache
 
-    let list: ReviewList
+    let list: RevisionList
 
     @State private var revisions: [Revision] = []
     @State private var isLoading: Bool = false
     @State private var loadError: String?
     @State private var lastSeenRefreshToken: UUID?
-    @State private var lastSeenList: ReviewList?
+    @State private var lastSeenList: RevisionList?
 
     var body: some View {
         @Bindable var workspace = workspace
@@ -45,9 +45,9 @@ struct RevisionListView: View {
                     ForEach(revisions) { revision in
                         RevisionRow(
                             revision: revision,
-                            showsUnseenIndicator: list == .review,
-                            viewerPHID: list == .review ? phab.currentUser?.phid : nil,
-                            viewerProjectPHIDs: list == .review ? phab.viewerProjectPHIDs : []
+                            showsUnseenIndicator: list == .reviews,
+                            viewerPHID: list == .reviews ? phab.currentUser?.phid : nil,
+                            viewerProjectPHIDs: list == .reviews ? phab.viewerProjectPHIDs : []
                         )
                             .tag(Optional(revision.id))
                     }
@@ -75,7 +75,7 @@ struct RevisionListView: View {
                 .help("Refresh")
                 .disabled(isLoading || !phab.isSignedIn)
             }
-            if list != .landed {
+            if list != .patches || workspace.patchScope == .active {
                 ToolbarItem(placement: .primaryAction) {
                     filterMenu
                 }
@@ -129,9 +129,8 @@ struct RevisionListView: View {
 
     private var emptyDescription: String {
         switch list {
-        case .active: return "No open revisions you authored."
-        case .review: return "No revisions waiting for your review."
-        case .landed: return "No revisions landed in the last week."
+        case .reviews: return "No revisions waiting for your review."
+        case .patches: return "No open revisions you authored."
         }
     }
 
@@ -159,22 +158,17 @@ struct RevisionListView: View {
         let filter = workspace.revisionStatusFilter(for: list)
         let query: RevisionQuery = {
             switch list {
-            case .active:
-                return .authored(authorPHID: phid, statuses: filter.queryStatuses)
-            case .review:
+            case .reviews:
                 return .reviewing(responsiblePHID: phid, statuses: filter.queryStatuses)
-            case .landed:
-                let cal = Calendar.current
-                let anchor = cal.dateInterval(of: .hour, for: .now)?.start ?? .now
-                let oneWeekAgo = cal.date(byAdding: .day, value: -7, to: anchor) ?? anchor
-                return .landed(authorPHID: phid, since: oneWeekAgo)
+            case .patches:
+                return .authored(authorPHID: phid, statuses: filter.queryStatuses)
             }
         }()
         do {
-            let result = try await cache.revisionSearch(query, force: force, using: phab.client)
-            let next = list == .review
-                ? result.data.filter { $0.fields.authorPHID != phid }
-                : result.data
+            let page = try await cache.revisionSearchAllPages(query, force: force, using: phab.client)
+            let next = list == .reviews
+                ? page.revisions.filter { $0.fields.authorPHID != phid }
+                : page.revisions
             if revisions != next {
                 revisions = next
             }
@@ -186,7 +180,7 @@ struct RevisionListView: View {
     }
 
     private struct TaskKey: Hashable {
-        let list: ReviewList
+        let list: RevisionList
         let signedIn: Bool
         let refresh: UUID
         let filter: RevisionStatusFilter
