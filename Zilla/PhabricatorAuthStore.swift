@@ -22,6 +22,7 @@ final class PhabricatorAuthStore {
     nonisolated static let defaultBaseURL = URL(string: "https://phabricator.services.mozilla.com")!
 
     var state: State = .unknown
+    private(set) var viewerProjects: [PhabricatorProject] = []
     private(set) var viewerProjectPHIDs: Set<String> = []
     let client: PhabricatorClient
     var cacheClearHook: (@MainActor () -> Void)?
@@ -83,25 +84,36 @@ final class PhabricatorAuthStore {
         keychain.delete(account: Self.keychainAccount)
         await client.setAuthentication(.none)
         state = .signedOut
+        viewerProjects = []
         viewerProjectPHIDs = []
         cacheClearHook?()
     }
 
     private func loadViewerProjects(userPHID: String) async {
-        var phids: Set<String> = []
+        var projects: [PhabricatorProject] = []
+        var seen: Set<String> = []
         var cursor: String?
         repeat {
             var query = ProjectQuery.forMember(userPHID)
             query.after = cursor
             do {
                 let result = try await client.searchProjects(query)
-                phids.formUnion(result.data.map(\.phid))
+                for project in result.data where seen.insert(project.phid).inserted {
+                    projects.append(project)
+                }
                 cursor = result.cursor?.after
             } catch {
                 break
             }
         } while cursor != nil
-        viewerProjectPHIDs = phids
+        viewerProjects = projects.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        viewerProjectPHIDs = seen
+    }
+
+    func projectName(_ phid: String) -> String? {
+        viewerProjects.first { $0.phid == phid }?.name
     }
 
     var currentUser: PhabricatorUser? {
