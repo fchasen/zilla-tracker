@@ -153,15 +153,6 @@ struct BugDetailView: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    workspace.showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-                .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
-                .disabled(bug == nil)
-            }
             #if os(iOS)
             ToolbarItemGroup(placement: .bottomBar) {
                 Spacer()

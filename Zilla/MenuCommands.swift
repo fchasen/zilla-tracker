@@ -71,7 +71,6 @@ struct ZillaCommands: Commands {
                 workspace.showInspector.toggle()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
-            .disabled(workspace.loadedBug == nil && workspace.selectedDraftID == nil)
         }
 
         CommandMenu("Navigate") {

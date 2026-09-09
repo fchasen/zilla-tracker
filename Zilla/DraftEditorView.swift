@@ -103,14 +103,6 @@ struct DraftEditorView: View {
                     .disabled(!draft.isReadyToSubmit)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    workspace.showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-                .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
-            }
         }
         .confirmationDialog(
             "Discard this draft?",

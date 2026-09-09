@@ -78,14 +78,6 @@ struct RevisionDetailView: View {
                     .help("Open D\(String(revision.id)) in your browser")
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    workspace.showInspector.toggle()
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-                .help("Toggle inspector")
-            }
             #if os(iOS)
             ToolbarItemGroup(placement: .bottomBar) {
                 Spacer()

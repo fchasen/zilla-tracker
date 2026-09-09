@@ -1367,6 +1367,9 @@ struct ContentView: View {
         .inspector(isPresented: $workspace.showInspector) {
             inspectorColumn
                 .inspectorColumnWidth(min: 220, ideal: 342, max: 360)
+                #if os(macOS)
+                .toolbar { inspectorToggle }
+                #endif
         }
         .sheet(isPresented: $workspace.bugzillaSettingsPresented) {
             BugzillaSettingsView()
@@ -1438,6 +1441,7 @@ struct ContentView: View {
         .navigationSplitViewColumnWidth(min: 160, ideal: 320)
         #else
         rootDetailView
+            .toolbar { inspectorToggle }
             .sheet(isPresented: pushedRouteSheetBinding) {
                 NavigationStack {
                     if let last = workspace.detailPath.last {
@@ -1446,6 +1450,18 @@ struct ContentView: View {
                 }
             }
         #endif
+    }
+
+    @ToolbarContentBuilder
+    private var inspectorToggle: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                workspace.showInspector.toggle()
+            } label: {
+                Label("Inspector", systemImage: "sidebar.right")
+            }
+            .help(workspace.showInspector ? "Hide Inspector" : "Show Inspector")
+        }
     }
 
     private var detailPathBinding: Binding<[DetailRoute]> {
