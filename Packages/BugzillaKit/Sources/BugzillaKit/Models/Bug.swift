@@ -311,6 +311,7 @@ public struct BugUpdate: Sendable, Equatable {
     public var priority: String?
     public var severity: String?
     public var targetMilestone: String?
+    public var whiteboard: String?
     public var points: String?
     public var rank: Int?
     public var comment: String?
@@ -330,6 +331,7 @@ public struct BugUpdate: Sendable, Equatable {
         priority: String? = nil,
         severity: String? = nil,
         targetMilestone: String? = nil,
+        whiteboard: String? = nil,
         points: String? = nil,
         rank: Int? = nil,
         comment: String? = nil,
@@ -348,6 +350,7 @@ public struct BugUpdate: Sendable, Equatable {
         self.priority = priority
         self.severity = severity
         self.targetMilestone = targetMilestone
+        self.whiteboard = whiteboard
         self.points = points
         self.rank = rank
         self.comment = comment

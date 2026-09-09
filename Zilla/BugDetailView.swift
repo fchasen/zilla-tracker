@@ -1323,10 +1323,8 @@ struct BugInspectorContent: View {
                 FlagsSection(flags: nonNeedinfoFlags)
             }
 
-            if let whiteboard = trimmedWhiteboard {
-                Divider()
-                WhiteboardSection(text: whiteboard)
-            }
+            Divider()
+            WhiteboardSection(bug: bug, onUpdate: onUpdate)
 
             Divider()
             DependenciesSection(
@@ -1397,12 +1395,6 @@ struct BugInspectorContent: View {
             return Int(value)
         }
         return nil
-    }
-
-    private var trimmedWhiteboard: String? {
-        guard let raw = bug.whiteboard?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else { return nil }
-        return raw
     }
 
     private var nonNeedinfoFlags: [Flag] {
@@ -1863,16 +1855,208 @@ private struct FlagPill: View {
 }
 
 private struct WhiteboardSection: View {
-    let text: String
+    let bug: Bug
+    let onUpdate: (BugUpdate) -> Void
+
+    @Environment(Workspace.self) private var workspace
+
+    @State private var pendingRaw: String?
+    @State private var isAddingTag = false
+    @State private var isEditingRaw = false
+
+    private var whiteboard: Whiteboard {
+        Whiteboard(pendingRaw ?? bug.whiteboard)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            InspectorSectionHeader(title: "Whiteboard")
-            Text(text)
-                .scaledFont(.callout, design: .monospaced)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        let tags = whiteboard.tags
+        let freeText = whiteboard.freeText
+
+        VStack(alignment: .leading, spacing: 8) {
+            InspectorSectionHeader(
+                title: "Whiteboard",
+                trailing: tags.count > 1 ? "\(tags.count)" : nil
+            )
+
+            if tags.isEmpty {
+                Text("No tags")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(tags, id: \.self) { tag in
+                        WhiteboardTagPill(
+                            tag: tag,
+                            onCommit: { value in commit { $0.replace(tag, with: value) } },
+                            onRemove: { commit { $0.remove(tag) } }
+                        )
+                    }
+                }
+            }
+
+            if !freeText.isEmpty {
+                Text(freeText)
+                    .scaledFont(.callout, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack(spacing: 14) {
+                Button {
+                    isAddingTag = true
+                } label: {
+                    Label("Add tag…", systemImage: "plus.circle")
+                        .scaledFont(.caption)
+                }
+                .buttonStyle(.borderless)
+                .popover(isPresented: $isAddingTag, arrowEdge: .bottom) {
+                    WhiteboardFieldEditor(title: "Add Tag", placeholder: "tag") { value in
+                        isAddingTag = false
+                        commit { $0.add(value) }
+                    }
+                }
+
+                if !whiteboard.isEmpty {
+                    Button {
+                        isEditingRaw = true
+                    } label: {
+                        Label("Edit all…", systemImage: "pencil")
+                            .scaledFont(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $isEditingRaw, arrowEdge: .bottom) {
+                        WhiteboardFieldEditor(
+                            title: "Whiteboard",
+                            placeholder: "[tag1][tag2]…",
+                            initial: whiteboard.rawValue,
+                            monospaced: true,
+                            width: 320
+                        ) { value in
+                            isEditingRaw = false
+                            commitRaw(Whiteboard(value).rawValue)
+                        }
+                    }
+                }
+            }
         }
+        .onChange(of: bug.id) { _, _ in
+            pendingRaw = nil
+        }
+        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
+            pendingRaw = nil
+        }
+    }
+
+    private func commit(_ mutate: (inout Whiteboard) -> Void) {
+        var updated = whiteboard
+        mutate(&updated)
+        commitRaw(updated.rawValue)
+    }
+
+    private func commitRaw(_ raw: String) {
+        guard raw != whiteboard.rawValue else { return }
+        pendingRaw = raw
+        onUpdate(BugUpdate(whiteboard: raw))
+    }
+}
+
+private struct WhiteboardTagPill: View {
+    let tag: String
+    let onCommit: (String) -> Void
+    let onRemove: () -> Void
+
+    @State private var isEditing = false
+
+    var body: some View {
+        Button {
+            isEditing = true
+        } label: {
+            Text(tag)
+                .scaledFont(.caption, weight: .semibold, design: .monospaced)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.secondary.opacity(0.15), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Edit tag")
+        .contextMenu {
+            Button("Copy") { copyToPasteboard(tag) }
+            Divider()
+            Button("Remove", role: .destructive, action: onRemove)
+        }
+        .popover(isPresented: $isEditing, arrowEdge: .bottom) {
+            WhiteboardFieldEditor(
+                title: "Edit Tag",
+                placeholder: "tag",
+                initial: tag,
+                onRemove: {
+                    isEditing = false
+                    onRemove()
+                }
+            ) { value in
+                isEditing = false
+                onCommit(value)
+            }
+        }
+    }
+}
+
+private struct WhiteboardFieldEditor: View {
+    let title: String
+    let placeholder: String
+    let monospaced: Bool
+    let width: CGFloat
+    let onRemove: (() -> Void)?
+    let onCommit: (String) -> Void
+
+    @State private var text: String
+    @FocusState private var isFocused: Bool
+
+    init(
+        title: String,
+        placeholder: String,
+        initial: String = "",
+        monospaced: Bool = false,
+        width: CGFloat = 240,
+        onRemove: (() -> Void)? = nil,
+        onCommit: @escaping (String) -> Void
+    ) {
+        self.title = title
+        self.placeholder = placeholder
+        self.monospaced = monospaced
+        self.width = width
+        self.onRemove = onRemove
+        self.onCommit = onCommit
+        _text = State(initialValue: initial)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .scaledFont(.caption2, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.4)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .scaledFont(.callout, design: monospaced ? .monospaced : .default)
+                .frame(width: width)
+                .focused($isFocused)
+                .onSubmit { onCommit(text) }
+            HStack(spacing: 8) {
+                if let onRemove {
+                    Button("Remove", role: .destructive, action: onRemove)
+                        .buttonStyle(.borderless)
+                }
+                Spacer()
+                Button("Save") { onCommit(text) }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(12)
+        .onAppear { isFocused = true }
     }
 }
 

@@ -106,6 +106,31 @@ final class UpdateBugTests: XCTestCase {
         )
     }
 
+    func testUpdateWhiteboardEncodesField() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["whiteboard"] as? String, "[fxperf:p1][qf:p3]")
+            XCTAssertNil(json["summary"])
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(id: 1, BugUpdate(whiteboard: "[fxperf:p1][qf:p3]"))
+    }
+
+    func testClearWhiteboardSendsEmptyString() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["whiteboard"] as? String, "")
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(id: 1, BugUpdate(whiteboard: ""))
+    }
+
     func testEmptyUpdateOmitsAllFields() async throws {
         MockURLProtocol.handler = { request in
             let body = request.bodyData ?? Data()

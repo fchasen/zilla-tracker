@@ -290,6 +290,7 @@ public extension BugzillaClient {
             let priority: String?
             let severity: String?
             let targetMilestone: String?
+            let whiteboard: String?
             let points: String?
             let rank: Int?
             let comment: CommentBody?
@@ -302,7 +303,7 @@ public extension BugzillaClient {
             enum CodingKeys: String, CodingKey {
                 case summary, status, resolution, dupeOf
                 case assignedTo, priority, severity, comment
-                case targetMilestone
+                case targetMilestone, whiteboard
                 case blocks, dependsOn, seeAlso, flags, groups
                 case points = "cfFxPoints"
                 case rank = "cfRank"
@@ -318,6 +319,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(priority, forKey: .priority)
                 try c.encodeIfPresent(severity, forKey: .severity)
                 try c.encodeIfPresent(targetMilestone, forKey: .targetMilestone)
+                try c.encodeIfPresent(whiteboard, forKey: .whiteboard)
                 try c.encodeIfPresent(points, forKey: .points)
                 try c.encodeIfPresent(rank, forKey: .rank)
                 try c.encodeIfPresent(comment, forKey: .comment)
@@ -338,6 +340,7 @@ public extension BugzillaClient {
             priority: update.priority,
             severity: update.severity,
             targetMilestone: update.targetMilestone,
+            whiteboard: update.whiteboard,
             points: update.points,
             rank: update.rank,
             comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) },
