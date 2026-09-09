@@ -2071,7 +2071,17 @@ struct Sidebar: View {
                     }
                     .onMove(perform: moveComponents)
                 } header: {
-                    Text("Components")
+                    HStack(spacing: 4) {
+                        Text("Components")
+                        Spacer()
+                        Button {
+                            showAddComponent = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Add Component")
+                    }
                 }
             }
         .navigationTitle("Zilla Tracker")
@@ -2090,14 +2100,6 @@ struct Sidebar: View {
                 accountMenu
             }
             #endif
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showAddComponent = true
-                } label: {
-                    Label("Add Component", systemImage: "plus")
-                }
-                .help("Add Component")
-            }
         }
         .sheet(item: $addMetaBugTarget) { component in
             MetaBugPickerSheet(component: component)
