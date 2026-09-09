@@ -1501,6 +1501,7 @@ struct ContentView: View {
             DraftEditorView(draftID: id)
         } else if case .revisions(let list) = workspace.sidebarSelection {
             EmptyStateIcon(systemName: list.systemImage)
+                .navigationTitle("")
         } else {
             BugDetailView(bugID: workspace.selectedBugID)
         }
