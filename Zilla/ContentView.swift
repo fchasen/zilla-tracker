@@ -2405,8 +2405,6 @@ private struct FollowedComponentEntry: View {
         }
 
         DisclosureGroup(isExpanded: $isExpanded) {
-            Label("Open Bugs", systemImage: "tray.full")
-                .tag(SidebarSelection.component(followed.ref))
             Label {
                 HStack {
                     Text("Triage")
@@ -2447,6 +2445,7 @@ private struct FollowedComponentEntry: View {
             )
             .contextMenu { componentMenu }
         }
+        .tag(SidebarSelection.component(followed.ref))
         .task(id: TriageCountKey(
             ref: followed.ref,
             signedIn: auth.isSignedIn,
