@@ -300,6 +300,7 @@ extension ResourceCache {
 
         let task = startOrJoin(key: key, provider: provider)
         let any = try await task.value
+        try Task.checkCancellation()
         guard let typed = any as? V else { throw CacheError.typeMismatch }
         return typed
     }

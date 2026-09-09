@@ -649,6 +649,8 @@ final class Workspace {
             products = fetched
                 .filter(\.isActive)
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch is CancellationError {
+            return
         } catch {
             loadError = error.localizedDescription
         }
@@ -2710,6 +2712,7 @@ struct BugListView: View {
     @State private var canLoadMore = false
     @State private var loadError: String?
     @State private var lastSeenRefreshToken: UUID?
+    @State private var activeLoadKey: BugListLoadKey?
 
     private static let pageLimit = 50
 
@@ -2821,11 +2824,13 @@ struct BugListView: View {
         }
         .searchableIf(!isTodo, text: searchBinding, prompt: "Search bugs")
         .task(id: loadKey) {
+            let key = loadKey
+            activeLoadKey = key
             let current = workspace.bugListRefreshToken
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
             lastSeenRefreshToken = current
-            await load(force: force)
-            guard !Task.isCancelled else { return }
+            await load(force: force, key: key)
+            guard isCurrent(key) else { return }
             revealPendingBugIfNeeded()
         }
         .onChange(of: selection) { _, _ in
@@ -3166,17 +3171,29 @@ struct BugListView: View {
         return query
     }
 
-    private func load(force: Bool) async {
+    private func isCurrent(_ key: BugListLoadKey) -> Bool {
+        !Task.isCancelled && activeLoadKey == key
+    }
+
+    private func endLoading(_ key: BugListLoadKey) {
+        guard activeLoadKey == key else { return }
+        isLoading = false
+        workspace.isLoadingBugList = false
+    }
+
+    private func load(force: Bool, key: BugListLoadKey) async {
         guard let selection else {
             bugs = []
             totalMatches = nil
             canLoadMore = false
+            endLoading(key)
             return
         }
         if selection == .allDrafts {
             bugs = []
             totalMatches = nil
             canLoadMore = false
+            endLoading(key)
             return
         }
         guard auth.isSignedIn else {
@@ -3184,6 +3201,7 @@ struct BugListView: View {
             totalMatches = nil
             canLoadMore = false
             loadError = nil
+            endLoading(key)
             return
         }
 
@@ -3195,17 +3213,16 @@ struct BugListView: View {
                 totalMatches = 0
                 canLoadMore = false
                 loadError = nil
+                endLoading(key)
                 return
             }
             isLoading = true
             workspace.isLoadingBugList = true
             loadError = nil
-            defer {
-                isLoading = false
-                workspace.isLoadingBugList = false
-            }
+            defer { endLoading(key) }
             do {
                 let fetched = try await auth.client.getBugs(ids: ids)
+                guard isCurrent(key) else { return }
                 let positionByID: [Int: Int] = Dictionary(
                     uniqueKeysWithValues: todoOrder.map { ($0.bugId, $0.position) }
                 )
@@ -3218,6 +3235,7 @@ struct BugListView: View {
             } catch is CancellationError {
                 return
             } catch {
+                guard isCurrent(key) else { return }
                 loadError = error.localizedDescription
                 bugs = []
                 totalMatches = nil
@@ -3234,18 +3252,19 @@ struct BugListView: View {
             }
         }
 
-        guard let query = makeQuery(offset: 0) else { return }
+        guard isCurrent(key), let query = makeQuery(offset: 0) else {
+            endLoading(key)
+            return
+        }
 
         isLoading = true
         workspace.isLoadingBugList = true
         loadError = nil
-        defer {
-            isLoading = false
-            workspace.isLoadingBugList = false
-        }
+        defer { endLoading(key) }
 
         do {
             let result = try await cache.bugList(query, force: force, using: auth.client)
+            guard isCurrent(key) else { return }
             if bugs != result.bugs {
                 bugs = result.bugs
                 dependents = [:]
@@ -3253,10 +3272,11 @@ struct BugListView: View {
             totalMatches = result.totalMatches
             canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
             indexFollowedComponentBugs(result.bugs)
-            await fetchDependents(for: result.bugs.filter { Self.isMetaSummary($0.summary) }.map(\.id))
+            await fetchDependents(for: result.bugs.filter { Self.isMetaSummary($0.summary) }.map(\.id), key: key)
         } catch is CancellationError {
             return
         } catch {
+            guard isCurrent(key) else { return }
             loadError = error.localizedDescription
             bugs = []
             totalMatches = nil
@@ -3266,6 +3286,7 @@ struct BugListView: View {
 
     private func loadMore() async {
         guard !isLoading, !isLoadingMore, canLoadMore else { return }
+        guard let key = activeLoadKey else { return }
         guard let query = makeQuery(offset: bugs.count) else { return }
 
         isLoadingMore = true
@@ -3273,16 +3294,18 @@ struct BugListView: View {
 
         do {
             let result = try await auth.client.searchBugs(query)
+            guard isCurrent(key) else { return }
             let existing = Set(bugs.map(\.id))
             let appended = result.bugs.filter { !existing.contains($0.id) }
             bugs.append(contentsOf: appended)
             if let total = result.totalMatches { totalMatches = total }
             canLoadMore = hasMore(loaded: bugs.count, fetched: result.bugs.count, total: result.totalMatches ?? totalMatches)
             indexFollowedComponentBugs(appended)
-            await fetchDependents(for: appended.filter { Self.isMetaSummary($0.summary) }.map(\.id))
+            await fetchDependents(for: appended.filter { Self.isMetaSummary($0.summary) }.map(\.id), key: key)
         } catch is CancellationError {
             return
         } catch {
+            guard isCurrent(key) else { return }
             loadError = error.localizedDescription
             canLoadMore = false
         }
@@ -3297,7 +3320,7 @@ struct BugListView: View {
         }
     }
 
-    private func fetchDependents(for metaIDs: [Bug.ID]) async {
+    private func fetchDependents(for metaIDs: [Bug.ID], key: BugListLoadKey) async {
         guard !metaIDs.isEmpty else { return }
         let login = auth.currentUser?.name
         let client = auth.client
@@ -3326,6 +3349,7 @@ struct BugListView: View {
             }
             return collected
         }
+        guard isCurrent(key) else { return }
         for (id, bugs) in results {
             dependents[id] = bugs
         }

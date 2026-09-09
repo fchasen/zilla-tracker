@@ -22,6 +22,7 @@ struct ComponentReleaseColumnBoardView: View {
     @State private var inspectedBugID: Bug.ID?
     @State private var isInspectorPresented = false
     @State private var lastSeenRefreshToken: UUID?
+    @State private var activeLoadKey: ComponentReleaseColumnBoardLoadKey?
 
     private static let pageLimit = 200
     private static let boardPadding: CGFloat = 16
@@ -102,10 +103,12 @@ struct ComponentReleaseColumnBoardView: View {
             }
         }
         .task(id: loadKey) {
+            let key = loadKey
+            activeLoadKey = key
             let current = workspace.bugListRefreshToken
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
             lastSeenRefreshToken = current
-            await load(force: force)
+            await load(force: force, key: key)
         }
     }
 
@@ -340,27 +343,39 @@ struct ComponentReleaseColumnBoardView: View {
         )
     }
 
-    private func load(force: Bool) async {
+    private func isCurrent(_ key: ComponentReleaseColumnBoardLoadKey) -> Bool {
+        !Task.isCancelled && activeLoadKey == key
+    }
+
+    private func endLoading(_ key: ComponentReleaseColumnBoardLoadKey) {
+        guard activeLoadKey == key else { return }
+        isLoading = false
+    }
+
+    private func load(force: Bool, key: ComponentReleaseColumnBoardLoadKey) async {
         guard auth.isSignedIn, let query = makeQuery(offset: 0) else {
             bugs = []
             totalMatches = nil
             canLoadMore = false
             loadError = nil
+            endLoading(key)
             return
         }
 
         isLoading = true
         loadError = nil
-        defer { isLoading = false }
+        defer { endLoading(key) }
 
         do {
             let result = try await cache.bugList(query, force: force, using: auth.client)
+            guard isCurrent(key) else { return }
             bugs = result.bugs
             totalMatches = result.totalMatches
             canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
         } catch is CancellationError {
             return
         } catch {
+            guard isCurrent(key) else { return }
             loadError = error.localizedDescription
             bugs = []
             totalMatches = nil
@@ -370,6 +385,7 @@ struct ComponentReleaseColumnBoardView: View {
 
     private func loadMore() async {
         guard !isLoading, !isLoadingMore, canLoadMore else { return }
+        guard let key = activeLoadKey else { return }
         guard let query = makeQuery(offset: bugs.count) else { return }
 
         isLoadingMore = true
@@ -377,6 +393,7 @@ struct ComponentReleaseColumnBoardView: View {
 
         do {
             let result = try await auth.client.searchBugs(query)
+            guard isCurrent(key) else { return }
             let existing = Set(bugs.map(\.id))
             let appended = result.bugs.filter { !existing.contains($0.id) }
             bugs.append(contentsOf: appended)
@@ -385,6 +402,7 @@ struct ComponentReleaseColumnBoardView: View {
         } catch is CancellationError {
             return
         } catch {
+            guard isCurrent(key) else { return }
             loadError = error.localizedDescription
             canLoadMore = false
         }
@@ -406,8 +424,8 @@ struct ComponentReleaseColumnBoardView: View {
             Task {
                 if let error = await workspace.applyBugUpdate(id: bug.id, update, using: auth.client) {
                     updateError = error.localizedDescription
-                } else {
-                    await load(force: true)
+                } else if let key = activeLoadKey {
+                    await load(force: true, key: key)
                 }
                 updatingBugIDs.remove(bug.id)
             }
