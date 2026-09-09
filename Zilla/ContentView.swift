@@ -294,6 +294,7 @@ final class Workspace {
     var sidebarSelection: SidebarSelection? = Workspace.defaultSidebarSelection {
         didSet {
             if oldValue != sidebarSelection {
+                selectedBugID = nil
                 activeRevisionID = nil
                 detailPath = []
                 searchText = ""
