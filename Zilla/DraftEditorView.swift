@@ -161,8 +161,15 @@ struct DraftEditorView: View {
 
         do {
             let newID = try await auth.client.createBug(payload)
+            let wasPushed = workspace.isDraftPushed(draftID)
+            let hadBugShowing = workspace.selectedBugID != nil
             modelContext.delete(draft)
-            if workspace.selectedDraftID == draftID {
+            if wasPushed {
+                workspace.dismissDraft(draftID)
+                if !hadBugShowing {
+                    workspace.pendingRevealBugID = newID
+                }
+            } else if workspace.selectedDraftID == draftID {
                 workspace.selectedDraftID = nil
                 workspace.sidebarSelection = .smart(.myBugs)
                 workspace.smartFilters[.myBugs] = .reported
@@ -179,7 +186,7 @@ struct DraftEditorView: View {
     private func discard(_ draft: BugDraft) {
         guard !isSubmitting else { return }
         modelContext.delete(draft)
-        workspace.selectedDraftID = nil
+        workspace.dismissDraft(draftID)
     }
 }
 

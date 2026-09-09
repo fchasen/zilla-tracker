@@ -177,6 +177,7 @@ enum SidebarSelection: Hashable {
 enum DetailRoute: Hashable {
     case bug(Bug.ID)
     case revision(Int)
+    case draft(UUID)
 }
 
 enum BugListSort: String, CaseIterable, Identifiable, Hashable {
@@ -296,6 +297,7 @@ final class Workspace {
                 activeRevisionID = nil
                 detailPath = []
                 searchText = ""
+                pendingRevealBugID = nil
             }
         }
     }
@@ -316,6 +318,8 @@ final class Workspace {
         }
     }
     var selectedDraftID: UUID?
+
+    var pendingRevealBugID: Bug.ID?
 
     // Set for the duration of a draft submit. Lives here rather than in
     // DraftEditorView's @State because DraftInspector is a sibling view that
@@ -367,6 +371,33 @@ final class Workspace {
             return
         }
         detailPath.append(route)
+    }
+
+    @MainActor
+    func presentDraft(_ id: UUID) {
+        if sidebarSelection == .allDrafts {
+            selectedDraftID = id
+            return
+        }
+        if case .draft = detailPath.last {
+            detailPath.removeLast()
+        }
+        navigate(to: .draft(id))
+    }
+
+    @MainActor
+    func dismissDraft(_ id: UUID) {
+        if detailPath.last == .draft(id) {
+            detailPath.removeLast()
+        }
+        if selectedDraftID == id {
+            selectedDraftID = nil
+        }
+    }
+
+    @MainActor
+    func isDraftPushed(_ id: UUID) -> Bool {
+        detailPath.last == .draft(id)
     }
 
     var bugzillaSettingsPresented: Bool = false
@@ -1408,8 +1439,10 @@ struct ContentView: View {
         #else
         rootDetailView
             .sheet(isPresented: pushedRouteSheetBinding) {
-                if let last = workspace.detailPath.last {
-                    routeView(last)
+                NavigationStack {
+                    if let last = workspace.detailPath.last {
+                        routeView(last)
+                    }
                 }
             }
         #endif
@@ -1429,6 +1462,8 @@ struct ContentView: View {
             BugDetailView(bugID: id)
         case .revision(let id):
             RevisionDetailView(revisionID: id)
+        case .draft(let id):
+            DraftEditorView(draftID: id)
         }
     }
 
@@ -1462,6 +1497,8 @@ struct ContentView: View {
                 BugInspector()
             case .revision:
                 RevisionInspector()
+            case .draft(let id):
+                DraftInspector(draftID: id)
             }
         } else if workspace.activeRevisionID != nil {
             RevisionInspector()
@@ -1500,9 +1537,8 @@ struct ContentView: View {
             break
         }
         modelContext.insert(draft)
-        workspace.sidebarSelection = .allDrafts
-        workspace.selectedDraftID = draft.id
         workspace.showInspector = true
+        workspace.presentDraft(draft.id)
     }
 }
 
@@ -2769,6 +2805,8 @@ struct BugListView: View {
             let force = lastSeenRefreshToken != nil && lastSeenRefreshToken != current
             lastSeenRefreshToken = current
             await load(force: force)
+            guard !Task.isCancelled else { return }
+            revealPendingBugIfNeeded()
         }
         .onChange(of: selection) { _, _ in
             bugs = []
@@ -2776,6 +2814,14 @@ struct BugListView: View {
             totalMatches = nil
             canLoadMore = false
             loadError = nil
+        }
+    }
+
+    private func revealPendingBugIfNeeded() {
+        guard let pending = workspace.pendingRevealBugID else { return }
+        workspace.pendingRevealBugID = nil
+        if bugs.contains(where: { $0.id == pending }) {
+            selectedBugID = pending
         }
     }
 
