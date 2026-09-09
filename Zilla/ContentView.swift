@@ -832,7 +832,7 @@ final class Workspace {
         beginBugUpdate()
         defer { endBugUpdate() }
         do {
-            try await client.updateComment(bugID: bugID, commentID: commentID, newText: newText)
+            try await client.updateComment(commentID: commentID, newText: newText)
             cache?.invalidate(.comments(bugID: bugID))
             await refreshLoadedComments(using: client)
             return nil

@@ -468,19 +468,16 @@ public extension BugzillaClient {
     }
 
     func updateComment(
-        bugID: Bug.ID,
         commentID: Comment.ID,
-        newText: String,
-        isMarkdown: Bool = true
+        newText: String
     ) async throws {
         struct Body: Encodable {
             let newComment: String
-            let isMarkdown: Bool
         }
         struct Empty: Decodable {}
-        let body = try encoder.encode(Body(newComment: newText, isMarkdown: isMarkdown))
+        let body = try encoder.encode(Body(newComment: newText))
         let endpoint = Endpoint(
-            path: "bug/\(bugID)/comment/\(commentID)",
+            path: "editcomments/comment/\(commentID)",
             method: .put,
             body: body
         )

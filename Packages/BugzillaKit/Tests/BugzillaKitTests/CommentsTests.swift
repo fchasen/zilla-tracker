@@ -80,7 +80,6 @@ final class CommentsTests: XCTestCase {
         MockURLProtocol.handler = { request in
             let body = request.bodyData ?? Data()
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-            XCTAssertEqual(json["is_markdown"] as? Bool, true)
             XCTAssertEqual(json["comment"] as? String, "**bold** _italic_")
             return (httpResponse(for: request, status: 201), #"{"id":1}"#.data(using: .utf8)!)
         }
@@ -102,21 +101,20 @@ final class CommentsTests: XCTestCase {
 
     func testUpdateCommentSendsNewComment() async throws {
         MockURLProtocol.handler = { request in
-            XCTAssertEqual(request.url?.path, "/rest/bug/1/comment/42")
+            XCTAssertEqual(request.url?.path, "/rest/editcomments/comment/42")
             XCTAssertEqual(request.httpMethod, "PUT")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
 
             let body = request.bodyData ?? Data()
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
             XCTAssertEqual(json["new_comment"] as? String, "Updated description.")
-            XCTAssertEqual(json["is_markdown"] as? Bool, true)
 
-            let responseBody = #"{"comments":{"42":{"id":42}}}"#.data(using: .utf8)!
+            let responseBody = #"{"text":"Updated description.","html":"<p>Updated description.</p>","count":1}"#.data(using: .utf8)!
             return (httpResponse(for: request, status: 200), responseBody)
         }
 
         let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
-        try await client.updateComment(bugID: 1, commentID: 42, newText: "Updated description.")
+        try await client.updateComment(commentID: 42, newText: "Updated description.")
     }
 
     func testUpdateCommentSurfacesPermissionError() async {
@@ -128,7 +126,7 @@ final class CommentsTests: XCTestCase {
 
         let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
         do {
-            try await client.updateComment(bugID: 1, commentID: 42, newText: "x")
+            try await client.updateComment(commentID: 42, newText: "x")
             XCTFail("Expected error")
         } catch BugzillaError.api(let code, _) {
             XCTAssertEqual(code, 115)
