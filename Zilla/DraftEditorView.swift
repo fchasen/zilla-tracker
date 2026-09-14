@@ -18,7 +18,7 @@ struct DraftEditorView: View {
 
     @State private var submitError: String?
     @State private var showDiscardConfirm = false
-    @FocusState private var summaryFocused: Bool
+    @State private var summaryFocused = false
 
     init(draftID: UUID) {
         self.draftID = draftID
@@ -47,17 +47,18 @@ struct DraftEditorView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Summary").scaledFont(.headline)
-                    TextField("", text: $draft.summary, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .scaledFont(.title3)
-                        .padding(10)
-                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
-                        )
-                        .focused($summaryFocused)
-                        .disabled(isSubmitting)
+                    SpellCheckedTextField(
+                        text: $draft.summary,
+                        isFocused: $summaryFocused,
+                        textStyle: .title3
+                    )
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                    )
+                    .disabled(isSubmitting)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {

@@ -495,7 +495,7 @@ private struct BugHeader: View {
     @Environment(AuthStore.self) private var auth
     @State private var didCopy = false
     @State private var editedSummary: String = ""
-    @FocusState private var summaryFocused: Bool
+    @State private var summaryFocused = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -549,46 +549,45 @@ private struct BugHeader: View {
             .padding(.vertical, 2)
             .bugBlockDrop(target: bug.id)
             if isReporter {
-                TextField("Summary", text: $editedSummary, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .scaledFont(.title2)
-                    .focused($summaryFocused)
-                    .accessibilityLabel("Bug summary")
-                    .accessibilityHint("Press Return to save, Escape to cancel.")
-                    .onKeyPress(.return) {
-                        commitSummary()
+                SpellCheckedTextField(
+                    text: $editedSummary,
+                    isFocused: $summaryFocused,
+                    placeholder: "Summary",
+                    textStyle: .title2,
+                    onSubmit: {
                         summaryFocused = false
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        revertSummary()
-                        summaryFocused = false
-                        return .handled
-                    }
-                    .onChange(of: summaryFocused) { _, focused in
-                        if !focused { commitSummary() }
-                    }
-                    .onAppear { editedSummary = bug.summary }
-                    .onChange(of: bug.id) { _, _ in
+                    },
+                    onCancel: {
                         revertSummary()
                         summaryFocused = false
                     }
-                    .onChange(of: workspace.bugUpdateGeneration) { _, _ in
-                        if !summaryFocused { editedSummary = bug.summary }
-                    }
-                    .onChange(of: bug.summary) { _, new in
-                        guard !summaryFocused, !workspace.isUpdatingBug else { return }
-                        editedSummary = new
-                    }
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(
-                                Color.secondary.opacity(summaryFocused ? 0.35 : 0),
-                                lineWidth: 1
-                            )
-                    )
+                )
+                .accessibilityLabel("Bug summary")
+                .accessibilityHint("Press Return to save, Escape to cancel.")
+                .onChange(of: summaryFocused) { _, focused in
+                    if !focused { commitSummary() }
+                }
+                .onAppear { editedSummary = bug.summary }
+                .onChange(of: bug.id) { _, _ in
+                    revertSummary()
+                    summaryFocused = false
+                }
+                .onChange(of: workspace.bugUpdateGeneration) { _, _ in
+                    if !summaryFocused { editedSummary = bug.summary }
+                }
+                .onChange(of: bug.summary) { _, new in
+                    guard !summaryFocused, !workspace.isUpdatingBug else { return }
+                    editedSummary = new
+                }
+                .padding(.vertical, 2)
+                .padding(.horizontal, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(
+                            Color.secondary.opacity(summaryFocused ? 0.35 : 0),
+                            lineWidth: 1
+                        )
+                )
             } else {
                 Text(bug.summary)
                     .scaledFont(.title2)
