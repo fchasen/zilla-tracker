@@ -533,34 +533,59 @@ final class Workspace {
         }
     }
 
-    // Active bug (loaded once per selection; shared with the inspector).
-    private(set) var loadedBug: Bug?
-    private(set) var loadedComments: [Comment] = []
-    private(set) var isLoadingBug = false
-    private(set) var bugLoadError: String?
+    private(set) var bugStore = BugStore()
+    private(set) var userDetails: [String: User] = [:]
 
-    // Bug list loading flag, used by the (now centralized) refresh button.
     var isLoadingBugList: Bool = false
 
-    private var bugUpdateDepth = 0
-
-    // Bumped only when the last concurrent bug write settles. Views key
-    // optimistic-edit clearing off this rather than off `isUpdatingBug`, so one
-    // write finishing cannot discard another's pending value.
-    private(set) var bugUpdateGeneration = 0
-
-    var isUpdatingBug: Bool { bugUpdateDepth > 0 }
-
-    private func beginBugUpdate() {
-        bugUpdateDepth += 1
+    var focusedBugID: Bug.ID? {
+        if let last = detailPath.last {
+            if case .bug(let id) = last { return id }
+            return nil
+        }
+        if case .bug(let id) = rootRoute { return id }
+        return nil
     }
 
-    private func endBugUpdate() {
-        bugUpdateDepth -= 1
-        if bugUpdateDepth <= 0 {
-            bugUpdateDepth = 0
-            bugUpdateGeneration &+= 1
+    var focusedRevisionID: Int? {
+        if let last = detailPath.last {
+            if case .revision(let id) = last { return id }
+            return nil
         }
+        return activeRevisionID
+    }
+
+    var loadedBug: Bug? {
+        focusedBugID.flatMap { bugStore.bug($0) }
+    }
+
+    func bug(id: Bug.ID) -> Bug? {
+        bugStore.bug(id)
+    }
+
+    func comments(bugID: Bug.ID) -> [Comment] {
+        bugStore.comments(bugID)
+    }
+
+    func bugLoadError(id: Bug.ID) -> String? {
+        bugStore.error(id)
+    }
+
+    func isLoadingBug(id: Bug.ID) -> Bool {
+        bugStore.isFetching(id)
+    }
+
+    func isUpdatingBug(id: Bug.ID) -> Bool {
+        bugStore.isWriting(id)
+    }
+
+    func displayedBug(_ bug: Bug) -> Bug {
+        bugStore.displayed(bug)
+    }
+
+    func userDetail(for login: String?) -> User? {
+        guard let login, !login.isEmpty else { return nil }
+        return userDetails[login.lowercased()]
     }
 
     var lastLinkError: String?
@@ -588,6 +613,7 @@ final class Workspace {
     private(set) var changesetContent: [Int: ChangesetContentSource] = [:]
     private(set) var isLoadingRevision = false
     private(set) var revisionLoadError: String?
+    @ObservationIgnored private var revisionLoadSequence = 0
 
     private var revisionUpdateDepth = 0
 
@@ -665,7 +691,8 @@ final class Workspace {
         activeRevisionID = nil
         searchText = ""
         hiddenReviewerScopeIDs = []
-        clearLoadedBug()
+        bugStore = BugStore()
+        userDetails = [:]
         #if os(macOS)
         showInspector = true
         #else
@@ -675,149 +702,196 @@ final class Workspace {
     }
 
     @MainActor
+    func presentBug(id: Bug.ID, using client: BugzillaClient) async {
+        bugStore.present(id)
+        defer { bugStore.dismiss(id) }
+        await loadBug(id: id, using: client)
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(3600))
+        }
+    }
+
+    @MainActor
+    func seedBugFromCache(id: Bug.ID) {
+        guard bugStore.bugs[id] == nil,
+              let cache,
+              let bug: Bug = cache.get(.bug(id)) else { return }
+        bugStore.seed(bug, comments: cache.get(.comments(bugID: id)))
+    }
+
+    @MainActor
     func loadBug(id: Bug.ID, using client: BugzillaClient) async {
-        isLoadingBug = true
-        bugLoadError = nil
-        defer { isLoadingBug = false }
+        seedBugFromCache(id: id)
+        let ticket = bugStore.beginFetch(id)
+        defer { bugStore.endFetch(ticket) }
         do {
             if let cache {
                 async let bugTask = cache.bug(id: id, using: client) { [weak self] refreshed in
-                    if self?.loadedBug?.id == id { self?.loadedBug = refreshed }
+                    MainActor.assumeIsolated {
+                        _ = self?.bugStore.receiveBug(refreshed, ticket: ticket)
+                    }
                 }
                 async let commentsTask = cache.comments(bugID: id, using: client) { [weak self] refreshed in
-                    if self?.loadedBug?.id == id { self?.loadedComments = refreshed }
+                    MainActor.assumeIsolated {
+                        _ = self?.bugStore.receiveComments(refreshed, ticket: ticket)
+                    }
                 }
-                loadedBug = try await bugTask
-                loadedComments = try await commentsTask
+                let bug = try await bugTask
+                bugStore.receiveBug(bug, ticket: ticket)
+                bugStore.receiveComments(try await commentsTask, ticket: ticket)
             } else {
                 async let bugTask = client.getBug(id: id)
                 async let commentsTask = client.comments(bugID: id)
-                loadedBug = try await bugTask
-                loadedComments = try await commentsTask
+                let bug = try await bugTask
+                bugStore.receiveBug(bug, ticket: ticket)
+                bugStore.receiveComments(try await commentsTask, ticket: ticket)
             }
-            if let loadedBug { bugIndex?.record(loadedBug, source: .seen) }
+            if let bug = bugStore.bugs[id] { bugIndex?.record(bug, source: .seen) }
         } catch is CancellationError {
             return
         } catch {
-            loadedBug = nil
-            loadedComments = []
-            bugLoadError = error.localizedDescription
+            bugStore.failFetch(ticket, message: error.localizedDescription)
         }
     }
 
     @MainActor
-    func clearLoadedBug() {
-        loadedBug = nil
-        loadedComments = []
-        bugLoadError = nil
+    @discardableResult
+    private func refreshBug(id: Bug.ID, includeComments: Bool, using client: BugzillaClient) async -> Bool {
+        let ticket = bugStore.beginFetch(id)
+        defer { bugStore.endFetch(ticket) }
+        do {
+            let bug: Bug
+            if let cache {
+                bug = try await cache.bug(id: id, force: true, using: client)
+            } else {
+                bug = try await client.getBug(id: id)
+            }
+            bugStore.receiveBug(bug, ticket: ticket)
+            if bugStore.isPresented(id) { bugIndex?.record(bug, source: .seen) }
+            if includeComments {
+                bugStore.receiveComments(try await fetchComments(bugID: id, using: client), ticket: ticket)
+            }
+            return true
+        } catch {
+            return false
+        }
     }
 
     @MainActor
-    func publishLoadedBug(_ bug: Bug, comments: [Comment]) {
-        loadedBug = bug
-        loadedComments = comments
-        bugLoadError = nil
+    @discardableResult
+    private func refreshComments(bugID: Bug.ID, using client: BugzillaClient) async -> Bool {
+        let ticket = bugStore.beginFetch(bugID)
+        defer { bugStore.endFetch(ticket) }
+        do {
+            bugStore.receiveComments(try await fetchComments(bugID: bugID, using: client), ticket: ticket)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    @MainActor
+    private func fetchComments(bugID: Bug.ID, using client: BugzillaClient) async throws -> [Comment] {
+        if let cache {
+            return try await cache.comments(bugID: bugID, force: true, using: client)
+        }
+        return try await client.comments(bugID: bugID)
     }
 
     @discardableResult
     @MainActor
-    func restoreCachedBug(id: Bug.ID) -> Bool {
-        guard let cache,
-              let bug: Bug = cache.get(.bug(id)) else { return false }
-        let comments: [Comment] = cache.get(.comments(bugID: id)) ?? []
-        publishLoadedBug(bug, comments: comments)
-        return true
-    }
-
-    @MainActor
-    func withBugUpdate<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
-        beginBugUpdate()
-        defer { endBugUpdate() }
-        return try await body()
-    }
-
-    @discardableResult
-    @MainActor
-    func applyBugUpdate(_ update: BugUpdate, using client: BugzillaClient) async -> Error? {
-        guard let id = loadedBug?.id else { return nil }
-        return await applyBugUpdate(id: id, update, using: client)
-    }
-
-    @discardableResult
-    @MainActor
-    func applyBugUpdate(id: Bug.ID, _ update: BugUpdate, using client: BugzillaClient) async -> Error? {
-        beginBugUpdate()
-        defer { endBugUpdate() }
+    func applyBugUpdate(
+        id: Bug.ID,
+        _ update: BugUpdate,
+        users: [User] = [],
+        using client: BugzillaClient
+    ) async -> Error? {
+        for user in users {
+            userDetails[user.name.lowercased()] = user
+        }
+        let mirrors = update.mirroredRelations(for: id)
+        let ticket = bugStore.beginEdit(id, update: update, users: users)
+        let mirrorTickets = mirrors.map { bugStore.beginEdit($0.key, update: $0.value) }
         do {
             _ = try await client.updateBug(id: id, update)
-            cache?.invalidateBug(id: id)
-            if loadedBug?.id == id {
-                if let cache {
-                    if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
-                        loadedBug = refreshed
-                        bugIndex?.record(refreshed, source: .seen)
-                    }
-                    if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
-                        loadedComments = refreshed
-                    }
-                } else {
-                    if let refreshed = try? await client.getBug(id: id) {
-                        loadedBug = refreshed
-                        bugIndex?.record(refreshed, source: .seen)
-                    }
-                    if let refreshed = try? await client.comments(bugID: id) { loadedComments = refreshed }
-                }
-            }
-            return nil
         } catch {
+            bugStore.discardEdit(ticket)
+            mirrorTickets.forEach { bugStore.discardEdit($0) }
             return error
         }
+        bugStore.confirmEdit(ticket)
+        mirrorTickets.forEach { bugStore.confirmEdit($0) }
+        cache?.invalidateBug(id: id)
+        for related in mirrors.keys {
+            cache?.invalidateBug(id: related)
+        }
+        let commentsChanged = update.comment != nil || update.dupeOf != nil
+        await refreshBug(id: id, includeComments: commentsChanged && bugStore.isPresented(id), using: client)
+        bugStore.settleEdit(ticket)
+        for mirror in mirrorTickets {
+            if bugStore.bugs[mirror.bugID] != nil {
+                await refreshBug(id: mirror.bugID, includeComments: false, using: client)
+            }
+            bugStore.settleEdit(mirror)
+        }
+        if !mirrors.isEmpty {
+            await loadDependencyMetadata(ids: [id] + mirrors.keys.sorted(), using: client)
+        }
+        return nil
     }
 
     @discardableResult
     @MainActor
     func linkBlocking(source: Bug.ID, target: Bug.ID, using client: BugzillaClient) async -> Error? {
         guard source != target else { return nil }
-        if loadedBug?.id == source, loadedBug?.blocks.contains(target) == true {
+        if bugStore.bug(source)?.blocks.contains(target) == true
+            || bugStore.bug(target)?.dependsOn.contains(source) == true {
             return nil
         }
-        if loadedBug?.id == target, loadedBug?.dependsOn.contains(source) == true {
-            return nil
-        }
-        beginBugUpdate()
-        defer { endBugUpdate() }
+        return await applyBugUpdate(id: source, BugUpdate(blocks: .add([target])), using: client)
+    }
+
+    @discardableResult
+    @MainActor
+    func postComment(
+        bugID: Bug.ID,
+        text submitted: String,
+        author: String,
+        using client: BugzillaClient
+    ) async -> Error? {
+        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let body = CommentMarkdown.autolinkReferences(in: trimmed)
+        let ticket = bugStore.beginComment(bugID, author: author, text: body)
+        consumeCommentDraft(bugID: bugID, submitted: submitted)
         do {
-            _ = try await client.updateBug(
-                id: source,
-                BugUpdate(blocks: BugRelationUpdate(add: [target]))
-            )
-            cache?.invalidateBug(id: source)
-            cache?.invalidateBug(id: target)
-            if let id = loadedBug?.id, id == source || id == target {
-                if let cache {
-                    if let refreshed = try? await cache.bug(id: id, force: true, using: client) {
-                        loadedBug = refreshed
-                    }
-                } else if let refreshed = try? await client.getBug(id: id) {
-                    loadedBug = refreshed
-                }
-            }
-            await loadDependencyMetadata(ids: [source, target], using: client)
-            return nil
+            _ = try await client.addComment(bugID: bugID, text: body, isMarkdown: true)
         } catch {
+            bugStore.discardComment(ticket)
+            restoreCommentDraft(bugID: bugID, submitted: submitted)
             return error
+        }
+        bugStore.confirmComment(ticket)
+        cache?.invalidate(.comments(bugID: bugID))
+        await refreshComments(bugID: bugID, using: client)
+        return nil
+    }
+
+    private func consumeCommentDraft(bugID: Bug.ID, submitted: String) {
+        let current = bugCommentDrafts[bugID] ?? ""
+        if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
+            bugCommentDrafts[bugID] = remainder
+        } else {
+            bugCommentDrafts.removeValue(forKey: bugID)
         }
     }
 
-    @MainActor
-    func refreshLoadedComments(using client: BugzillaClient) async {
-        guard let id = loadedBug?.id else { return }
-        if let cache {
-            if let refreshed = try? await cache.comments(bugID: id, force: true, using: client) {
-                loadedComments = refreshed
-            }
-        } else if let refreshed = try? await client.comments(bugID: id) {
-            loadedComments = refreshed
+    private func restoreCommentDraft(bugID: Bug.ID, submitted: String) {
+        let current = bugCommentDrafts[bugID] ?? ""
+        if current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            bugCommentDrafts[bugID] = submitted
+        } else {
+            bugCommentDrafts[bugID] = submitted + "\n\n" + current
         }
     }
 
@@ -829,16 +903,18 @@ final class Workspace {
         newText: String,
         using client: BugzillaClient
     ) async -> Error? {
-        beginBugUpdate()
-        defer { endBugUpdate() }
+        let ticket = bugStore.beginCommentEdit(bugID, commentID: commentID, text: newText)
         do {
             try await client.updateComment(commentID: commentID, newText: newText)
-            cache?.invalidate(.comments(bugID: bugID))
-            await refreshLoadedComments(using: client)
-            return nil
         } catch {
+            bugStore.discardCommentEdit(ticket)
             return error
         }
+        bugStore.confirmCommentEdit(ticket)
+        cache?.invalidate(.comments(bugID: bugID))
+        await refreshComments(bugID: bugID, using: client)
+        bugStore.settleCommentEdit(ticket)
+        return nil
     }
 
     @MainActor
@@ -856,6 +932,9 @@ final class Workspace {
         inlines: [InlineComment],
         stack: RevisionStackGraph? = nil
     ) {
+        if loadedRevision?.id != revision.id {
+            resetRevisionDetail()
+        }
         loadedRevision = revision
         loadedRevisionDiff = diff
         loadedRevisionTransactions = transactions
@@ -883,13 +962,17 @@ final class Workspace {
     }
 
     func clearLoadedRevision() {
+        resetRevisionDetail()
         loadedRevision = nil
+        revisionUserDirectory = [:]
+        revisionProjectDirectory = [:]
+    }
+
+    private func resetRevisionDetail() {
         loadedRevisionDiff = nil
         loadedRevisionTransactions = []
         loadedRevisionInlines = []
         loadedRevisionStack = nil
-        revisionUserDirectory = [:]
-        revisionProjectDirectory = [:]
         changesetContent = [:]
         revisionLoadError = nil
         activeInlineComposer = nil
@@ -907,9 +990,14 @@ final class Workspace {
 
     @MainActor
     func loadRevision(id: Int, using client: PhabricatorClient) async {
+        guard focusedRevisionID == id else { return }
+        revisionLoadSequence &+= 1
+        let sequence = revisionLoadSequence
         isLoadingRevision = true
         revisionLoadError = nil
-        defer { isLoadingRevision = false }
+        defer {
+            if revisionLoadSequence == sequence { isLoadingRevision = false }
+        }
 
         do {
             let revision: Revision
@@ -925,24 +1013,35 @@ final class Workspace {
                 )
                 let result = try await client.searchRevisions(query)
                 guard let r = result.data.first else {
-                    revisionLoadError = "Revision not found."
+                    if isCurrentRevisionLoad(sequence, id: id) {
+                        revisionLoadError = "Revision not found."
+                    }
                     return
                 }
                 revision = r
             }
+            guard isCurrentRevisionLoad(sequence, id: id) else { return }
+            if loadedRevision?.id != id {
+                resetRevisionDetail()
+            }
             loadedRevision = revision
 
-            await loadRevisionAuxiliaries(revision: revision, using: client)
+            await loadRevisionAuxiliaries(revision: revision, sequence: sequence, using: client)
         } catch is CancellationError {
             return
         } catch {
             revisionLog.error("loadRevision failed: \(String(describing: error))")
+            guard isCurrentRevisionLoad(sequence, id: id) else { return }
             revisionLoadError = error.localizedDescription
         }
     }
 
+    private func isCurrentRevisionLoad(_ sequence: Int, id: Int) -> Bool {
+        revisionLoadSequence == sequence && focusedRevisionID == id
+    }
+
     @MainActor
-    private func loadRevisionAuxiliaries(revision: Revision, using client: PhabricatorClient) async {
+    private func loadRevisionAuxiliaries(revision: Revision, sequence: Int, using client: PhabricatorClient) async {
         async let diffOpt: DiffDetail? = {
             do {
                 if let cache {
@@ -1016,7 +1115,7 @@ final class Workspace {
             }
         }
 
-        guard loadedRevision?.id == revision.id else { return }
+        guard isCurrentRevisionLoad(sequence, id: revision.id), loadedRevision?.id == revision.id else { return }
         loadedRevisionDiff = resolvedDiff
         loadedRevisionTransactions = resolvedTransactions
         loadedRevisionInlines = resolvedInlines
@@ -1151,7 +1250,9 @@ final class Workspace {
         do {
             _ = try await client.editRevision(objectIdentifier: revision.phid, transactions: transactions)
             cache?.invalidateRevision(id: revision.id)
-            await loadRevision(id: revision.id, using: client)
+            if focusedRevisionID == revision.id {
+                await loadRevision(id: revision.id, using: client)
+            }
             return nil
         } catch {
             return error
@@ -1159,8 +1260,7 @@ final class Workspace {
     }
 
     @MainActor
-    func refreshRevisionActivity(using client: PhabricatorClient) async {
-        guard let revision = loadedRevision else { return }
+    func refreshRevisionActivity(for revision: Revision, using client: PhabricatorClient) async {
         cache?.invalidate(.revisionTransactions(revision.id))
         let refreshed: [RevisionTransaction]?
         if let cache {
@@ -1175,6 +1275,7 @@ final class Workspace {
                 TransactionQuery(objectIdentifier: revision.phid, limit: 100)
             ).data
         }
+        guard loadedRevision?.id == revision.id else { return }
         if let refreshed {
             loadedRevisionTransactions = refreshed
             loadedRevisionInlines = PhabricatorClient.inlineComments(from: refreshed)
@@ -1228,7 +1329,7 @@ final class Workspace {
                 replyToCommentPHID: replyTo
             )
             cache?.invalidate(.revisionTransactions(revision.id))
-            await refreshRevisionActivity(using: client)
+            await refreshRevisionActivity(for: revision, using: client)
             return nil
         } catch {
             return error
@@ -1241,7 +1342,7 @@ final class Workspace {
         do {
             try await client.deleteDraftInline(phid: phid)
             cache?.invalidate(.revisionTransactions(revision.id))
-            await refreshRevisionActivity(using: client)
+            await refreshRevisionActivity(for: revision, using: client)
             return nil
         } catch {
             return error
@@ -1273,7 +1374,7 @@ final class Workspace {
                 transactions: [.inlineDone([commentPHID: isDone])]
             )
             cache?.invalidate(.revisionTransactions(revision.id))
-            await refreshRevisionActivity(using: client)
+            await refreshRevisionActivity(for: revision, using: client)
             return nil
         } catch {
             return error
@@ -1571,8 +1672,13 @@ private struct BugInspector: View {
             ScrollView {
                 BugInspectorContent(
                     bug: bug,
-                    onUpdate: { update in
-                        Task { await workspace.applyBugUpdate(update, using: auth.client) }
+                    onUpdate: { update, users in
+                        let id = bug.id
+                        Task {
+                            if let error = await workspace.applyBugUpdate(id: id, update, users: users, using: auth.client) {
+                                workspace.lastUpdateError = error.localizedDescription
+                            }
+                        }
                     },
                     onOpenBug: { id in
                         workspace.navigate(to: .bug(id))
@@ -2927,7 +3033,7 @@ struct BugListView: View {
     }
 
     private var sortedBugs: [Bug] {
-        bugs
+        bugs.map(workspace.displayedBug)
     }
 
     @ViewBuilder
@@ -3009,8 +3115,9 @@ struct BugListView: View {
     private func takeBug(_ bug: Bug, as username: String) {
         let client = auth.client
         let update = BugStatuses.takeUpdate(assignedTo: username)
+        let users = auth.currentUser.map { [$0] } ?? []
         Task {
-            if let error = await workspace.applyBugUpdate(id: bug.id, update, using: client) {
+            if let error = await workspace.applyBugUpdate(id: bug.id, update, users: users, using: client) {
                 workspace.lastUpdateError = error.localizedDescription
             } else {
                 workspace.bugListRefreshToken = UUID()
@@ -3020,24 +3127,24 @@ struct BugListView: View {
 
     private func applyRank(bugID: Bug.ID, rank: Int, optimisticOrder: [Bug]?) {
         if let optimisticOrder {
-            bugs = optimisticOrder
+            bugs = reordered(optimisticOrder)
         }
         let client = auth.client
         Task {
-            await workspace.withBugUpdate {
-                do {
-                    _ = try await client.updateBug(id: bugID, BugUpdate(rank: rank))
-                    cache.invalidateBug(id: bugID)
-                } catch {
-                    workspace.lastUpdateError = error.localizedDescription
-                }
+            if let error = await workspace.applyBugUpdate(id: bugID, BugUpdate(rank: rank), using: client) {
+                workspace.lastUpdateError = error.localizedDescription
             }
             workspace.bugListRefreshToken = UUID()
         }
     }
 
+    private func reordered(_ order: [Bug]) -> [Bug] {
+        let byID = Dictionary(bugs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return order.compactMap { byID[$0.id] }
+    }
+
     private func applyTodoOrder(_ order: [Bug]) {
-        bugs = order
+        bugs = reordered(order)
         let positionByID: [Int: Int] = Dictionary(
             uniqueKeysWithValues: order.enumerated().map { ($1.id, $0) }
         )
@@ -3075,7 +3182,7 @@ struct BugListView: View {
             }
             return BugNode(
                 bug: bug,
-                children: deps.map { BugNode(bug: $0, children: nil) }
+                children: deps.map { BugNode(bug: workspace.displayedBug($0), children: nil) }
             )
         }
     }

@@ -66,7 +66,6 @@ struct BugDetailView: View {
     @Environment(\.openExternalURL) private var openExternalURL
     let bugID: Bug.ID?
 
-    @State private var isPostingComment = false
     @State private var composerError: String?
     @State private var dupePrompt: DupePromptIdentifier?
     @State private var updateError: String?
@@ -93,11 +92,10 @@ struct BugDetailView: View {
         composerTextBinding.wrappedValue
     }
 
-    private var isShowingLoadedBug: Bool { workspace.loadedBug?.id == bugID }
-    private var bug: Bug? { isShowingLoadedBug ? workspace.loadedBug : nil }
-    private var comments: [Comment] { isShowingLoadedBug ? workspace.loadedComments : [] }
-    private var loadError: String? { workspace.bugLoadError }
-    private var isLoading: Bool { workspace.isLoadingBug }
+    private var bug: Bug? { bugID.flatMap { workspace.bug(id: $0) } }
+    private var comments: [Comment] { bugID.map { workspace.comments(bugID: $0) } ?? [] }
+    private var loadError: String? { bugID.flatMap { workspace.bugLoadError(id: $0) } }
+    private var isLoading: Bool { bugID.map { workspace.isLoadingBug(id: $0) } ?? false }
     private var bugMentionCompletionContext: MentionCompletionContext {
         MentionCompletionContext.bugzilla(
             bug: bug,
@@ -121,7 +119,6 @@ struct BugDetailView: View {
                     comments: comments,
                     loadError: loadError,
                     composerText: composerTextBinding,
-                    isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
                     onUpdate: { update in Task { await applyUpdate(update) } }
@@ -174,7 +171,6 @@ struct BugDetailView: View {
                 text: composerTextBinding,
                 mentionCompletionContext: bugMentionCompletionContext,
                 onPost: { Task { await postComment() } },
-                isPosting: isPostingComment,
                 error: composerError
             )
         }
@@ -208,13 +204,10 @@ struct BugDetailView: View {
             }
         }
         .interceptingMozillaLinks(workspace: workspace)
-        .task(id: bugID) { await reload() }
-        .onAppear { restoreCachedBugIfNeeded() }
-    }
-
-    private func restoreCachedBugIfNeeded() {
-        guard let id = bugID, workspace.loadedBug?.id != id else { return }
-        _ = workspace.restoreCachedBug(id: id)
+        .task(id: bugID) { await present() }
+        .onAppear {
+            if let bugID { workspace.seedBugFromCache(id: bugID) }
+        }
     }
 
     @ViewBuilder
@@ -271,7 +264,7 @@ struct BugDetailView: View {
             if BugStatuses.isUnassigned(bug.assignedTo), let me = auth.currentUser?.name {
                 Divider()
                 Button {
-                    Task { await applyUpdate(BugStatuses.takeUpdate(assignedTo: me)) }
+                    Task { await applyUpdate(BugStatuses.takeUpdate(assignedTo: me), users: auth.currentUser.map { [$0] } ?? []) }
                 } label: {
                     Label("Take", systemImage: "person.crop.circle.badge.checkmark")
                 }
@@ -279,49 +272,31 @@ struct BugDetailView: View {
         } label: {
             Label("Status", systemImage: "arrow.triangle.2.circlepath")
         }
-        .disabled(workspace.isUpdatingBug)
     }
 
-    private func applyUpdate(_ update: BugUpdate) async {
-        if let error = await workspace.applyBugUpdate(update, using: auth.client) {
+    private func applyUpdate(_ update: BugUpdate, users: [User] = []) async {
+        guard let bugID else { return }
+        if let error = await workspace.applyBugUpdate(id: bugID, update, users: users, using: auth.client) {
             updateError = error.localizedDescription
         }
     }
 
-    private func reload() async {
+    private func present() async {
         composerError = nil
-        guard let id = bugID else {
-            workspace.clearLoadedBug()
-            return
-        }
+        guard let id = bugID else { return }
         viewedBugs.markViewed(id)
-        await workspace.loadBug(id: id, using: auth.client)
+        await workspace.presentBug(id: id, using: auth.client)
     }
 
     private func postComment() async {
-        let submitted = composerText
-        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let id = bugID else { return }
-
-        isPostingComment = true
+        guard let id = bugID else { return }
         composerError = nil
-        defer { isPostingComment = false }
-
-        let client = auth.client
-        do {
-            _ = try await client.addComment(
-                bugID: id,
-                text: CommentMarkdown.autolinkReferences(in: trimmed),
-                isMarkdown: true
-            )
-            let current = workspace.bugCommentDrafts[id] ?? ""
-            if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
-                workspace.bugCommentDrafts[id] = remainder
-            } else {
-                workspace.bugCommentDrafts.removeValue(forKey: id)
-            }
-            await workspace.refreshLoadedComments(using: client)
-        } catch {
+        if let error = await workspace.postComment(
+            bugID: id,
+            text: composerText,
+            author: auth.currentUser?.name ?? "",
+            using: auth.client
+        ) {
             composerError = error.localizedDescription
         }
     }
@@ -332,7 +307,6 @@ struct BugContent: View {
     let comments: [Comment]
     let loadError: String?
     @Binding var composerText: String
-    let isPosting: Bool
     let composerError: String?
     let onPost: () -> Void
     let onUpdate: (BugUpdate) -> Void
@@ -374,7 +348,6 @@ struct BugContent: View {
                 Divider()
                 CommentComposer(
                     text: $composerText,
-                    isPosting: isPosting,
                     error: composerError,
                     mentionCompletionContext: mentionCompletionContext,
                     onPost: onPost
@@ -568,11 +541,8 @@ private struct BugHeader: View {
                     revertSummary()
                     summaryFocused = false
                 }
-                .onChange(of: workspace.bugUpdateGeneration) { _, _ in
-                    if !summaryFocused { editedSummary = bug.summary }
-                }
                 .onChange(of: bug.summary) { _, new in
-                    guard !summaryFocused, !workspace.isUpdatingBug else { return }
+                    guard !summaryFocused else { return }
                     editedSummary = new
                 }
                 .padding(.vertical, 2)
@@ -720,19 +690,12 @@ private func bugSeverityColor(_ value: String?) -> Color {
 
 struct BugMetadata: View {
     let bug: Bug
-    let onUpdate: (BugUpdate) -> Void
+    let onUpdate: (BugUpdate, [User]) -> Void
 
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
 
     @State private var showingAssignPicker = false
-    @State private var pendingAssignedTo: String?
-    @State private var pendingAssignedToDetail: User?
-    @State private var pendingPriority: String?
-    @State private var pendingSeverity: String?
-    @State private var pendingPoints: String?
-    @State private var pendingTargetMilestone: String?
-    @State private var pendingFlagStatuses: [String: String] = [:]
 
     static let priorityOptions = ["--", "P5", "P4", "P3", "P2", "P1"]
     static let severityOptions = ["--", "S4", "S3", "S2", "S1"]
@@ -752,33 +715,30 @@ struct BugMetadata: View {
             milestoneRow
             editableRow(
                 label: "Priority",
-                current: effectivePriority,
+                current: bug.priority,
                 options: Self.priorityOptions,
                 fallback: "--",
-                color: priorityColor(effectivePriority)
+                color: priorityColor(bug.priority)
             ) { value in
-                pendingPriority = value
-                onUpdate(BugUpdate(priority: value))
+                onUpdate(BugUpdate(priority: value), [])
             }
             editableRow(
                 label: "Severity",
-                current: effectiveSeverity,
+                current: bug.severity,
                 options: Self.severityOptions,
                 fallback: "--",
-                color: severityColor(effectiveSeverity)
+                color: severityColor(bug.severity)
             ) { value in
-                pendingSeverity = value
-                onUpdate(BugUpdate(severity: value))
+                onUpdate(BugUpdate(severity: value), [])
             }
             editableRow(
                 label: "Points",
-                current: effectivePoints,
+                current: bug.points,
                 options: Self.pointsOptions,
                 fallback: "---",
                 color: nil
             ) { value in
-                pendingPoints = value
-                onUpdate(BugUpdate(points: value))
+                onUpdate(BugUpdate(points: value), [])
             }
             qeVerifyRow
             a11yReviewRow
@@ -792,12 +752,6 @@ struct BugMetadata: View {
                 await workspace.loadProducts(using: auth.client)
             }
         }
-        .onChange(of: bug.id) { _, _ in
-            clearPendingEdits()
-        }
-        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
-            clearPendingEdits()
-        }
     }
 
     @ViewBuilder
@@ -809,7 +763,7 @@ struct BugMetadata: View {
                     showingAssignPicker = true
                 } label: {
                     HStack(spacing: 4) {
-                        Text(User.displayName(for: effectiveAssignedTo, detail: effectiveAssignedToDetail))
+                        Text(User.displayName(for: bug.assignedTo, detail: bug.assignedToDetail))
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Image(systemName: "chevron.down")
@@ -820,17 +774,15 @@ struct BugMetadata: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: Self.metadataPickerWidth, alignment: .leading)
-                .help(effectiveAssignedTo ?? "")
+                .help(bug.assignedTo ?? "")
                 .popover(isPresented: $showingAssignPicker, arrowEdge: .bottom) {
                     UserSearchPopover { user in
                         showingAssignPicker = false
-                        pendingAssignedTo = user.name
-                        pendingAssignedToDetail = user
-                        onUpdate(BugUpdate(assignedTo: user.name))
+                        onUpdate(BugUpdate(assignedTo: user.name), [user])
                     }
                 }
 
-                clearButton(isVisible: !BugStatuses.isUnassigned(effectiveAssignedTo), label: "Assignee") {
+                clearButton(isVisible: !BugStatuses.isUnassigned(bug.assignedTo), label: "Assignee") {
                     clearAssignee()
                 }
             }
@@ -840,14 +792,13 @@ struct BugMetadata: View {
 
     @ViewBuilder
     private var milestoneRow: some View {
-        let selected = normalizedSelection(effectiveTargetMilestone, fallback: "---")
+        let selected = normalizedSelection(bug.targetMilestone, fallback: "---")
         GridRow {
             Text("Milestone").foregroundStyle(.secondary)
             Menu {
                 ForEach(milestoneChoices, id: \.self) { value in
                     Button {
-                        pendingTargetMilestone = value
-                        onUpdate(BugUpdate(targetMilestone: value))
+                        onUpdate(BugUpdate(targetMilestone: value), [])
                     } label: {
                         if value == selected {
                             Label(milestoneDisplayName(value), systemImage: "checkmark")
@@ -868,14 +819,12 @@ struct BugMetadata: View {
     }
 
     private var milestoneChoices: [String] {
-        ReleaseTargetMilestonePlanner.inspectorChoices(for: product, current: effectiveTargetMilestone)
+        ReleaseTargetMilestonePlanner.inspectorChoices(for: product, current: bug.targetMilestone)
     }
 
     private func clearAssignee() {
         showingAssignPicker = false
-        pendingAssignedTo = BugStatuses.unassignedUser
-        pendingAssignedToDetail = nil
-        onUpdate(BugUpdate(assignedTo: BugStatuses.unassignedUser))
+        onUpdate(BugUpdate(assignedTo: BugStatuses.unassignedUser), [])
     }
 
     private var product: Product? {
@@ -926,8 +875,7 @@ struct BugMetadata: View {
                     name: flag == nil ? "a11y-review" : nil,
                     status: status
                 )
-                pendingFlagStatuses["a11y-review"] = status
-                onUpdate(BugUpdate(flags: [update]))
+                onUpdate(BugUpdate(flags: [update]), [])
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
@@ -951,8 +899,7 @@ struct BugMetadata: View {
                         name: flag == nil ? "qe-verify" : nil,
                         status: status
                     )
-                    pendingFlagStatuses["qe-verify"] = status
-                    onUpdate(BugUpdate(flags: [update]))
+                    onUpdate(BugUpdate(flags: [update]), [])
                 }
             )) {
                 Text("-").tag("-")
@@ -968,8 +915,7 @@ struct BugMetadata: View {
                     name: flag == nil ? "qe-verify" : nil,
                     status: "X"
                 )
-                pendingFlagStatuses["qe-verify"] = "X"
-                onUpdate(BugUpdate(flags: [update]))
+                onUpdate(BugUpdate(flags: [update]), [])
             }
         }
         .help(flagControlHelp(flagStatus(named: "qe-verify")))
@@ -980,7 +926,7 @@ struct BugMetadata: View {
     }
 
     private func flagStatus(named name: String) -> String? {
-        pendingFlagStatuses[name] ?? flag(named: name)?.status
+        flag(named: name)?.status
     }
 
     private func normalizedFlagStatus(_ status: String?) -> String {
@@ -1001,40 +947,6 @@ struct BugMetadata: View {
         case "-": return "Rejected"
         default: return "Unset"
         }
-    }
-
-    private var effectiveAssignedTo: String? {
-        pendingAssignedTo ?? bug.assignedTo
-    }
-
-    private var effectiveAssignedToDetail: User? {
-        pendingAssignedToDetail ?? bug.assignedToDetail
-    }
-
-    private var effectivePriority: String? {
-        pendingPriority ?? bug.priority
-    }
-
-    private var effectiveSeverity: String? {
-        pendingSeverity ?? bug.severity
-    }
-
-    private var effectivePoints: String? {
-        pendingPoints ?? bug.points
-    }
-
-    private var effectiveTargetMilestone: String? {
-        pendingTargetMilestone ?? bug.targetMilestone
-    }
-
-    private func clearPendingEdits() {
-        pendingAssignedTo = nil
-        pendingAssignedToDetail = nil
-        pendingPriority = nil
-        pendingSeverity = nil
-        pendingPoints = nil
-        pendingTargetMilestone = nil
-        pendingFlagStatuses.removeAll()
     }
 
     @ViewBuilder
@@ -1276,16 +1188,13 @@ private struct MetadataSegmentedPicker: NSViewRepresentable {
 
 struct BugInspectorContent: View {
     let bug: Bug
-    let onUpdate: (BugUpdate) -> Void
+    let onUpdate: (BugUpdate, [User]) -> Void
     let onOpenBug: (Bug.ID) -> Void
 
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
 
     @State private var quickAddTarget: QuickAddTarget?
-    @State private var pendingDependsOn: [Bug.ID]?
-    @State private var pendingBlocks: [Bug.ID]?
-    @State private var pendingSeeAlso: [String]?
 
     private enum QuickAddTarget: String, Identifiable {
         case dependsOn, blocks, seeAlso
@@ -1298,7 +1207,7 @@ struct BugInspectorContent: View {
 
             if !bug.groups.isEmpty {
                 Divider()
-                SecuritySection(bug: bug, onUpdate: onUpdate)
+                SecuritySection(bug: bug, onUpdate: { onUpdate($0, []) })
             }
 
             Divider()
@@ -1310,29 +1219,26 @@ struct BugInspectorContent: View {
             }
 
             Divider()
-            WhiteboardSection(bug: bug, onUpdate: onUpdate)
+            WhiteboardSection(bug: bug, onUpdate: { onUpdate($0, []) })
 
             Divider()
             DependenciesSection(
                 bugID: bug.id,
-                dependsOn: effectiveDependsOn,
-                blocks: effectiveBlocks,
-                seeAlso: effectiveSeeAlso,
+                dependsOn: bug.dependsOn,
+                blocks: bug.blocks,
+                seeAlso: bug.seeAlso,
                 onOpenBug: onOpenBug,
                 onAddDependsOn: { quickAddTarget = .dependsOn },
                 onAddBlocks: { quickAddTarget = .blocks },
                 onAddSeeAlso: { quickAddTarget = .seeAlso },
                 onRemoveDependsOn: { id in
-                    pendingDependsOn = removing(id, from: effectiveDependsOn)
-                    onUpdate(BugUpdate(dependsOn: .remove([id])))
+                    onUpdate(BugUpdate(dependsOn: .remove([id])), [])
                 },
                 onRemoveBlocks: { id in
-                    pendingBlocks = removing(id, from: effectiveBlocks)
-                    onUpdate(BugUpdate(blocks: .remove([id])))
+                    onUpdate(BugUpdate(blocks: .remove([id])), [])
                 },
                 onRemoveSeeAlso: { url in
-                    pendingSeeAlso = removing(url, from: effectiveSeeAlso)
-                    onUpdate(BugUpdate(seeAlso: .remove([url])))
+                    onUpdate(BugUpdate(seeAlso: .remove([url])), [])
                 }
             )
 
@@ -1352,23 +1258,17 @@ struct BugInspectorContent: View {
                 guard pickedID != bug.id else { return }
                 switch target {
                 case .dependsOn:
-                    pendingDependsOn = adding(pickedID, to: effectiveDependsOn)
-                    onUpdate(BugUpdate(dependsOn: .add([pickedID])))
+                    guard !bug.dependsOn.contains(pickedID) else { return }
+                    onUpdate(BugUpdate(dependsOn: .add([pickedID])), [])
                 case .blocks:
-                    pendingBlocks = adding(pickedID, to: effectiveBlocks)
-                    onUpdate(BugUpdate(blocks: .add([pickedID])))
+                    guard !bug.blocks.contains(pickedID) else { return }
+                    onUpdate(BugUpdate(blocks: .add([pickedID])), [])
                 case .seeAlso:
                     let url = "https://bugzilla.mozilla.org/show_bug.cgi?id=\(pickedID)"
-                    pendingSeeAlso = adding(url, to: effectiveSeeAlso)
-                    onUpdate(BugUpdate(seeAlso: .add([url])))
+                    guard !bug.seeAlso.contains(url) else { return }
+                    onUpdate(BugUpdate(seeAlso: .add([url])), [])
                 }
             }
-        }
-        .onChange(of: bug.id) { _, _ in
-            clearPendingInspectorEdits()
-        }
-        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
-            clearPendingInspectorEdits()
         }
     }
 
@@ -1388,8 +1288,8 @@ struct BugInspectorContent: View {
     }
 
     private var dependencyMetadataIDs: [Bug.ID] {
-        var ids = Set(effectiveDependsOn + effectiveBlocks)
-        for url in effectiveSeeAlso {
+        var ids = Set(bug.dependsOn + bug.blocks)
+        for url in bug.seeAlso {
             if let id = bmoBugID(from: url) {
                 ids.insert(id)
             }
@@ -1397,31 +1297,6 @@ struct BugInspectorContent: View {
         return Array(ids).sorted()
     }
 
-    private var effectiveDependsOn: [Bug.ID] {
-        pendingDependsOn ?? bug.dependsOn
-    }
-
-    private var effectiveBlocks: [Bug.ID] {
-        pendingBlocks ?? bug.blocks
-    }
-
-    private var effectiveSeeAlso: [String] {
-        pendingSeeAlso ?? bug.seeAlso
-    }
-
-    private func adding<T: Equatable>(_ value: T, to values: [T]) -> [T] {
-        values.contains(value) ? values : values + [value]
-    }
-
-    private func removing<T: Equatable>(_ value: T, from values: [T]) -> [T] {
-        values.filter { $0 != value }
-    }
-
-    private func clearPendingInspectorEdits() {
-        pendingDependsOn = nil
-        pendingBlocks = nil
-        pendingSeeAlso = nil
-    }
 }
 
 private struct FlagsSection: View {
@@ -1441,13 +1316,11 @@ private struct FlagsSection: View {
 
 private struct NeedinfoSection: View {
     let bug: Bug
-    let onUpdate: (BugUpdate) -> Void
+    let onUpdate: (BugUpdate, [User]) -> Void
 
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
     @State private var showingPicker = false
-    @State private var hiddenRequestIDs: Set<Int> = []
-    @State private var pendingRequests: [PendingNeedinfoRequest] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1481,49 +1354,24 @@ private struct NeedinfoSection: View {
             .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
                 UserSearchPopover { user in
                     showingPicker = false
-                    addPendingRequest(for: user)
-                    onUpdate(BugUpdate(flags: [
-                        FlagUpdate(name: "needinfo", status: "?", requestee: user.name)
-                    ]))
+                    request(user)
                 }
             }
-        }
-        .onChange(of: bug.id) { _, _ in
-            clearPendingEdits()
-        }
-        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
-            clearPendingEdits()
         }
     }
 
     private var requests: [NeedinfoDisplayRequest] {
-        let existingFlags = bug.flags.filter {
-            $0.name == "needinfo" && !hiddenRequestIDs.contains($0.id)
-        }
-        let existing = existingFlags.map { flag in
-            NeedinfoDisplayRequest(
-                id: "flag-\(flag.id)",
-                flagID: flag.id,
-                requestee: flag.requestee,
-                setter: flag.setter,
-                displayName: nil
-            )
-        }
-        let existingKeys = Set(existingFlags.compactMap { normalizedUserKey($0.requestee) })
-        let pending = pendingRequests
-            .filter { request in
-                !userKeys(for: request.user).contains { existingKeys.contains($0) }
-            }
-            .map { request in
+        bug.flags
+            .filter { $0.name == "needinfo" }
+            .map { flag in
                 NeedinfoDisplayRequest(
-                    id: "pending-\(request.id)",
-                    flagID: nil,
-                    requestee: request.user.name,
-                    setter: nil,
-                    displayName: request.user.displayName
+                    id: "flag-\(flag.id)",
+                    flagID: flag.id > 0 ? flag.id : nil,
+                    requestee: flag.requestee,
+                    setter: flag.setter,
+                    displayName: workspace.userDetail(for: flag.requestee)?.displayName
                 )
             }
-        return existing + pending
     }
 
     private func isCurrentUser(_ requestee: String?) -> Bool {
@@ -1537,20 +1385,21 @@ private struct NeedinfoSection: View {
     private func clearAction(for request: NeedinfoDisplayRequest) -> (() -> Void)? {
         guard let flagID = request.flagID else { return nil }
         return {
-            hiddenRequestIDs.insert(flagID)
-            onUpdate(BugUpdate(flags: [
-                FlagUpdate(id: flagID, status: "X")
-            ]))
+            onUpdate(BugUpdate(flags: [FlagUpdate(id: flagID, status: "X")]), [])
         }
     }
 
-    private func addPendingRequest(for user: User) {
+    private func request(_ user: User) {
         let keys = userKeys(for: user)
-        guard !requests.contains(where: { request in
+        let alreadyRequested = requests.contains { request in
             guard let key = normalizedUserKey(request.requestee) else { return false }
             return keys.contains(key)
-        }) else { return }
-        pendingRequests.append(PendingNeedinfoRequest(user: user))
+        }
+        guard !alreadyRequested else { return }
+        onUpdate(
+            BugUpdate(flags: [FlagUpdate(name: "needinfo", status: "?", requestee: user.name)]),
+            [user]
+        )
     }
 
     private func userKeys(for user: User) -> Set<String> {
@@ -1561,11 +1410,6 @@ private struct NeedinfoSection: View {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !value.isEmpty else { return nil }
         return value.lowercased()
-    }
-
-    private func clearPendingEdits() {
-        hiddenRequestIDs.removeAll()
-        pendingRequests.removeAll()
     }
 }
 
@@ -1620,11 +1464,6 @@ private struct NeedinfoDisplayRequest: Identifiable {
     let requestee: String?
     let setter: String?
     let displayName: String?
-}
-
-private struct PendingNeedinfoRequest: Identifiable, Hashable {
-    let id = UUID()
-    let user: User
 }
 
 struct UserSearchPopover: View {
@@ -1844,14 +1683,11 @@ private struct WhiteboardSection: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 
-    @Environment(Workspace.self) private var workspace
-
-    @State private var pendingRaw: String?
     @State private var isAddingTag = false
     @State private var isEditingRaw = false
 
     private var whiteboard: Whiteboard {
-        Whiteboard(pendingRaw ?? bug.whiteboard)
+        Whiteboard(bug.whiteboard)
     }
 
     var body: some View {
@@ -1926,12 +1762,6 @@ private struct WhiteboardSection: View {
                 }
             }
         }
-        .onChange(of: bug.id) { _, _ in
-            pendingRaw = nil
-        }
-        .onChange(of: workspace.bugUpdateGeneration) { _, _ in
-            pendingRaw = nil
-        }
     }
 
     private func commit(_ mutate: (inout Whiteboard) -> Void) {
@@ -1942,7 +1772,6 @@ private struct WhiteboardSection: View {
 
     private func commitRaw(_ raw: String) {
         guard raw != whiteboard.rawValue else { return }
-        pendingRaw = raw
         onUpdate(BugUpdate(whiteboard: raw))
     }
 }
@@ -2566,7 +2395,6 @@ private struct DescriptionBlock: View {
                         MarkdownEditor(
                             text: $editedText,
                             minHeight: 160,
-                            isDisabled: workspace.isUpdatingBug,
                             autolinksReferences: true,
                             mentionCompletionContext: mentionCompletionContext
                         )
@@ -2582,13 +2410,12 @@ private struct DescriptionBlock: View {
                                 saveError = nil
                             }
                             .buttonStyle(.borderless)
-                            .disabled(workspace.isUpdatingBug)
                             Button("Save") {
                                 Task { await save() }
                             }
                             .buttonStyle(.borderedProminent)
                             .keyboardShortcut(.defaultAction)
-                            .disabled(workspace.isUpdatingBug || !canSave)
+                            .disabled(!canSave)
                         }
                     } else if !stripped.isEmpty {
                         ZillaMarkdownText(markdown: flattenBlockquotes(CommentMarkdown.autolinkReferences(in: stripped)))
@@ -2618,17 +2445,18 @@ private struct DescriptionBlock: View {
             saveError = "Description can't be empty."
             return
         }
+        isEditing = false
+        saveError = nil
         if let error = await workspace.updateComment(
             bugID: bug.id,
             commentID: comment.id,
             newText: CommentMarkdown.autolinkReferences(in: trimmed),
             using: auth.client
         ) {
+            editedText = trimmed
             saveError = error.localizedDescription
-            return
+            isEditing = true
         }
-        isEditing = false
-        saveError = nil
     }
 }
 
@@ -2669,6 +2497,7 @@ private struct CommentBlock: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
+        .opacity(isPending ? 0.6 : 1)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { newValue in
@@ -2691,10 +2520,12 @@ private struct CommentBlock: View {
                 Button("Copy Comment Text") { copyToPasteboard(stripped) }
                 Button("Quote in Reply") { onQuote(stripped) }
             }
-            Button("Copy Permalink") {
-                copyToPasteboard("https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)#c\(comment.count ?? 0)")
+            if !isPending {
+                Button("Copy Permalink") {
+                    copyToPasteboard("https://bugzilla.mozilla.org/show_bug.cgi?id=\(bugID)#c\(comment.count ?? 0)")
+                }
             }
-            if isAuthor, !isEditing {
+            if isAuthor, !isPending, !isEditing {
                 Divider()
                 Button("Edit Comment") {
                     editedText = comment.text
@@ -2756,7 +2587,6 @@ private struct CommentBlock: View {
                 MarkdownEditor(
                     text: $editedText,
                     minHeight: 120,
-                    isDisabled: workspace.isUpdatingBug,
                     autolinksReferences: true,
                     mentionCompletionContext: mentionCompletionContext
                 )
@@ -2772,12 +2602,11 @@ private struct CommentBlock: View {
                         saveError = nil
                     }
                     .buttonStyle(.borderless)
-                    .disabled(workspace.isUpdatingBug)
                     Button("Save") {
                         Task { await save() }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(workspace.isUpdatingBug || !canSave)
+                    .disabled(!canSave)
                 }
             }
             .padding(.horizontal, narrow ? 12 : 0)
@@ -2795,6 +2624,10 @@ private struct CommentBlock: View {
         return comment.creator == me
     }
 
+    private var isPending: Bool {
+        comment.id < 0
+    }
+
     private var canSave: Bool {
         let trimmed = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty
@@ -2807,17 +2640,18 @@ private struct CommentBlock: View {
             saveError = "Comment can't be empty."
             return
         }
+        isEditing = false
+        saveError = nil
         if let error = await workspace.updateComment(
             bugID: bugID,
             commentID: comment.id,
             newText: CommentMarkdown.autolinkReferences(in: trimmed),
             using: auth.client
         ) {
+            editedText = trimmed
             saveError = error.localizedDescription
-            return
+            isEditing = true
         }
-        isEditing = false
-        saveError = nil
     }
 }
 
@@ -3560,7 +3394,6 @@ struct DupeOfSheet: View {
 
 private struct CommentComposer: View {
     @Binding var text: String
-    let isPosting: Bool
     let error: String?
     let mentionCompletionContext: MentionCompletionContext
     let onPost: () -> Void
@@ -3571,7 +3404,6 @@ private struct CommentComposer: View {
                 .scaledFont(.headline)
             MarkdownEditor(
                 text: $text,
-                isDisabled: isPosting,
                 autolinksReferences: true,
                 mentionCompletionContext: mentionCompletionContext
             )
@@ -3585,16 +3417,12 @@ private struct CommentComposer: View {
             HStack {
                 Spacer()
                 Button(action: onPost) {
-                    if isPosting {
-                        ProgressView().controlSize(.small).frame(width: 60)
-                    } else {
-                        Text("Post").frame(width: 60)
-                    }
+                    Text("Post").frame(width: 60)
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("Post comment (⌘↩)")
-                .disabled(trimmedIsEmpty || isPosting)
+                .disabled(trimmedIsEmpty)
             }
         }
     }

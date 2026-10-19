@@ -320,7 +320,6 @@ struct ComponentReleaseBoardView: View {
     @State private var canLoadMore = false
     @State private var loadError: String?
     @State private var updateError: String?
-    @State private var updatingBugIDs: Set<Bug.ID> = []
     @State private var collapsedColumns: Set<ReleaseBoardColumn> = []
     @State private var lastSeenRefreshToken: UUID?
     @State private var activeLoadKey: ComponentReleaseBoardLoadKey?
@@ -570,7 +569,7 @@ struct ComponentReleaseBoardView: View {
         dropTarget(
             BugRow(bug: bug)
                 .tag(Optional(bug.id))
-                .opacity(updatingBugIDs.contains(bug.id) ? 0.55 : 1)
+                .opacity(workspace.isUpdatingBug(id: bug.id) ? 0.55 : 1)
                 .draggable(BugTransfer(id: bug.id, summary: bug.summary)) {
                     Label("#\(bug.id) \(bug.summary)", systemImage: "ant")
                         .padding(8)
@@ -630,13 +629,17 @@ struct ComponentReleaseBoardView: View {
         workspace.products.first { $0.name == component.product }
     }
 
+    private var displayedBugs: [Bug] {
+        bugs.map(workspace.displayedBug)
+    }
+
     private var filteredBugs: [Bug] {
-        guard assigneeFilter == .mine else { return bugs }
-        return bugs.filter { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
+        guard assigneeFilter == .mine else { return displayedBugs }
+        return displayedBugs.filter { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
     }
 
     private var hasMineBugs: Bool {
-        bugs.contains { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
+        displayedBugs.contains { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
     }
 
     private var defaultMilestone: String? {
@@ -749,7 +752,7 @@ struct ComponentReleaseBoardView: View {
     private func handleDrop(_ transfers: [BugTransfer], to column: ReleaseBoardColumn) -> Bool {
         guard column.acceptsDrops,
               let transfer = transfers.first,
-              let bug = bugs.first(where: { $0.id == transfer.id }) else { return false }
+              let bug = displayedBugs.first(where: { $0.id == transfer.id }) else { return false }
         if ReleaseBoardPlanner.column(for: bug) == column {
             return true
         }
@@ -758,14 +761,13 @@ struct ComponentReleaseBoardView: View {
             updateError = error.localizedDescription
             return false
         case .success(let update):
-            updatingBugIDs.insert(bug.id)
+            let users = auth.currentUser.map { [$0] } ?? []
             Task {
-                if let error = await workspace.applyBugUpdate(id: bug.id, update, using: auth.client) {
+                if let error = await workspace.applyBugUpdate(id: bug.id, update, users: users, using: auth.client) {
                     updateError = error.localizedDescription
                 } else if let key = activeLoadKey {
                     await load(force: true, key: key)
                 }
-                updatingBugIDs.remove(bug.id)
             }
             return true
         }

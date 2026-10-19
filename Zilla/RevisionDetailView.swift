@@ -90,7 +90,9 @@ struct RevisionDetailView: View {
             }
             #endif
         }
-        .task(id: revisionID) {
+        .task(id: isFocused ? revisionID : nil) {
+            guard isFocused else { return }
+            restoreCachedRevisionIfNeeded()
             viewedRevisions.markViewed(revisionID)
             if phab.isSignedIn {
                 await workspace.loadRevision(id: revisionID, using: phab.client)
@@ -105,8 +107,12 @@ struct RevisionDetailView: View {
         .interceptingMozillaLinks(workspace: workspace)
     }
 
+    private var isFocused: Bool {
+        workspace.focusedRevisionID == revisionID
+    }
+
     private func restoreCachedRevisionIfNeeded() {
-        guard workspace.loadedRevision?.id != revisionID else { return }
+        guard isFocused, workspace.loadedRevision?.id != revisionID else { return }
         _ = workspace.restoreCachedRevision(id: revisionID)
     }
 

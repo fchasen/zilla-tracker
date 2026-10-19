@@ -18,7 +18,6 @@ struct ComponentReleaseColumnBoardView: View {
     @State private var canLoadMore = false
     @State private var loadError: String?
     @State private var updateError: String?
-    @State private var updatingBugIDs: Set<Bug.ID> = []
     @State private var inspectedBugID: Bug.ID?
     @State private var isInspectorPresented = false
     @State private var lastSeenRefreshToken: UUID?
@@ -233,7 +232,7 @@ struct ComponentReleaseColumnBoardView: View {
                         ForEach(columnBugs) { bug in
                             ReleaseColumnBoardCard(
                                 bug: bug,
-                                isUpdating: updatingBugIDs.contains(bug.id),
+                                isUpdating: workspace.isUpdatingBug(id: bug.id),
                                 isSelected: inspectedBugID == bug.id,
                                 onOpen: { inspectBug(bug.id) },
                                 onOpenBugzilla: {
@@ -274,13 +273,17 @@ struct ComponentReleaseColumnBoardView: View {
         return columns
     }
 
+    private var displayedBugs: [Bug] {
+        bugs.map(workspace.displayedBug)
+    }
+
     private var filteredBugs: [Bug] {
-        guard assigneeFilter == .mine else { return bugs }
-        return bugs.filter { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
+        guard assigneeFilter == .mine else { return displayedBugs }
+        return displayedBugs.filter { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
     }
 
     private var hasMineBugs: Bool {
-        bugs.contains { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
+        displayedBugs.contains { ReleaseBoardPlanner.isAssigned($0, to: auth.currentUser) }
     }
 
     private var milestoneChoices: [String] {
@@ -411,7 +414,7 @@ struct ComponentReleaseColumnBoardView: View {
     private func handleDrop(_ transfers: [BugTransfer], to column: ReleaseBoardColumn) -> Bool {
         guard column.acceptsDrops,
               let transfer = transfers.first,
-              let bug = bugs.first(where: { $0.id == transfer.id }) else { return false }
+              let bug = displayedBugs.first(where: { $0.id == transfer.id }) else { return false }
         if ReleaseBoardPlanner.column(for: bug) == column {
             return true
         }
@@ -420,14 +423,13 @@ struct ComponentReleaseColumnBoardView: View {
             updateError = error.localizedDescription
             return false
         case .success(let update):
-            updatingBugIDs.insert(bug.id)
+            let users = auth.currentUser.map { [$0] } ?? []
             Task {
-                if let error = await workspace.applyBugUpdate(id: bug.id, update, using: auth.client) {
+                if let error = await workspace.applyBugUpdate(id: bug.id, update, users: users, using: auth.client) {
                     updateError = error.localizedDescription
                 } else if let key = activeLoadKey {
                     await load(force: true, key: key)
                 }
-                updatingBugIDs.remove(bug.id)
             }
             return true
         }
@@ -442,17 +444,10 @@ struct ComponentReleaseColumnBoardView: View {
 private struct BoardBugInspector: View {
     @Environment(Workspace.self) private var workspace
     @Environment(AuthStore.self) private var auth
-    @Environment(ResourceCache.self) private var cache
     @Environment(ViewedBugsStore.self) private var viewedBugs
 
     let bugID: Bug.ID?
 
-    @State private var bug: Bug?
-    @State private var comments: [Comment] = []
-    @State private var loadedBugID: Bug.ID?
-    @State private var isLoading = false
-    @State private var loadError: String?
-    @State private var postingBugIDs: Set<Bug.ID> = []
     @State private var composerErrors: [Bug.ID: String] = [:]
     @State private var updateError: String?
 
@@ -470,13 +465,10 @@ private struct BoardBugInspector: View {
         )
     }
 
-    private var composerText: String {
-        composerTextBinding.wrappedValue
-    }
-
-    private var isPostingComment: Bool {
-        bugID.map { postingBugIDs.contains($0) } ?? false
-    }
+    private var bug: Bug? { bugID.flatMap { workspace.bug(id: $0) } }
+    private var comments: [Comment] { bugID.map { workspace.comments(bugID: $0) } ?? [] }
+    private var loadError: String? { bugID.flatMap { workspace.bugLoadError(id: $0) } }
+    private var isLoading: Bool { bugID.map { workspace.isLoadingBug(id: $0) } ?? false }
 
     private var composerError: String? {
         bugID.flatMap { composerErrors[$0] }
@@ -503,7 +495,6 @@ private struct BoardBugInspector: View {
                     comments: comments,
                     loadError: loadError,
                     composerText: composerTextBinding,
-                    isPosting: isPostingComment,
                     composerError: composerError,
                     onPost: { Task { await postComment() } },
                     onUpdate: { update in Task { await applyUpdate(update) } }
@@ -526,53 +517,13 @@ private struct BoardBugInspector: View {
             message: { Text(updateError ?? "") }
         )
         .task(id: bugID) {
-            if let bugID { composerErrors.removeValue(forKey: bugID) }
-            await load(force: false)
+            guard let bugID else { return }
+            composerErrors.removeValue(forKey: bugID)
+            viewedBugs.markViewed(bugID)
+            await workspace.presentBug(id: bugID, using: auth.client)
         }
-    }
-
-    private func load(force: Bool) async {
-        guard let bugID else {
-            loadedBugID = nil
-            bug = nil
-            comments = []
-            loadError = nil
-            return
-        }
-        loadedBugID = bugID
-        viewedBugs.markViewed(bugID)
-        isLoading = true
-        loadError = nil
-        defer {
-            if loadedBugID == bugID { isLoading = false }
-        }
-        do {
-            async let bugTask = cache.bug(id: bugID, force: force, using: auth.client) { refreshed in
-                MainActor.assumeIsolated {
-                    if loadedBugID == bugID {
-                        bug = refreshed
-                    }
-                }
-            }
-            async let commentsTask = cache.comments(bugID: bugID, force: force, using: auth.client) { refreshed in
-                MainActor.assumeIsolated {
-                    if loadedBugID == bugID {
-                        comments = refreshed
-                    }
-                }
-            }
-            let loadedBug = try await bugTask
-            let loadedComments = try await commentsTask
-            guard loadedBugID == bugID else { return }
-            bug = loadedBug
-            comments = loadedComments
-        } catch is CancellationError {
-            return
-        } catch {
-            guard loadedBugID == bugID else { return }
-            bug = nil
-            comments = []
-            loadError = error.localizedDescription
+        .onAppear {
+            if let bugID { workspace.seedBugFromCache(id: bugID) }
         }
     }
 
@@ -582,50 +533,19 @@ private struct BoardBugInspector: View {
             updateError = error.localizedDescription
         } else {
             workspace.bugListRefreshToken = UUID()
-            await load(force: true)
         }
     }
 
     private func postComment() async {
-        let submitted = composerText
-        let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let bugID else { return }
-
-        postingBugIDs.insert(bugID)
+        guard let bugID else { return }
         composerErrors.removeValue(forKey: bugID)
-        defer { postingBugIDs.remove(bugID) }
-
-        let client = auth.client
-        do {
-            _ = try await client.addComment(
-                bugID: bugID,
-                text: CommentMarkdown.autolinkReferences(in: trimmed),
-                isMarkdown: true
-            )
-        } catch {
+        if let error = await workspace.postComment(
+            bugID: bugID,
+            text: workspace.bugCommentDrafts[bugID] ?? "",
+            author: auth.currentUser?.name ?? "",
+            using: auth.client
+        ) {
             composerErrors[bugID] = error.localizedDescription
-            return
-        }
-
-        let current = workspace.bugCommentDrafts[bugID] ?? ""
-        if let remainder = DraftConsumption.remainder(after: submitted, in: current), !remainder.isEmpty {
-            workspace.bugCommentDrafts[bugID] = remainder
-        } else {
-            workspace.bugCommentDrafts.removeValue(forKey: bugID)
-        }
-
-        cache.invalidate(.comments(bugID: bugID))
-        do {
-            let refreshed = try await cache.comments(bugID: bugID, force: true, using: client)
-            if loadedBugID == bugID {
-                comments = refreshed
-            }
-        } catch is CancellationError {
-            return
-        } catch {
-            if loadedBugID == bugID {
-                loadError = error.localizedDescription
-            }
         }
     }
 }

@@ -142,7 +142,7 @@ struct ZillaCommands: Commands {
                     }
                 }
             }
-            .disabled(workspace.loadedBug == nil || workspace.isUpdatingBug)
+            .disabled(workspace.loadedBug == nil)
 
             Menu("Resolve as") {
                 ForEach(BugStatuses.resolutions, id: \.code) { option in
@@ -151,21 +151,20 @@ struct ZillaCommands: Commands {
                     }
                 }
             }
-            .disabled(workspace.loadedBug == nil || isClosed || workspace.isUpdatingBug)
+            .disabled(workspace.loadedBug == nil || isClosed)
 
             Button("Mark as Duplicate…") {
                 workspace.dupePromptRequested = true
             }
-            .disabled(workspace.loadedBug == nil || isClosed || workspace.isUpdatingBug)
+            .disabled(workspace.loadedBug == nil || isClosed)
 
             Button("Take") {
                 guard let me = auth.currentUser?.name else { return }
-                applyUpdate(BugStatuses.takeUpdate(assignedTo: me))
+                applyUpdate(BugStatuses.takeUpdate(assignedTo: me), users: auth.currentUser.map { [$0] } ?? [])
             }
             .disabled(workspace.loadedBug == nil
                 || !BugStatuses.isUnassigned(workspace.loadedBug?.assignedTo)
-                || auth.currentUser == nil
-                || workspace.isUpdatingBug)
+                || auth.currentUser == nil)
         }
 
         CommandMenu("Account") {
@@ -209,10 +208,11 @@ struct ZillaCommands: Commands {
         workspace.fontScaleStep = FontScale.clamp(workspace.fontScaleStep + delta)
     }
 
-    private func applyUpdate(_ update: BugUpdate) {
+    private func applyUpdate(_ update: BugUpdate, users: [User] = []) {
+        guard let id = workspace.focusedBugID else { return }
         let client = auth.client
         Task {
-            if let error = await workspace.applyBugUpdate(update, using: client) {
+            if let error = await workspace.applyBugUpdate(id: id, update, users: users, using: client) {
                 workspace.lastUpdateError = error.localizedDescription
             }
         }

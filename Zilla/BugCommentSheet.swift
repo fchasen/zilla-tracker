@@ -9,11 +9,10 @@ struct BugCommentSheet: View {
     @Binding var text: String
     let mentionCompletionContext: MentionCompletionContext
     let onPost: () -> Void
-    let isPosting: Bool
     let error: String?
 
     private var canPost: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isPosting && bugID != nil
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && bugID != nil
     }
 
     var body: some View {
@@ -22,7 +21,6 @@ struct BugCommentSheet: View {
                 MarkdownEditor(
                     text: $text,
                     minHeight: 240,
-                    isDisabled: isPosting,
                     bordered: false,
                     autoFocus: true,
                     autolinksReferences: true,
@@ -44,21 +42,11 @@ struct BugCommentSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
+                    Button("Post") {
                         onPost()
-                    } label: {
-                        if isPosting {
-                            ProgressView()
-                        } else {
-                            Text("Post")
-                        }
+                        dismiss()
                     }
                     .disabled(!canPost)
-                }
-            }
-            .onChange(of: isPosting) { wasPosting, nowPosting in
-                if wasPosting, !nowPosting, error == nil {
-                    dismiss()
                 }
             }
         }

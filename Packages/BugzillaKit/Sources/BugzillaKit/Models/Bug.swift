@@ -179,6 +179,26 @@ public struct Flag: Codable, Sendable, Hashable, Identifiable {
     public let typeID: Int?
     public let creationDate: Date?
     public let modificationDate: Date?
+
+    public init(
+        id: Int,
+        name: String,
+        status: String,
+        setter: String? = nil,
+        requestee: String? = nil,
+        typeID: Int? = nil,
+        creationDate: Date? = nil,
+        modificationDate: Date? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.setter = setter
+        self.requestee = requestee
+        self.typeID = typeID
+        self.creationDate = creationDate
+        self.modificationDate = modificationDate
+    }
 }
 
 public struct BugRelationUpdate: Sendable, Equatable, Encodable {
