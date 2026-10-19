@@ -25,17 +25,21 @@ enum BugStatuses {
     static let unassignedUser = "nobody@mozilla.org"
 
     static let open: [BugStatusOption] = [
+        .init(code: "UNCONFIRMED", label: "Unconfirmed"),
         .init(code: "NEW", label: "New"),
-        .init(code: "ASSIGNED", label: "Assigned"),
-        .init(code: "IN_PROGRESS", label: "In Progress")
+        .init(code: "ASSIGNED", label: "Assigned")
     ]
 
     static let resolutions: [BugStatusOption] = [
         .init(code: "FIXED", label: "Fixed"),
         .init(code: "INVALID", label: "Invalid"),
+        .init(code: "WONTFIX", label: "Won't Fix"),
+        .init(code: "INACTIVE", label: "Inactive"),
         .init(code: "WORKSFORME", label: "Works for Me"),
         .init(code: "INCOMPLETE", label: "Incomplete"),
-        .init(code: "WONTFIX", label: "Won't Fix")
+        .init(code: "SUPPORT", label: "Support"),
+        .init(code: "EXPIRED", label: "Expired"),
+        .init(code: "MOVED", label: "Moved")
     ]
 
     static let closedStatuses: Set<String> = ["RESOLVED", "VERIFIED", "CLOSED"]
@@ -666,7 +670,7 @@ private struct StatusPill: View {
     private var color: Color {
         switch bug.status.uppercased() {
         case "RESOLVED", "VERIFIED", "CLOSED": return .green
-        case "ASSIGNED", "IN_PROGRESS": return .blue
+        case "ASSIGNED": return .blue
         default: return .orange
         }
     }

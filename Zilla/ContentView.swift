@@ -256,7 +256,7 @@ enum BugStatusFilter: String, CaseIterable, Identifiable, Hashable {
             copy.status = ["NEW", "UNCONFIRMED", "REOPENED"]
             copy.resolution = ["---"]
         case .assigned:
-            copy.status = ["ASSIGNED", "IN_PROGRESS"]
+            copy.status = ["ASSIGNED"]
             copy.resolution = ["---"]
         case .reported:
             copy.status = []
@@ -3533,18 +3533,14 @@ struct BugRow: View {
     private var statusIcon: String {
         if isClosed { return "checkmark.circle.fill" }
         if bug.hasPhabricatorPatch { return "circle.lefthalf.filled" }
-        switch bug.status.uppercased() {
-        case "ASSIGNED": return "circle"
-        case "IN_PROGRESS": return "circle.lefthalf.filled"
-        default: return "circle"
-        }
+        return "circle"
     }
 
     private var statusColor: Color {
         if isClosed { return .green }
         if bug.hasPhabricatorPatch { return .blue }
         switch bug.status.uppercased() {
-        case "ASSIGNED", "IN_PROGRESS": return .blue
+        case "ASSIGNED": return .blue
         default: return .secondary
         }
     }

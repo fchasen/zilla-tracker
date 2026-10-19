@@ -492,7 +492,7 @@ private struct QuickSearchBugRow: View {
     private var statusColor: Color {
         if isClosed { return .green }
         switch result.status.uppercased() {
-        case "ASSIGNED", "IN_PROGRESS": return .blue
+        case "ASSIGNED": return .blue
         default: return .secondary
         }
     }
