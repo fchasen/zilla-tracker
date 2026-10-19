@@ -340,6 +340,38 @@ extension MarkdownEditorController {
         guard isEditable else { return false }
         let target = Normalizer.clamp(range, to: textStorage.length)
         let normalized = PasteSanitizer.normalizeLineEndings(text)
+        let replacement = NSAttributedString(string: normalized, attributes: insertionAttributes(replacing: target))
+        let end = target.location + replacement.length
+        return replace(target, with: replacement, actionName: label, selection: NSRange(location: end, length: 0))
+    }
+
+    @discardableResult
+    public func insertInlineContent(
+        _ content: InlineContent,
+        markdownSource: String,
+        replacing range: NSRange,
+        trailingText: String = " ",
+        label: String = "Insert"
+    ) -> Bool {
+        guard isEditable else { return false }
+        let target = Normalizer.clamp(range, to: textStorage.length)
+        if paragraphInfo(at: target.location).block.isCode || isLocationInCode(target.location) {
+            return replaceText(in: target, with: markdownSource + trailingText, label: label)
+        }
+        let attachment: NSTextAttachment & MarkdownSourceAttachment =
+            (inlineContentProvider?(content) as? NSTextAttachment & MarkdownSourceAttachment)
+            ?? ChipAttachment.make(for: content)
+        attachment.markdownSource = markdownSource
+        if attachment.contentKind.isEmpty { attachment.contentKind = content.kind }
+        let attributes = insertionAttributes(replacing: target)
+        let replacement = NSMutableAttributedString(string: "\u{FFFC}", attributes: attributes)
+        replacement.addAttribute(.attachment, value: attachment, range: NSRange(location: 0, length: 1))
+        replacement.append(NSAttributedString(string: trailingText, attributes: attributes))
+        let end = target.location + replacement.length
+        return replace(target, with: replacement, actionName: label, selection: NSRange(location: end, length: 0))
+    }
+
+    private func insertionAttributes(replacing target: NSRange) -> [NSAttributedString.Key: Any] {
         let probe = target.length > 0 ? target.location : max(0, target.location - 1)
         var attributes: [NSAttributedString.Key: Any]
         if probe < textStorage.length, !(target.length == 0 && target.location == paragraphInfo(at: target.location).content.location) {
@@ -355,9 +387,7 @@ extension MarkdownEditorController {
         } else {
             attributes.markdownInlineIntent = attributes.markdownInlineIntent.intersection(.markdownMarks)
         }
-        let replacement = NSAttributedString(string: normalized, attributes: attributes)
-        let end = target.location + replacement.length
-        return replace(target, with: replacement, actionName: label, selection: NSRange(location: end, length: 0))
+        return attributes
     }
 
     func insertHorizontalRule() {

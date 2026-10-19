@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Zilla
 import BugzillaKit
+import MarkdownEditorKit
 import PhabricatorKit
 
 struct MentionCompletionRankerTests {
@@ -20,9 +21,36 @@ struct MentionCompletionRankerTests {
         let user = User(id: 1, name: "fred@example.com", realName: "Fred Chasen", nick: "fchasen")
         let item = MentionCompletionItem(user: user)
 
-        #expect(item.replacementText == "fchasen ")
-        #expect(!item.replacementText.contains("@"))
+        #expect(item.markdownSource == "fchasen")
+        #expect(item.inlineContent == .userMention(handle: "fchasen", displayName: "fchasen"))
         #expect(item.avatarEmail == "fred@example.com")
+    }
+
+    @Test func phabricatorUserCompletionKeepsTheTrigger() {
+        let item = MentionCompletionItem(source: .phabricator, handle: "nina", displayName: "Nina", detail: "nina@example.com")
+
+        #expect(item.markdownSource == "@nina")
+        #expect(item.inlineContent == .userMention(handle: "nina", displayName: "@nina"))
+    }
+
+    @Test @MainActor func phabricatorMentionsLoadAsPillsAndRoundTrip() {
+        let markdown = "cc @nina, (@ben.k) and mail a@b.com about @x."
+        let controller = MarkdownEditorController(
+            markdown: markdown,
+            inlineContentRules: MentionCompletionContext(source: .phabricator, defaultItems: []).inlineContentRules,
+            inlineContentProvider: { ChipAttachment.make(for: $0) }
+        )
+        let storage = controller.textStorage
+        let atoms = (0..<storage.length).compactMap { storage.markdownSourceAttachment(at: $0)?.markdownSource }
+
+        #expect(atoms == ["@nina", "@ben.k", "@x"])
+        #expect(storage.string == "cc \u{FFFC}, (\u{FFFC}) and mail a@b.com about \u{FFFC}.")
+        #expect(controller.markdown() == markdown)
+    }
+
+    @Test func bugzillaContextHasNoMentionRule() {
+        #expect(MentionCompletionContext(source: .bugzilla, defaultItems: []).inlineContentRules.isEmpty)
+        #expect(MentionCompletionContext.none.inlineContentRules.isEmpty)
     }
 
     @Test func emptyQueryKeepsDefaultOrder() {

@@ -1,5 +1,6 @@
 import Foundation
 import BugzillaKit
+import MarkdownEditorKit
 import PhabricatorKit
 
 struct MentionCompletionItem: Identifiable, Hashable, Sendable {
@@ -16,7 +17,15 @@ struct MentionCompletionItem: Identifiable, Hashable, Sendable {
     let avatarURL: URL?
 
     var id: String { "\(source.rawValue):\(detail):\(handle)" }
-    var replacementText: String { "\(handle) " }
+    var markdownSource: String { Self.markdownSource(handle: handle, source: source) }
+    var inlineContent: InlineContent { .userMention(handle: handle, displayName: markdownSource) }
+
+    static func markdownSource(handle: String, source: Source) -> String {
+        switch source {
+        case .bugzilla: handle
+        case .phabricator: "@\(handle)"
+        }
+    }
 
     init(
         source: Source,
@@ -81,6 +90,21 @@ struct MentionCompletionContext: Equatable, Sendable {
     var defaultItems: [MentionCompletionItem]
 
     static let none = MentionCompletionContext(source: nil, defaultItems: [])
+
+    static let phabricatorMentionRule = InlineContentRule(
+        id: "zilla.phabricatorMention",
+        pattern: #"(?<![^\s(\[{<])@([A-Za-z0-9._-]*[A-Za-z0-9_-])"#
+    ) { match in
+        guard let handle = match.capture(1) else { return nil }
+        return .userMention(
+            handle: handle,
+            displayName: MentionCompletionItem.markdownSource(handle: handle, source: .phabricator)
+        )
+    }
+
+    var inlineContentRules: [InlineContentRule] {
+        source == .phabricator ? [Self.phabricatorMentionRule] : []
+    }
 
     static func bugzilla(bug: Bug?, comments: [Comment]) -> MentionCompletionContext {
         var items: [MentionCompletionItem] = []

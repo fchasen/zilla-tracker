@@ -80,7 +80,7 @@ struct MarkdownEditor: View {
                     isEditable: !isDisabled
                 )
             )
-            .inlineContentRules(CommentLabels.proseRules)
+            .inlineContentRules(CommentLabels.proseRules + mentionCompletionContext.inlineContentRules)
             .inlineContentProvider { content in
                 guard case let .custom(kind, label, systemImage) = content,
                       kind == CommentLabels.inlineContentKind
@@ -543,7 +543,12 @@ struct MarkdownEditor: View {
         session: CompletionSession,
         controller: MarkdownEditorController
     ) {
-        controller.replaceText(in: session.context.range, with: item.replacementText)
+        controller.insertInlineContent(
+            item.inlineContent,
+            markdownSource: item.markdownSource,
+            replacing: session.context.range,
+            label: "Insert Mention"
+        )
         completionPlugin?.cancel(controller: controller)
     }
 }

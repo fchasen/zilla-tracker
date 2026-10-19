@@ -39,6 +39,21 @@ struct CompletionPluginTests {
         #expect(session?.context.range == NSRange(location: 3, length: 4))
     }
 
+    @Test func committingAMentionReplacesTheTriggerAndQueryWithAnAtom() throws {
+        let (editor, plugin) = makeEditor("hi")
+        editor.typeEach(" @fr")
+        let session = try #require(plugin.session(controller: editor.controller))
+        editor.controller.insertInlineContent(
+            .userMention(handle: "fred", displayName: "@fred"),
+            markdownSource: "@fred",
+            replacing: session.context.range
+        )
+        #expect(editor.string == "hi \u{FFFC} ")
+        #expect(editor.selection == NSRange(location: 5, length: 0))
+        #expect(editor.controller.inlineContentKind(at: 3) == "userMention")
+        #expect(editor.controller.markdown().hasPrefix("hi @fred"))
+    }
+
     @Test func whitespaceClosesSession() {
         let (editor, plugin) = makeEditor()
         editor.typeEach("@fr")
@@ -285,6 +300,25 @@ struct CompletionPluginHostTests {
         harness.settle()
         #expect(committed == 1)
         #expect(harness.string == "@fred ")
+    }
+
+    @Test func returnKeyCommitInsertsAMentionAtom() {
+        let (harness, plugin) = makeHarness("hi")
+        plugin.onCommit = { controller, session in
+            controller.insertInlineContent(
+                .userMention(handle: "fred", displayName: "@fred"),
+                markdownSource: "@fred",
+                replacing: session.context.range
+            )
+        }
+        harness.typeEach(" @fre")
+        plugin.updateItemCount(1, controller: harness.controller)
+        harness.step { harness.textView.keyDown(with: keyEvent(harness, keyCode: 36, characters: "\r")) }
+        harness.settle()
+        #expect(harness.string == "hi \u{FFFC} ")
+        #expect(harness.selection == NSRange(location: 5, length: 0))
+        #expect(harness.controller.markdown().hasPrefix("hi @fred"))
+        #expect(plugin.session(controller: harness.controller) == nil)
     }
 
     @Test func enterIsNotTakenWhileTextIsMarked() {

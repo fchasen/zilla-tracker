@@ -6,7 +6,7 @@ import UIKit
 #endif
 
 public enum ChipAttachment {
-    public static func make(for content: InlineContent) -> NSTextAttachment {
+    public static func make(for content: InlineContent) -> ChipTextAttachment {
         let label: String
         let symbolName: String
         switch content {
@@ -115,12 +115,30 @@ extension ChipAttachment {
         chipBackgroundColor.setFill()
         path.fill()
 
+        drawSymbol(symbolName, in: CGRect(x: rect.minX + 2, y: rect.minY, width: rect.height, height: rect.height))
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: chipFont(height: rect.height),
             .foregroundColor: chipForegroundColor
         ]
         let labelOrigin = CGPoint(x: rect.minX + rect.height + 4, y: rect.minY + (rect.height - chipFont(height: rect.height).pointSize) / 2 - 1)
         (label as NSString).draw(at: labelOrigin, withAttributes: attrs)
+    }
+
+    static func drawSymbol(_ name: String, in rect: CGRect) {
+        let pointSize = rect.height * 0.6
+        #if canImport(AppKit) && os(macOS)
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [chipForegroundColor]))
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else { return }
+        #else
+        let configuration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
+        guard let symbol = UIImage(systemName: name, withConfiguration: configuration)?
+            .withTintColor(chipForegroundColor, renderingMode: .alwaysOriginal) else { return }
+        #endif
+        let size = symbol.size
+        symbol.draw(in: CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
     }
 
     static var chipBackgroundColor: PlatformColor {
