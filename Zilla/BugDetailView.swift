@@ -152,10 +152,6 @@ struct BugDetailView: View {
                     }
                     .help("Open bug \(bug.id) in Bugzilla")
                 }
-            } else if workspace.isUpdatingBug || isLoading {
-                ToolbarItem(placement: .primaryAction) {
-                    ProgressView().controlSize(.small)
-                }
             }
             #if os(iOS)
             ToolbarItemGroup(placement: .bottomBar) {
@@ -281,11 +277,7 @@ struct BugDetailView: View {
                 }
             }
         } label: {
-            if workspace.isUpdatingBug {
-                ProgressView().controlSize(.small)
-            } else {
-                Label("Status", systemImage: "arrow.triangle.2.circlepath")
-            }
+            Label("Status", systemImage: "arrow.triangle.2.circlepath")
         }
         .disabled(workspace.isUpdatingBug)
     }

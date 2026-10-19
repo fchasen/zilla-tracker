@@ -90,19 +90,15 @@ struct DraftEditorView: View {
                 .disabled(isSubmitting)
             }
             ToolbarItem(placement: .primaryAction) {
-                if isSubmitting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button {
-                        Task { await submit(draft) }
-                    } label: {
-                        Label("Create", systemImage: "paperplane.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .help("Submit to Bugzilla (⌘↩)")
-                    .disabled(!draft.isReadyToSubmit)
+                Button {
+                    Task { await submit(draft) }
+                } label: {
+                    Label("Create", systemImage: "paperplane.fill")
                 }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Submit to Bugzilla (⌘↩)")
+                .disabled(!draft.isReadyToSubmit || isSubmitting)
             }
         }
         .confirmationDialog(
