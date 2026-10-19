@@ -14,8 +14,7 @@
 		3339DB4D2FA40E4D0060FCCE /* FolioReview in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4C2FA40E4D0060FCCE /* FolioReview */; };
 		3339DB4F2FA40E4D0060FCCE /* FolioHighlight in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB4E2FA40E4D0060FCCE /* FolioHighlight */; };
 		3339DB512FA40E4D0060FCCE /* FolioModel in Frameworks */ = {isa = PBXBuildFile; productRef = 3339DB502FA40E4D0060FCCE /* FolioModel */; };
-		33EA155B2FA90E990083368E /* SwiftProse in Frameworks */ = {isa = PBXBuildFile; productRef = 33EA155A2FA90E990083368E /* SwiftProse */; };
-		33EA155D2FA90E990083368E /* SwiftProseSyntax in Frameworks */ = {isa = PBXBuildFile; productRef = 33EA155C2FA90E990083368E /* SwiftProseSyntax */; };
+		33EA16A32FA90E990083368E /* MarkdownEditorKit in Frameworks */ = {isa = PBXBuildFile; productRef = 33EA16A22FA90E990083368E /* MarkdownEditorKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -67,8 +66,7 @@
 				3339A5BF2FA0098A003FB395 /* BugzillaKit in Frameworks */,
 				3339A5C22FA00C00003FB395 /* Textual in Frameworks */,
 				3339A7092FA06FFF003FB395 /* SearchfoxKit in Frameworks */,
-				33EA155D2FA90E990083368E /* SwiftProseSyntax in Frameworks */,
-				33EA155B2FA90E990083368E /* SwiftProse in Frameworks */,
+				33EA16A32FA90E990083368E /* MarkdownEditorKit in Frameworks */,
 				3339A8002FA15288003FB395 /* PhabricatorKit in Frameworks */,
 				3339DB4F2FA40E4D0060FCCE /* FolioHighlight in Frameworks */,
 				3339DB512FA40E4D0060FCCE /* FolioModel in Frameworks */,
@@ -140,8 +138,7 @@
 				3339DB4C2FA40E4D0060FCCE /* FolioReview */,
 				3339DB4E2FA40E4D0060FCCE /* FolioHighlight */,
 				3339DB502FA40E4D0060FCCE /* FolioModel */,
-				33EA155A2FA90E990083368E /* SwiftProse */,
-				33EA155C2FA90E990083368E /* SwiftProseSyntax */,
+				33EA16A22FA90E990083368E /* MarkdownEditorKit */,
 			);
 			productName = Zilla;
 			productReference = 3339A5902FA001FC003FB395 /* Zilla.app */;
@@ -231,7 +228,7 @@
 				3339A7072FA06FFF003FB395 /* XCLocalSwiftPackageReference "Packages/SearchfoxKit" */,
 				3339A7FE2FA15288003FB395 /* XCLocalSwiftPackageReference "Packages/PhabricatorKit" */,
 				3339DB4B2FA40E4D0060FCCE /* XCRemoteSwiftPackageReference "FolioReview" */,
-				33EA15592FA90E990083368E /* XCRemoteSwiftPackageReference "SwiftProse" */,
+				33EA16A12FA90E990083368E /* XCLocalSwiftPackageReference "Packages/MarkdownEditorKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3339A5912FA001FC003FB395 /* Products */;
@@ -693,6 +690,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/PhabricatorKit;
 		};
+		33EA16A12FA90E990083368E /* XCLocalSwiftPackageReference "Packages/MarkdownEditorKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/MarkdownEditorKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -707,14 +708,6 @@
 		3339DB4B2FA40E4D0060FCCE /* XCRemoteSwiftPackageReference "FolioReview" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/fchasen/FolioReview.git";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-		33EA15592FA90E990083368E /* XCRemoteSwiftPackageReference "SwiftProse" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/fchasen/SwiftProse.git";
 			requirement = {
 				branch = main;
 				kind = branch;
@@ -755,15 +748,9 @@
 			package = 3339DB4B2FA40E4D0060FCCE /* XCRemoteSwiftPackageReference "FolioReview" */;
 			productName = FolioModel;
 		};
-		33EA155A2FA90E990083368E /* SwiftProse */ = {
+		33EA16A22FA90E990083368E /* MarkdownEditorKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 33EA15592FA90E990083368E /* XCRemoteSwiftPackageReference "SwiftProse" */;
-			productName = SwiftProse;
-		};
-		33EA155C2FA90E990083368E /* SwiftProseSyntax */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 33EA15592FA90E990083368E /* XCRemoteSwiftPackageReference "SwiftProse" */;
-			productName = SwiftProseSyntax;
+			productName = MarkdownEditorKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,5 +1,5 @@
 import Foundation
-import SwiftProse
+import MarkdownEditorKit
 
 /// The conventional-comment labels Mozilla reviewers attach to Phabricator
 /// comments, matching what the `phab-conventional-comments` browser extension

@@ -1,4 +1,4 @@
-import SwiftProse
+import MarkdownEditorKit
 #if canImport(AppKit) && os(macOS)
 import AppKit
 #elseif canImport(UIKit)
@@ -8,9 +8,11 @@ import UIKit
 /// The editor-side twin of `ZillaCommentLabelTarget`: a bare SF Symbol sized to
 /// the line, no capsule and no text, so the composer shows the same glyph the
 /// rendered comment does.
-final class CommentLabelAttachment: NSTextAttachment {
+final class CommentLabelAttachment: NSTextAttachment, MarkdownSourceAttachment {
     var systemImage: String = PhabricatorIcons.fallbackSystemImage
     var name: String = ""
+    var markdownSource: String = ""
+    var contentKind: String = CommentLabels.inlineContentKind
 
     override func attachmentBounds(
         for textContainer: NSTextContainer?,

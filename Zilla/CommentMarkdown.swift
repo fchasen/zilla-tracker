@@ -1,5 +1,5 @@
 import Foundation
-import SwiftProse
+import MarkdownEditorKit
 
 enum CommentMarkdown {
     static let phabricatorProductionURL = URL(string: "https://phabricator.services.mozilla.com")!
@@ -145,9 +145,9 @@ enum CommentMarkdown {
     }
 }
 
-extension EditorController {
+extension MarkdownEditorController {
     func registerZillaAutoLinkPluginIfNeeded() {
-        guard !plugins.contains(where: { $0.key.name == "swiftprose.autoLink" }) else { return }
+        guard !plugins.contains(where: { $0.key.name == AutoLinkPlugin.keyName }) else { return }
         register(plugin: CommentMarkdown.autoLinkPlugin())
     }
 }

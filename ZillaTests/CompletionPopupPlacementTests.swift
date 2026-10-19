@@ -1,5 +1,5 @@
 import CoreGraphics
-import SwiftProse
+import MarkdownEditorKit
 import Testing
 @testable import Zilla
 

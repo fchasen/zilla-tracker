@@ -1,6 +1,6 @@
 import SwiftUI
 import BugzillaKit
-import SwiftProse
+import MarkdownEditorKit
 import PhabricatorKit
 import SearchfoxKit
 import FolioReview
@@ -33,7 +33,7 @@ struct MarkdownEditor: View {
 
     @AppStorage("zilla.markdown.mode") private var mode: MarkdownEditorMode = .rich
 
-    @State private var controller: EditorController?
+    @State private var controller: MarkdownEditorController?
     @State private var completionPlugin: CompletionPlugin?
     @State private var completionSession: CompletionSession?
     @State private var completionItems: [MentionCompletionItem] = []
@@ -71,10 +71,10 @@ struct MarkdownEditor: View {
     }
 
     private var richEditor: some View {
-        SwiftProseEditor(text: $text)
-            .theme(.default(fontScale: fontScale))
-            .configuration(
-                SwiftProseEditor.Configuration(
+        MarkdownTextEditor(text: $text)
+            .markdownEditorTheme(.default(fontScale: fontScale))
+            .markdownEditorConfiguration(
+                MarkdownTextEditor.Configuration(
                     toolbar: showToolbar ? richToolbar : [],
                     minHeight: minHeight,
                     isEditable: !isDisabled
@@ -90,7 +90,7 @@ struct MarkdownEditor: View {
                 attachment.name = label
                 return attachment
             }
-            .onProseControllerReady { c in
+            .onMarkdownEditorReady { c in
                 configureController(c)
                 if autoFocus { focusHostTextView(disabled: isDisabled) }
             }
@@ -181,8 +181,8 @@ struct MarkdownEditor: View {
         return PlatformFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    private var richToolbar: [SwiftProseEditor.ToolbarItem] {
-        let leading: [SwiftProseEditor.ToolbarItem] = [
+    private var richToolbar: [MarkdownTextEditor.ToolbarItem] {
+        let leading: [MarkdownTextEditor.ToolbarItem] = [
             .custom(
                 id: "searchfoxPicker",
                 label: "Searchfox",
@@ -208,7 +208,7 @@ struct MarkdownEditor: View {
             .divider,
         ]
 
-        let labelMenu: [SwiftProseEditor.ToolbarItem] = mentionCompletionContext.source == .phabricator
+        let labelMenu: [MarkdownTextEditor.ToolbarItem] = mentionCompletionContext.source == .phabricator
             ? [
                 .menu(
                     id: "commentLabel",
@@ -216,7 +216,7 @@ struct MarkdownEditor: View {
                     systemImage: "tag",
                     topLevel: true,
                     entries: CommentLabels.all.map { label in
-                        SwiftProseEditor.MenuEntry(
+                        MarkdownTextEditor.MenuEntry(
                             id: label.name,
                             title: label.name,
                             systemImage: label.systemImage,
@@ -228,7 +228,7 @@ struct MarkdownEditor: View {
             ]
             : []
 
-        let linkInsert: SwiftProseEditor.ToolbarItem = .custom(
+        let linkInsert: MarkdownTextEditor.ToolbarItem = .custom(
             id: "linkInsert",
             label: "Insert Link",
             systemImage: "link",
@@ -238,7 +238,7 @@ struct MarkdownEditor: View {
             }
         )
 
-        let modeToggle: SwiftProseEditor.ToolbarItem = .custom(
+        let modeToggle: MarkdownTextEditor.ToolbarItem = .custom(
             id: "modeToggle",
             label: "Source",
             systemImage: "chevron.left.forwardslash.chevron.right",
@@ -250,7 +250,7 @@ struct MarkdownEditor: View {
         )
 
         return leading + labelMenu
-            + SwiftProseEditor.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
+            + MarkdownTextEditor.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
             + [.spacer, modeToggle]
     }
 
@@ -265,16 +265,13 @@ struct MarkdownEditor: View {
 
     /// The span the new token replaces: an existing leading label plus the
     /// space after it, or an empty range at the paragraph's start.
-    private func existingLabelRange(in controller: EditorController) -> NSRange {
-        let storage = controller.textStorage
-        let text = storage.string as NSString
+    private func existingLabelRange(in controller: MarkdownEditorController) -> NSRange {
+        let text = controller.textStorage.string as NSString
         let caret = min(controller.currentSelection.location, text.length)
         let paragraph = text.paragraphRange(for: NSRange(location: caret, length: 0))
         let start = paragraph.location
         guard start < text.length,
-              let leaf = storage.nodePath(at: start)?.leaf,
-              leaf.type == InlineContentNode.type,
-              leaf.attrs[InlineContentNode.kindAttr]?.stringValue == CommentLabels.inlineContentKind
+              controller.inlineContentKind(at: start) == CommentLabels.inlineContentKind
         else { return NSRange(location: start, length: 0) }
         var length = 1
         if start + 1 < NSMaxRange(paragraph), text.character(at: start + 1) == 32 {
@@ -300,7 +297,7 @@ struct MarkdownEditor: View {
         Task { @MainActor in
             for _ in 0..<10 {
                 if didAutoFocus { return }
-                if let view = controller?.hostTextView as? UIView, view.window != nil,
+                if let view = controller?.hostTextView, view.window != nil,
                    view.becomeFirstResponder() {
                     didAutoFocus = true
                     return
@@ -400,7 +397,7 @@ struct MarkdownEditor: View {
 
     private func completionPopupOffset(
         for session: CompletionSession,
-        controller: EditorController
+        controller: MarkdownEditorController
     ) -> CGSize {
         guard let rect = completionAnchorRect(for: session, controller: controller) else {
             return .zero
@@ -420,11 +417,11 @@ struct MarkdownEditor: View {
         min(240, max(40, CGFloat(completionItems.count) * 44))
     }
 
-    private func triggerRect(for session: CompletionSession, controller: EditorController) -> CGRect? {
+    private func triggerRect(for session: CompletionSession, controller: MarkdownEditorController) -> CGRect? {
         rectForCharacter(at: session.context.range.location, controller: controller)
     }
 
-    private func completionAnchorRect(for session: CompletionSession, controller: EditorController) -> CGRect? {
+    private func completionAnchorRect(for session: CompletionSession, controller: MarkdownEditorController) -> CGRect? {
         guard var rect = triggerRect(for: session, controller: controller) ?? session.context.caretRect ?? controller.caretRect() else {
             return nil
         }
@@ -435,37 +432,11 @@ struct MarkdownEditor: View {
         return rect
     }
 
-    private func rectForCharacter(at characterIndex: Int, controller: EditorController) -> CGRect? {
-        let total = controller.textStorage.length
-        guard characterIndex >= 0, characterIndex <= total else { return nil }
-        let docStart = controller.contentStorage.documentRange.location
-        guard let location = controller.contentStorage.location(docStart, offsetBy: characterIndex) else { return nil }
-        let textRange = NSTextRange(location: location)
-        var rect: CGRect?
-        controller.layoutManager.enumerateTextSegments(
-            in: textRange,
-            type: .standard,
-            options: [.upstreamAffinity, .rangeNotRequired]
-        ) { _, frame, _, _ in
-            rect = frame
-            return false
-        }
-        guard var result = rect else { return nil }
-        #if canImport(AppKit) && os(macOS)
-        if let textView = controller.hostTextView as? NSTextView {
-            result.origin.x += textView.textContainerInset.width
-            result.origin.y += textView.textContainerInset.height
-        }
-        #elseif canImport(UIKit)
-        if let textView = controller.hostTextView as? UITextView {
-            result.origin.x += textView.textContainerInset.left
-            result.origin.y += textView.textContainerInset.top
-        }
-        #endif
-        return result
+    private func rectForCharacter(at characterIndex: Int, controller: MarkdownEditorController) -> CGRect? {
+        controller.rect(forCharacterAt: characterIndex)
     }
 
-    private func configureController(_ c: EditorController) {
+    private func configureController(_ c: MarkdownEditorController) {
         controller = c
         if autolinksReferences {
             c.registerZillaAutoLinkPluginIfNeeded()
@@ -520,7 +491,7 @@ struct MarkdownEditor: View {
     private func fetchMentionCompletions(
         for context: CompletionContext,
         plugin: CompletionPlugin,
-        controller: EditorController
+        controller: MarkdownEditorController
     ) {
         completionFetchTask?.cancel()
         let query = context.query
@@ -570,11 +541,9 @@ struct MarkdownEditor: View {
     private func applyMentionCompletion(
         _ item: MentionCompletionItem,
         session: CompletionSession,
-        controller: EditorController
+        controller: MarkdownEditorController
     ) {
-        controller.apply(Transaction(steps: [
-            .replaceText(range: session.context.range, with: NSAttributedString(string: item.replacementText))
-        ]))
+        controller.replaceText(in: session.context.range, with: item.replacementText)
         completionPlugin?.cancel(controller: controller)
     }
 }
@@ -591,7 +560,7 @@ struct CompletionCoordinateState: Equatable {
 
 #if canImport(AppKit) && os(macOS)
 private struct CompletionCoordinateReader: NSViewRepresentable {
-    let controller: EditorController?
+    let controller: MarkdownEditorController?
     let onChange: (CompletionCoordinateState) -> Void
 
     func makeNSView(context: Context) -> ProbeView {
@@ -607,7 +576,7 @@ private struct CompletionCoordinateReader: NSViewRepresentable {
     }
 
     final class ProbeView: NSView {
-        weak var controller: EditorController?
+        weak var controller: MarkdownEditorController?
         var onChange: ((CompletionCoordinateState) -> Void)?
         private var lastState = CompletionCoordinateState()
 
@@ -631,7 +600,7 @@ private struct CompletionCoordinateReader: NSViewRepresentable {
 
         private func publish() {
             let hostFrame: CGRect?
-            if let host = controller?.hostTextView as? NSView {
+            if let host = controller?.hostTextView {
                 hostFrame = host.convert(host.bounds, to: self)
             } else {
                 hostFrame = nil
@@ -666,7 +635,7 @@ private struct CompletionCoordinateReader: NSViewRepresentable {
 }
 #elseif canImport(UIKit)
 private struct CompletionCoordinateReader: UIViewRepresentable {
-    let controller: EditorController?
+    let controller: MarkdownEditorController?
     let onChange: (CompletionCoordinateState) -> Void
 
     func makeUIView(context: Context) -> ProbeView {
@@ -682,7 +651,7 @@ private struct CompletionCoordinateReader: UIViewRepresentable {
     }
 
     final class ProbeView: UIView {
-        weak var controller: EditorController?
+        weak var controller: MarkdownEditorController?
         var onChange: ((CompletionCoordinateState) -> Void)?
         private var lastState = CompletionCoordinateState()
 
@@ -704,7 +673,7 @@ private struct CompletionCoordinateReader: UIViewRepresentable {
 
         private func publish() {
             let hostFrame: CGRect?
-            if let host = controller?.hostTextView as? UIView {
+            if let host = controller?.hostTextView {
                 hostFrame = host.convert(host.bounds, to: self)
             } else {
                 hostFrame = nil
