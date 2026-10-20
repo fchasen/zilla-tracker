@@ -600,6 +600,8 @@ final class Workspace {
 
     var cache: ResourceCache?
     var bugIndex: BugIndexStore?
+    var viewedBugs: ViewedBugsStore?
+    var viewedRevisions: ViewedRevisionsStore?
 
     // Active revision (loaded once per selection; shared with the inspector).
     private(set) var loadedRevision: Revision?
@@ -746,7 +748,10 @@ final class Workspace {
                 bugStore.receiveBug(bug, ticket: ticket)
                 bugStore.receiveComments(try await commentsTask, ticket: ticket)
             }
-            if let bug = bugStore.bugs[id] { bugIndex?.record(bug, source: .seen) }
+            if let bug = bugStore.bugs[id] {
+                bugIndex?.record(bug, source: .seen)
+                viewedBugs?.markViewed(id, through: seenThrough(for: id))
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -828,11 +833,13 @@ final class Workspace {
         let commentsChanged = update.comment != nil || update.dupeOf != nil
         await refreshBug(id: id, includeComments: commentsChanged && bugStore.isPresented(id), using: client)
         bugStore.settleEdit(ticket)
+        viewedBugs?.markViewed(id, through: seenThrough(for: id))
         for mirror in mirrorTickets {
             if bugStore.bugs[mirror.bugID] != nil {
                 await refreshBug(id: mirror.bugID, includeComments: false, using: client)
             }
             bugStore.settleEdit(mirror)
+            viewedBugs?.advanceIfViewed(mirror.bugID, through: seenThrough(for: mirror.bugID))
         }
         if !mirrors.isEmpty {
             await loadDependencyMetadata(ids: [id] + mirrors.keys.sorted(), using: client)
@@ -880,7 +887,13 @@ final class Workspace {
         bugStore.confirmComment(ticket)
         cache?.invalidate(.comments(bugID: bugID))
         await refreshComments(bugID: bugID, using: client)
+        viewedBugs?.markViewed(bugID, through: seenThrough(for: bugID))
         return nil
+    }
+
+    @MainActor
+    private func seenThrough(for id: Bug.ID) -> Date {
+        max(.now, bugStore.bugs[id]?.lastChangeTime ?? .now)
     }
 
     private func consumeCommentDraft(bugID: Bug.ID, submitted: String) {
@@ -926,6 +939,7 @@ final class Workspace {
         cache?.invalidate(.comments(bugID: bugID))
         await refreshComments(bugID: bugID, using: client)
         bugStore.settleCommentEdit(ticket)
+        viewedBugs?.markViewed(bugID, through: seenThrough(for: bugID))
         return nil
     }
 
@@ -1037,6 +1051,7 @@ final class Workspace {
                 resetRevisionDetail()
             }
             loadedRevision = revision
+            viewedRevisions?.markViewed(id, through: max(.now, revision.fields.dateModified))
 
             await loadRevisionAuxiliaries(revision: revision, sequence: sequence, using: client)
         } catch is CancellationError {
@@ -2145,6 +2160,7 @@ struct Sidebar: View {
     @Environment(Workspace.self) private var workspace
     @Environment(ResourceCache.self) private var cache
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
+    @Environment(RevisionActivityStore.self) private var revisionActivity
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
@@ -2175,12 +2191,16 @@ struct Sidebar: View {
                     Label("Drafts", systemImage: "square.and.pencil")
                     .tag(SidebarSelection.allDrafts)
                     revisionListRow(.reviews) {
-                        if unseenReviewCount > 0 {
-                            UnseenReviewBadge(count: unseenReviewCount)
+                        if reviewAttentionCount > 0 {
+                            AttentionBadge(count: reviewAttentionCount, noun: "revisions needing your review")
                         }
                     }
                     revisionListRow(.patches) {
-                        SidebarCount(value: needsChangesCount)
+                        if patchAttentionCount > 0 {
+                            AttentionBadge(count: patchAttentionCount, noun: "patches with new activity")
+                        } else {
+                            SidebarCount(value: needsChangesCount)
+                        }
                     }
                 }
 
@@ -2248,7 +2268,7 @@ struct Sidebar: View {
             await loadRevisionBadges(force: true)
         }
         #if os(macOS)
-        .onChange(of: unseenReviewCount, initial: true) { _, new in
+        .onChange(of: reviewAttentionCount + patchAttentionCount, initial: true) { _, new in
             NSApplication.shared.dockTile.badgeLabel = new > 0 ? "\(new)" : nil
         }
         #endif
@@ -2354,25 +2374,40 @@ struct Sidebar: View {
         )
     }
 
-    private var unseenReviewCount: Int {
-        guard let viewerPHID = phab.currentUser?.phid,
-              let query = reviewQuery,
-              let page: RevisionPage = cache.get(.revisionSearchPages(query)) else {
-            return 0
+    private func cachedRevisions(for query: RevisionQuery?) -> [Revision] {
+        guard let query, let page: RevisionPage = cache.get(.revisionSearchPages(query)) else {
+            return []
         }
-        var count = 0
-        for revision in page.revisions {
-            if revision.fields.authorPHID == viewerPHID { continue }
-            if viewedRevisions.contains(revision.id) { continue }
+        return page.revisions
+    }
+
+    private var visibleReviewRevisions: [Revision] {
+        guard let viewerPHID = phab.currentUser?.phid else { return [] }
+        return cachedRevisions(for: reviewQuery).filter { revision in
+            guard revision.fields.authorPHID != viewerPHID else { return false }
             let scopes = ReviewerScope.scopes(
                 for: revision,
                 viewerPHID: viewerPHID,
                 viewerProjectPHIDs: phab.viewerProjectPHIDs
             )
-            if scopes.allSatisfy({ workspace.hiddenReviewerScopeIDs.contains($0.id) }) { continue }
-            count += 1
+            return !scopes.allSatisfy { workspace.hiddenReviewerScopeIDs.contains($0.id) }
         }
-        return count
+    }
+
+    private var reviewAttentionCount: Int {
+        visibleReviewRevisions.filter { needsAttention($0, in: .reviews) }.count
+    }
+
+    private var patchAttentionCount: Int {
+        cachedRevisions(for: patchesQuery).filter { needsAttention($0, in: .patches) }.count
+    }
+
+    private func needsAttention(_ revision: Revision, in list: RevisionList) -> Bool {
+        RevisionAttention.needsAttention(
+            in: list,
+            mark: viewedRevisions.mark(for: revision.id),
+            activity: revisionActivity.activity[revision.id]
+        )
     }
 
     private var needsChangesCount: Int? {
@@ -2390,11 +2425,25 @@ struct Sidebar: View {
         async let reviews: Void = warmRevisionBadge(reviewQuery, force: force)
         async let patches: Void = warmRevisionBadge(patchesQuery, force: force)
         _ = await (reviews, patches)
+        await refreshRevisionActivity()
     }
 
     private func warmRevisionBadge(_ query: RevisionQuery?, force: Bool) async {
         guard let query else { return }
-        _ = try? await cache.revisionSearchAllPages(query, force: force, using: phab.client)
+        _ = try? await cache.revisionSearchAllPages(query, force: force, using: phab.client) { _ in
+            Task { await refreshRevisionActivity() }
+        }
+    }
+
+    private func refreshRevisionActivity() async {
+        guard let viewerPHID = phab.currentUser?.phid else { return }
+        let reviews = visibleReviewRevisions.filter {
+            RevisionAttention.needsActivity($0, in: .reviews, mark: viewedRevisions.mark(for: $0.id))
+        }
+        let patches = cachedRevisions(for: patchesQuery).filter {
+            RevisionAttention.needsActivity($0, in: .patches, mark: viewedRevisions.mark(for: $0.id))
+        }
+        await revisionActivity.refresh(reviews + patches, viewerPHID: viewerPHID, using: phab.client)
     }
 
     private func moveComponents(from source: IndexSet, to destination: Int) {
@@ -2754,8 +2803,9 @@ private struct TodoSidebarRow: View {
     }
 }
 
-private struct UnseenReviewBadge: View {
+private struct AttentionBadge: View {
     let count: Int
+    let noun: String
 
     var body: some View {
         Text("\(count)")
@@ -2764,7 +2814,7 @@ private struct UnseenReviewBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .background(Color.blue, in: Capsule())
-            .accessibilityLabel("\(count) unseen revisions waiting for review")
+            .accessibilityLabel("\(count) \(noun)")
     }
 }
 
@@ -3093,13 +3143,13 @@ struct BugListView: View {
         }
         BugMilestoneMenu(bug: bug)
         Divider()
-        if viewedBugs.contains(bug.id) {
-            Button("Mark as Unviewed") {
-                viewedBugs.markUnviewed(bug.id)
-            }
-        } else {
+        if BugAttention.needsAttention(bug, mark: viewedBugs.mark(for: bug.id)) {
             Button("Mark as Viewed") {
                 viewedBugs.markViewed(bug.id)
+            }
+        } else {
+            Button("Mark as Unviewed") {
+                viewedBugs.markUnviewed(bug.id)
             }
         }
         if BugStatuses.isUnassigned(bug.assignedTo), let me = auth.currentUser?.name {
@@ -3642,11 +3692,8 @@ struct BugRow: View {
         ["RESOLVED", "VERIFIED", "CLOSED"].contains(bug.status.uppercased())
     }
 
-    private var isUnseenAndRecent: Bool {
-        guard !isClosed,
-              !viewedBugs.contains(bug.id),
-              let created = bug.creationTime else { return false }
-        return Date().timeIntervalSince(created) < 7 * 24 * 60 * 60
+    private var needsAttention: Bool {
+        BugAttention.needsAttention(bug, mark: viewedBugs.mark(for: bug.id))
     }
 
     private var statusIcon: String {
@@ -3693,7 +3740,7 @@ struct BugRow: View {
     @ViewBuilder
     private func metadataLine(level: Int) -> some View {
         HStack(spacing: 6) {
-            if isUnseenAndRecent {
+            if needsAttention {
                 Circle()
                     .fill(.blue)
                     .frame(width: 7, height: 7)
@@ -3733,5 +3780,7 @@ extension String {
         .environment(Workspace.preview)
         .environment(AuthStore())
         .environment(ViewedBugsStore())
+        .environment(ViewedRevisionsStore())
+        .environment(RevisionActivityStore())
         .environment(ResourceCache())
 }

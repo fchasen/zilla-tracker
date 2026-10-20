@@ -18,6 +18,7 @@ struct ZillaApp: App {
     @State private var workspace = Workspace()
     @State private var viewedBugs = ViewedBugsStore()
     @State private var viewedRevisions = ViewedRevisionsStore()
+    @State private var revisionActivity = RevisionActivityStore()
     @State private var cache = ResourceCache()
     @State private var bugIndex = BugIndexStore()
     @State private var refreshScheduler: RevisionRefreshScheduler?
@@ -39,14 +40,20 @@ struct ZillaApp: App {
                 .environment(workspace)
                 .environment(viewedBugs)
                 .environment(viewedRevisions)
+                .environment(revisionActivity)
                 .environment(cache)
                 .environment(bugIndex)
                 .task {
                     workspace.cache = cache
                     workspace.bugIndex = bugIndex
+                    workspace.viewedBugs = viewedBugs
+                    workspace.viewedRevisions = viewedRevisions
                     PendingUploadStore.shared.pruneOnce(keeping: referencedPendingUploads())
                     auth.cacheClearHook = { [weak cache] in cache?.clear() }
-                    phab.cacheClearHook = { [weak cache] in cache?.clear() }
+                    phab.cacheClearHook = { [weak cache, weak revisionActivity] in
+                        cache?.clear()
+                        revisionActivity?.clear()
+                    }
                     await auth.bootstrap()
                     await phab.bootstrap()
                     if auth.isSignedIn {
@@ -78,6 +85,7 @@ struct ZillaApp: App {
                 .environment(workspace)
                 .environment(viewedBugs)
                 .environment(viewedRevisions)
+                .environment(revisionActivity)
                 .environment(cache)
                 .environment(bugIndex)
             }

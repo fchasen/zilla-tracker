@@ -10,6 +10,8 @@ struct RevisionListView: View {
     @Environment(Workspace.self) private var workspace
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(ResourceCache.self) private var cache
+    @Environment(ViewedRevisionsStore.self) private var viewedRevisions
+    @Environment(RevisionActivityStore.self) private var revisionActivity
 
     let list: RevisionList
 
@@ -57,7 +59,7 @@ struct RevisionListView: View {
                     ForEach(displayedRevisions) { revision in
                         RevisionRow(
                             revision: revision,
-                            showsUnseenIndicator: list == .reviews,
+                            attentionList: attentionList,
                             viewerPHID: list == .reviews ? phab.currentUser?.phid : nil,
                             viewerProjectPHIDs: list == .reviews ? phab.viewerProjectPHIDs : []
                         )
@@ -122,11 +124,24 @@ struct RevisionListView: View {
                 loadError = nil
             }
             await load(force: force)
+            await refreshActivity()
         }
     }
 
     private var isLandedPatches: Bool {
         list == .patches && workspace.patchScope == .landed
+    }
+
+    private var attentionList: RevisionList? {
+        isLandedPatches ? nil : list
+    }
+
+    private func refreshActivity() async {
+        guard let attentionList, let viewerPHID = phab.currentUser?.phid else { return }
+        let pending = allRevisions.filter {
+            RevisionAttention.needsActivity($0, in: attentionList, mark: viewedRevisions.mark(for: $0.id))
+        }
+        await revisionActivity.refresh(pending, viewerPHID: viewerPHID, using: phab.client)
     }
 
     private var trimmedSearch: String {
@@ -347,9 +362,10 @@ struct RevisionListView: View {
 private struct RevisionRow: View {
     @Environment(Workspace.self) private var workspace
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
+    @Environment(RevisionActivityStore.self) private var revisionActivity
     @Environment(\.openURL) private var openURL
     let revision: Revision
-    let showsUnseenIndicator: Bool
+    let attentionList: RevisionList?
     let viewerPHID: String?
     let viewerProjectPHIDs: Set<String>
 
@@ -357,7 +373,7 @@ private struct RevisionRow: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    if showsUnseenIndicator && !viewedRevisions.contains(revision.id) {
+                    if needsAttention {
                         Circle()
                             .fill(.blue)
                             .frame(width: 7, height: 7)
@@ -399,6 +415,15 @@ private struct RevisionRow: View {
         }
         .padding(.vertical, 4)
         .contextMenu { contextMenuContent }
+    }
+
+    private var needsAttention: Bool {
+        guard let attentionList else { return false }
+        return RevisionAttention.needsAttention(
+            in: attentionList,
+            mark: viewedRevisions.mark(for: revision.id),
+            activity: revisionActivity.activity[revision.id]
+        )
     }
 
     private var revisionURL: URL? {
@@ -444,14 +469,16 @@ private struct RevisionRow: View {
         Button("Copy Revision ID") {
             copyToPasteboard(revision.revisionLabel)
         }
-        Divider()
-        if viewedRevisions.contains(revision.id) {
-            Button("Mark as Unviewed") {
-                viewedRevisions.markUnviewed(revision.id)
-            }
-        } else {
-            Button("Mark as Viewed") {
-                viewedRevisions.markViewed(revision.id)
+        if attentionList != nil {
+            Divider()
+            if needsAttention {
+                Button("Mark as Viewed") {
+                    viewedRevisions.markViewed(revision.id)
+                }
+            } else {
+                Button("Mark as Unviewed") {
+                    viewedRevisions.markUnviewed(revision.id)
+                }
             }
         }
         if let bug = revision.fields.bugzillaBugID, let id = Int(bug) {
