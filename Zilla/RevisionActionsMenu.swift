@@ -145,7 +145,12 @@ struct RevisionActionsMenu: View {
         let submitted = workspace.revisionCommentDrafts[revision.id] ?? ""
         let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            transactions.append(.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))))
+            do {
+                transactions.append(.comment(try await PendingUploadStore.shared.remarkup(fromMarkdown: trimmed, using: phab.client)))
+            } catch {
+                workspace.lastUpdateError = error.localizedDescription
+                return
+            }
         }
         workspace.revisionCommentErrors.removeValue(forKey: revision.id)
         if let error = await workspace.applyRevisionEdit(transactions: transactions, using: phab.client) {
@@ -166,11 +171,15 @@ struct RevisionActionsMenu: View {
             return
         }
         workspace.revisionCommentErrors.removeValue(forKey: revision.id)
+        let remarkup: String
+        do {
+            remarkup = try await PendingUploadStore.shared.remarkup(fromMarkdown: trimmed, using: phab.client)
+        } catch {
+            workspace.lastUpdateError = error.localizedDescription
+            return
+        }
         if let error = await workspace.applyRevisionEdit(
-            transactions: [
-                .action(.reject),
-                .comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))
-            ],
+            transactions: [.action(.reject), .comment(remarkup)],
             using: phab.client
         ) {
             workspace.lastUpdateError = error.localizedDescription

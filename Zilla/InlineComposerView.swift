@@ -54,7 +54,8 @@ struct InlineComposerView: View {
                 bordered: bordered,
                 showToolbar: showToolbar,
                 autolinksReferences: true,
-                mentionCompletionContext: mentionCompletionContext
+                mentionCompletionContext: mentionCompletionContext,
+                allowsImages: true
             )
 
             HStack {

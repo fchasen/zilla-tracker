@@ -113,6 +113,15 @@ public enum Markdown {
             return placeholder
         }
 
+        working = working.replacing(#/!\[([^\]]*)\]\((https?):\/\/([^\/\s)]+)\/F(\d+)\)/#) { match in
+            guard String(match.output.3).lowercased() == Remarkup.phabricatorProductionURL.host?.lowercased() else {
+                return String(match.0)
+            }
+            let placeholder = makePlaceholder(index: protected.count)
+            protected.append(fileEmbed(id: String(match.output.4), alt: String(match.output.1)))
+            return placeholder
+        }
+
         working = working.replacing(#/!\[([^\]]+)\]\(([^)\s]+)\)/#) { match in
             "[[\(String(match.output.2)) | \(String(match.output.1))]]"
         }
@@ -161,6 +170,15 @@ public enum Markdown {
             working = working.replacingOccurrences(of: makePlaceholder(index: index), with: original)
         }
         return working
+    }
+
+    static func fileEmbed(id: String, alt: String) -> String {
+        let trimmed = alt.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+              trimmed != "F\(id)",
+              !trimmed.contains(where: { $0 == "\"" || $0 == "}" || $0 == "," || $0 == "\n" })
+        else { return "{F\(id)}" }
+        return "{F\(id), alt=\"\(trimmed)\"}"
     }
 
     static func makePlaceholder(index: Int) -> String {

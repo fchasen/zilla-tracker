@@ -261,6 +261,45 @@ public extension PhabricatorClient {
         return data
     }
 
+    func uploadFile(data: Data, name: String) async throws -> UploadedFile {
+        struct UploadParams: Encodable {
+            let dataBase64: String
+            let name: String
+
+            enum CodingKeys: String, CodingKey {
+                case dataBase64 = "data_base64"
+                case name
+            }
+        }
+        struct SearchParams: Encodable {
+            let constraints: Constraints
+
+            struct Constraints: Encodable {
+                let phids: [String]
+            }
+        }
+        struct SearchResult: Decodable {
+            let data: [Row]
+
+            struct Row: Decodable {
+                let id: Int
+                let phid: String
+            }
+        }
+        let phid: String = try await call(
+            method: "file.upload",
+            params: UploadParams(dataBase64: data.base64EncodedString(), name: name)
+        )
+        let result: SearchResult = try await call(
+            method: "file.search",
+            params: SearchParams(constraints: .init(phids: [phid]))
+        )
+        guard let row = result.data.first(where: { $0.phid == phid }) else {
+            throw PhabricatorError.invalidResponse
+        }
+        return UploadedFile(id: row.id, phid: row.phid)
+    }
+
     func createInlineComment(
         diffID: Int,
         path: String,

@@ -484,11 +484,86 @@ public extension BugzillaClient {
         let _: Empty = try await execute(endpoint)
     }
 
+    func createAttachment(
+        bugID: Bug.ID,
+        data: Data,
+        fileName: String,
+        summary: String,
+        contentType: String,
+        comment: String? = nil,
+        isMarkdown: Bool = true
+    ) async throws -> Attachment.ID {
+        struct Body: Encodable {
+            let ids: [Bug.ID]
+            let data: Data
+            let fileName: String
+            let summary: String
+            let contentType: String
+            let comment: String?
+            let isMarkdown: Bool
+        }
+        let body = try encoder.encode(Body(
+            ids: [bugID],
+            data: data,
+            fileName: fileName,
+            summary: summary,
+            contentType: contentType,
+            comment: comment,
+            isMarkdown: isMarkdown
+        ))
+        let endpoint = Endpoint(
+            path: "bug/\(bugID)/attachment",
+            method: .post,
+            body: body
+        )
+        let response: CreatedAttachments = try await execute(endpoint)
+        guard let id = response.ids.first else { throw BugzillaError.invalidResponse }
+        return id
+    }
+
     func history(bugID: Bug.ID) async throws -> [HistoryEntry] {
         throw BugzillaError.notImplemented
     }
 
     func attachments(bugID: Bug.ID) async throws -> [Attachment] {
         throw BugzillaError.notImplemented
+    }
+}
+
+struct CreatedAttachments: Decodable {
+    let ids: [Attachment.ID]
+
+    private enum CodingKeys: String, CodingKey {
+        case ids
+        case attachments
+    }
+
+    private struct FlexibleID: Decodable {
+        let value: Attachment.ID
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let int = try? container.decode(Int.self) {
+                value = int
+            } else if let int = Int(try container.decode(String.self)) {
+                value = int
+            } else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Attachment ID is not numeric")
+            }
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let ids = try container.decodeIfPresent([FlexibleID].self, forKey: .ids) {
+            self.ids = ids.map(\.value)
+        } else {
+            let attachments = try container.decode([String: AnyDecodable].self, forKey: .attachments)
+            self.ids = attachments.keys.compactMap(Int.init).sorted()
+        }
+    }
+
+    private struct AnyDecodable: Decodable {
+        init(from decoder: Decoder) throws {}
     }
 }

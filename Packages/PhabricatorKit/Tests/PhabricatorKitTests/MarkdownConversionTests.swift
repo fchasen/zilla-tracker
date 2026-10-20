@@ -184,6 +184,45 @@ final class MarkdownConversionTests: XCTestCase {
         )
     }
 
+    func testPhabricatorFileImageBecomesEmbed() {
+        XCTAssertEqual(
+            Markdown.toRemarkup("See ![F12](https://phabricator.services.mozilla.com/F12) here"),
+            "See {F12} here"
+        )
+    }
+
+    func testPhabricatorFileImageKeepsCustomAlt() {
+        XCTAssertEqual(
+            Markdown.toRemarkup("![my_screen shot.png](https://phabricator.services.mozilla.com/F12)"),
+            #"{F12, alt="my_screen shot.png"}"#
+        )
+    }
+
+    func testPhabricatorFileImageDropsUnsafeAlt() {
+        XCTAssertEqual(
+            Markdown.toRemarkup("![a, b](https://phabricator.services.mozilla.com/F12)"),
+            "{F12}"
+        )
+        XCTAssertEqual(
+            Markdown.toRemarkup("![](https://phabricator.services.mozilla.com/F12)"),
+            "{F12}"
+        )
+    }
+
+    func testOtherHostFileImageStaysLink() {
+        XCTAssertEqual(
+            Markdown.toRemarkup("![shot](https://example.com/F12)"),
+            "[[https://example.com/F12 | shot]]"
+        )
+    }
+
+    func testFileEmbedRoundTripsThroughCommonMark() {
+        let remarkup = #"{F12, alt="Screenshot"}"#
+        let markdown = Remarkup.toCommonMark(remarkup)
+        XCTAssertEqual(Markdown.toRemarkup(markdown), remarkup)
+        XCTAssertEqual(Markdown.toRemarkup(Remarkup.toCommonMark("{F99}")), "{F99}")
+    }
+
     func testFencedCodeUnchanged() {
         let input = """
         ```swift

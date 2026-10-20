@@ -5,6 +5,10 @@ import PhabricatorKit
 import SearchfoxKit
 import FolioReview
 import FolioHighlight
+import UniformTypeIdentifiers
+#if os(iOS)
+import PhotosUI
+#endif
 #if canImport(AppKit) && os(macOS)
 import AppKit
 #elseif canImport(UIKit)
@@ -25,6 +29,7 @@ struct MarkdownEditor: View {
     var autoFocus: Bool = false
     var autolinksReferences: Bool = false
     var mentionCompletionContext: MentionCompletionContext = .none
+    var allowsImages: Bool = false
 
     @Environment(\.zillaFontScale) private var fontScale
     @Environment(\.colorScheme) private var colorScheme
@@ -44,6 +49,12 @@ struct MarkdownEditor: View {
     @State private var showingLinkInsert = false
     @State private var didAutoFocus = false
     @State private var pendingInsertionSelection: NSRange?
+    @State private var showingImageImporter = false
+    @State private var imageError: String?
+    #if os(iOS)
+    @State private var showingPhotoPicker = false
+    @State private var photoSelection: [PhotosPickerItem] = []
+    #endif
 
     var body: some View {
         Group {
@@ -68,6 +79,32 @@ struct MarkdownEditor: View {
                 insertMarkdownLink(label: label, url: url)
             }
         }
+        .fileImporter(
+            isPresented: $showingImageImporter,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: true
+        ) { result in
+            insertImageFiles(result)
+        }
+        #if os(iOS)
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $photoSelection,
+            maxSelectionCount: 10,
+            matching: .images
+        )
+        .onChange(of: photoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            photoSelection = []
+            insertPhotos(items)
+        }
+        #endif
+        .alert(
+            "Couldn’t Add Image",
+            isPresented: Binding(get: { imageError != nil }, set: { if !$0 { imageError = nil } }),
+            actions: { Button("OK") { imageError = nil } },
+            message: { Text(imageError ?? "") }
+        )
     }
 
     private var richEditor: some View {
@@ -205,8 +242,8 @@ struct MarkdownEditor: View {
                     showingLinkPicker = true
                 }
             ),
-            .divider,
         ]
+        let images: [MarkdownTextEditor.ToolbarItem] = allowsImages ? [imageInsert] : []
 
         let labelMenu: [MarkdownTextEditor.ToolbarItem] = mentionCompletionContext.source == .phabricator
             ? [
@@ -249,9 +286,104 @@ struct MarkdownEditor: View {
             }
         )
 
-        return leading + labelMenu
+        return leading + images + [.divider] + labelMenu
             + MarkdownTextEditor.Configuration.defaultToolbar.replacing(.link, with: linkInsert)
             + [.spacer, modeToggle]
+    }
+
+    private var imageInsert: MarkdownTextEditor.ToolbarItem {
+        #if os(iOS)
+        .menu(
+            id: "imageInsert",
+            label: "Insert Image",
+            systemImage: "photo",
+            topLevel: true,
+            entries: [
+                MarkdownTextEditor.MenuEntry(id: "photoLibrary", title: "Photo Library", systemImage: "photo.on.rectangle") {
+                    capturePendingSelection()
+                    showingPhotoPicker = true
+                },
+                MarkdownTextEditor.MenuEntry(id: "chooseFile", title: "Choose File", systemImage: "folder") {
+                    capturePendingSelection()
+                    showingImageImporter = true
+                },
+            ]
+        )
+        #else
+        .custom(
+            id: "imageInsert",
+            label: "Insert Image",
+            systemImage: "photo",
+            topLevel: true,
+            action: {
+                capturePendingSelection()
+                showingImageImporter = true
+            }
+        )
+        #endif
+    }
+
+    private func insertImageFiles(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            insertImages(urls.map { url in { try PendingUploadStore.shared.addFile(at: url) } })
+        case .failure(let error):
+            pendingInsertionSelection = nil
+            imageError = error.localizedDescription
+        }
+    }
+
+    #if os(iOS)
+    private func insertPhotos(_ items: [PhotosPickerItem]) {
+        Task {
+            var loaded: [(Data, UTType)] = []
+            for item in items {
+                let type = item.supportedContentTypes.first { $0.conforms(to: .image) } ?? .image
+                do {
+                    if let data = try await item.loadTransferable(type: Data.self) {
+                        loaded.append((data, type))
+                    }
+                } catch {
+                    imageError = error.localizedDescription
+                }
+            }
+            insertImages(loaded.map { data, type in
+                { try PendingUploadStore.shared.add(data: data, contentType: type, suggestedName: nil) }
+            })
+        }
+    }
+    #endif
+
+    private func insertImages(_ makers: [() throws -> String]) {
+        var snippets: [String] = []
+        for make in makers {
+            do {
+                snippets.append(try make())
+            } catch {
+                imageError = error.localizedDescription
+            }
+        }
+        restorePendingSelection()
+        guard !snippets.isEmpty else { return }
+        controller?.insertMarkdown(snippets.joined(separator: " "), label: "Insert Image")
+    }
+
+    private func pasteImages(_ event: PasteEvent, into controller: MarkdownEditorController) -> Bool {
+        guard !event.images.isEmpty, !event.inCode else { return false }
+        var snippets: [String] = []
+        for image in event.images {
+            do {
+                snippets.append(try PendingUploadStore.shared.add(
+                    data: image.data,
+                    contentType: image.contentType,
+                    suggestedName: image.suggestedName
+                ))
+            } catch {
+                imageError = error.localizedDescription
+            }
+        }
+        guard !snippets.isEmpty else { return event.text == nil }
+        return controller.insertMarkdown(snippets.joined(separator: " "), replacing: event.selection, label: "Paste Image")
     }
 
     /// Labels lead their comment, so the token goes at the start of the
@@ -441,6 +573,11 @@ struct MarkdownEditor: View {
         if autolinksReferences {
             c.registerZillaAutoLinkPluginIfNeeded()
         }
+        if allowsImages, !c.plugins.contains(where: { $0.key.name == ImagePastePlugin.keyName }) {
+            c.register(plugin: ImagePastePlugin { controller, event in
+                pasteImages(event, into: controller)
+            })
+        }
         guard mentionCompletionContext.source != nil else {
             completionPlugin?.cancel(controller: c)
             completionItems = []
@@ -550,6 +687,23 @@ struct MarkdownEditor: View {
             label: "Insert Mention"
         )
         completionPlugin?.cancel(controller: controller)
+    }
+}
+
+final class ImagePastePlugin: EditorPlugin {
+    static let keyName = "zilla.imagePaste"
+
+    let key = AnyPluginKey(name: keyName)
+    private let onPaste: (MarkdownEditorController, PasteEvent) -> Bool
+
+    init(onPaste: @escaping (MarkdownEditorController, PasteEvent) -> Bool) {
+        self.onPaste = onPaste
+    }
+
+    var props: PluginProps {
+        PluginProps(handlePaste: { [onPaste] controller, event in
+            onPaste(controller, event)
+        })
     }
 }
 

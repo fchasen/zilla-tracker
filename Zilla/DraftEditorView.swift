@@ -66,7 +66,8 @@ struct DraftEditorView: View {
                     MarkdownEditor(
                         text: $draft.bugDescription,
                         minHeight: 240,
-                        isDisabled: isSubmitting
+                        isDisabled: isSubmitting,
+                        allowsImages: true
                     )
                 }
 
@@ -128,14 +129,27 @@ struct DraftEditorView: View {
         workspace.beginDraftSubmit(draftID)
         defer { workspace.endDraftSubmit(draftID) }
 
+        let uploads = PendingUploadStore.shared
+        let descriptionSource = draft.bugDescription
+        let imageMatches = PendingUploadReferences.matches(in: descriptionSource)
+        do {
+            for match in imageMatches { _ = try uploads.upload(for: match) }
+        } catch {
+            submitError = error.localizedDescription
+            return
+        }
+        let description = imageMatches.isEmpty
+            ? descriptionSource
+            : PendingUploadReferences.replacingWithNames(descriptionSource)
+
         let payload = BugCreate(
             product: draft.product,
             component: draft.componentName,
             summary: draft.summary.trimmingCharacters(in: .whitespacesAndNewlines),
             version: draft.version,
-            description: draft.bugDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            description: description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? nil
-                : draft.bugDescription,
+                : description,
             type: draft.type,
             severity: draft.severity,
             priority: draft.priority,
@@ -150,6 +164,9 @@ struct DraftEditorView: View {
 
         do {
             let newID = try await auth.client.createBug(payload)
+            if !imageMatches.isEmpty {
+                await attachDescriptionImages(descriptionSource, to: newID, using: uploads)
+            }
             let wasPushed = workspace.isDraftPushed(draftID)
             let hadBugShowing = workspace.selectedBugID != nil
             modelContext.delete(draft)
@@ -169,6 +186,17 @@ struct DraftEditorView: View {
             workspace.bugListRefreshToken = UUID()
         } catch {
             submitError = error.localizedDescription
+        }
+    }
+
+    private func attachDescriptionImages(_ source: String, to bugID: Bug.ID, using uploads: PendingUploadStore) async {
+        do {
+            let linked = try await uploads.resolveForBugzilla(source, bugID: bugID, using: auth.client)
+            let comments = try await auth.client.comments(bugID: bugID)
+            guard let description = comments.first(where: { $0.count == 0 }) ?? comments.first else { return }
+            try await auth.client.updateComment(commentID: description.id, newText: linked)
+        } catch {
+            workspace.lastUpdateError = "Bug \(bugID) was created, but its images were not attached: \(error.localizedDescription)"
         }
     }
 

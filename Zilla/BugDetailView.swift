@@ -2396,7 +2396,8 @@ private struct DescriptionBlock: View {
                             text: $editedText,
                             minHeight: 160,
                             autolinksReferences: true,
-                            mentionCompletionContext: mentionCompletionContext
+                            mentionCompletionContext: mentionCompletionContext,
+                            allowsImages: true
                         )
                         HStack(spacing: 8) {
                             if let saveError {
@@ -2588,7 +2589,8 @@ private struct CommentBlock: View {
                     text: $editedText,
                     minHeight: 120,
                     autolinksReferences: true,
-                    mentionCompletionContext: mentionCompletionContext
+                    mentionCompletionContext: mentionCompletionContext,
+                    allowsImages: true
                 )
                 HStack(spacing: 8) {
                     if let saveError {
@@ -3405,7 +3407,8 @@ private struct CommentComposer: View {
             MarkdownEditor(
                 text: $text,
                 autolinksReferences: true,
-                mentionCompletionContext: mentionCompletionContext
+                mentionCompletionContext: mentionCompletionContext,
+                allowsImages: true
             )
 
             if let error {

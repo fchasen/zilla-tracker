@@ -44,6 +44,7 @@ struct ZillaApp: App {
                 .task {
                     workspace.cache = cache
                     workspace.bugIndex = bugIndex
+                    PendingUploadStore.shared.pruneOnce(keeping: referencedPendingUploads())
                     auth.cacheClearHook = { [weak cache] in cache?.clear() }
                     phab.cacheClearHook = { [weak cache] in cache?.clear() }
                     await auth.bootstrap()
@@ -84,6 +85,14 @@ struct ZillaApp: App {
         .defaultSize(width: 1280, height: 760)
         .modelContainer(modelContainer)
         #endif
+    }
+
+    private func referencedPendingUploads() -> Set<UUID> {
+        let context = modelContainer.mainContext
+        let drafts = (try? context.fetch(FetchDescriptor<BugDraft>())) ?? []
+        let inlineDrafts = (try? context.fetch(FetchDescriptor<InlineDraftBuffer>())) ?? []
+        return Set(drafts.flatMap { PendingUploadReferences.ids(in: $0.bugDescription) })
+            .union(inlineDrafts.flatMap { PendingUploadReferences.ids(in: $0.content) })
     }
 }
 

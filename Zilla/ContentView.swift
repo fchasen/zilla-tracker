@@ -861,7 +861,13 @@ final class Workspace {
     ) async -> Error? {
         let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let body = CommentMarkdown.autolinkReferences(in: trimmed)
+        let resolved: String
+        do {
+            resolved = try await PendingUploadStore.shared.resolveForBugzilla(trimmed, bugID: bugID, using: client)
+        } catch {
+            return error
+        }
+        let body = CommentMarkdown.autolinkReferences(in: resolved)
         let ticket = bugStore.beginComment(bugID, author: author, text: body)
         consumeCommentDraft(bugID: bugID, submitted: submitted)
         do {
@@ -903,9 +909,15 @@ final class Workspace {
         newText: String,
         using client: BugzillaClient
     ) async -> Error? {
-        let ticket = bugStore.beginCommentEdit(bugID, commentID: commentID, text: newText)
+        let resolved: String
         do {
-            try await client.updateComment(commentID: commentID, newText: newText)
+            resolved = try await PendingUploadStore.shared.resolveForBugzilla(newText, bugID: bugID, using: client)
+        } catch {
+            return error
+        }
+        let ticket = bugStore.beginCommentEdit(bugID, commentID: commentID, text: resolved)
+        do {
+            try await client.updateComment(commentID: commentID, newText: resolved)
         } catch {
             bugStore.discardCommentEdit(ticket)
             return error

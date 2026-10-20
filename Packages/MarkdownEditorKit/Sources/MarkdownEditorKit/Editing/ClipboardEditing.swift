@@ -28,12 +28,17 @@ extension MarkdownEditorController {
 
     @discardableResult
     public func insertMarkdown(_ markdown: String, label: String = "Insert") -> Bool {
+        insertMarkdown(markdown, replacing: currentSelection, label: label)
+    }
+
+    @discardableResult
+    public func insertMarkdown(_ markdown: String, replacing range: NSRange, label: String = "Insert") -> Bool {
         guard isEditable, !markdown.isEmpty else { return false }
-        let selection = currentSelection
-        if isLocationInCode(selection.location) {
-            return insertLiteral(markdown, replacing: selection, actionName: label)
+        let target = Normalizer.clamp(range, to: textStorage.length)
+        if isLocationInCode(target.location) {
+            return insertLiteral(markdown, replacing: target, actionName: label)
         }
-        return insertParsedMarkdown(markdown, replacing: selection, actionName: label)
+        return insertParsedMarkdown(markdown, replacing: target, actionName: label)
     }
 
     func markdownForCopy(range: NSRange) -> String {

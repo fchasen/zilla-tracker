@@ -24,7 +24,8 @@ struct BugCommentSheet: View {
                     bordered: false,
                     autoFocus: true,
                     autolinksReferences: true,
-                    mentionCompletionContext: mentionCompletionContext
+                    mentionCompletionContext: mentionCompletionContext,
+                    allowsImages: true
                 )
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle")

@@ -13,6 +13,7 @@ public struct PasteEvent {
     public var source: Source
     public var selection: NSRange
     public var inCode: Bool
+    public var images: [PastedImage]
 
     public init(
         text: String?,
@@ -20,7 +21,8 @@ public struct PasteEvent {
         plainText: Bool = false,
         source: Source = .paste,
         selection: NSRange,
-        inCode: Bool = false
+        inCode: Bool = false,
+        images: [PastedImage] = []
     ) {
         self.text = text
         self.html = html
@@ -28,5 +30,6 @@ public struct PasteEvent {
         self.source = source
         self.selection = selection
         self.inCode = inCode
+        self.images = images
     }
 }

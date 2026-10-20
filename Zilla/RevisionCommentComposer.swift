@@ -31,7 +31,8 @@ struct RevisionCommentComposer: View {
                 text: draftBinding,
                 isDisabled: isBusy,
                 autolinksReferences: true,
-                mentionCompletionContext: workspace.revisionMentionCompletionContext
+                mentionCompletionContext: workspace.revisionMentionCompletionContext,
+                allowsImages: true
             )
             .frame(minHeight: 100)
 
@@ -74,8 +75,15 @@ struct RevisionCommentComposer: View {
         workspace.revisionCommentErrors.removeValue(forKey: id)
         isPosting = true
         defer { isPosting = false }
+        let remarkup: String
+        do {
+            remarkup = try await PendingUploadStore.shared.remarkup(fromMarkdown: trimmed, using: phab.client)
+        } catch {
+            workspace.revisionCommentErrors[id] = error.localizedDescription
+            return
+        }
         if let error = await workspace.applyRevisionEdit(
-            transactions: [.comment(Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed)))],
+            transactions: [.comment(remarkup)],
             using: phab.client
         ) {
             workspace.revisionCommentErrors[id] = error.localizedDescription

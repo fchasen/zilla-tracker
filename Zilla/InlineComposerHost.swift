@@ -102,9 +102,15 @@ struct InlineComposerHost: View {
         let key = draftKey
         let trimmed = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let body = Markdown.toRemarkup(CommentMarkdown.autolinkReferences(in: trimmed))
         isPosting = true
         defer { isPosting = false }
+        let body: String
+        do {
+            body = try await PendingUploadStore.shared.remarkup(fromMarkdown: trimmed, using: phab.client)
+        } catch {
+            workspace.lastUpdateError = error.localizedDescription
+            return
+        }
         let error: Error?
         if let editingPHID {
             error = await workspace.editInlineDraft(

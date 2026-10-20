@@ -1,6 +1,7 @@
 #if canImport(AppKit) && os(macOS)
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct MarkdownTextViewMac: NSViewRepresentable {
     @Binding public var text: String
@@ -312,7 +313,8 @@ final class MarkdownNSTextView: NSTextView {
     }
 
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
-        [Self.markdownType, .rtfd, .rtf, .html, .string, .URL]
+        [Self.markdownType, .rtfd, .rtf, .html, .string, .URL, .fileURL]
+            + PastedImagePolicy.dataTypes.map { NSPasteboard.PasteboardType($0.identifier) }
     }
 
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
@@ -349,19 +351,67 @@ final class MarkdownNSTextView: NSTextView {
         let selection = rangeForUserTextChange
         guard selection.location != NSNotFound else { return false }
         let payload = pastePayload(from: pboard, type: type)
-        guard !payload.isEmpty else { return false }
+        let images = Self.pastedImages(from: pboard, forcePlain: isPastingPlainText)
+        guard !payload.isEmpty || !images.isEmpty else { return false }
         let event = PasteEvent(
             text: payload.anyText,
             html: pboard.string(forType: .html),
             plainText: payload.forcePlain,
             source: .paste,
             selection: selection,
-            inCode: controller.isLocationInCode(selection.location)
+            inCode: controller.isLocationInCode(selection.location),
+            images: images
         )
         for plugin in controller.plugins {
             if plugin.props.handlePaste?(controller, event) == true { return true }
         }
+        guard !payload.isEmpty else { return false }
         return controller.paste(payload, replacing: selection)
+    }
+
+    override func dragOperation(for dragInfo: any NSDraggingInfo, type: NSPasteboard.PasteboardType) -> NSDragOperation {
+        if isEditable, markdownController?.isEditable == true, Self.carriesImages(dragInfo.draggingPasteboard) {
+            return .copy
+        }
+        return super.dragOperation(for: dragInfo, type: type)
+    }
+
+    static func carriesImages(_ pboard: NSPasteboard) -> Bool {
+        if pboard.types?.contains(markdownType) == true { return false }
+        let imageFiles = pboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [
+                .urlReadingFileURLsOnly: true,
+                .urlReadingContentsConformToTypes: [UTType.image.identifier]
+            ]
+        ) ?? []
+        if !imageFiles.isEmpty { return true }
+        let dataTypes = PastedImagePolicy.dataTypes.map { NSPasteboard.PasteboardType($0.identifier) }
+        guard pboard.availableType(from: dataTypes) != nil else { return false }
+        let text = pboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty || PastedImagePolicy.isSingleURL(text)
+    }
+
+    static func pastedImages(from pboard: NSPasteboard, forcePlain: Bool) -> [PastedImage] {
+        let fileURLs = pboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] ?? []
+        return PastedImagePolicy.images(
+            hasMarkdown: pboard.types?.contains(markdownType) == true,
+            forcePlain: forcePlain,
+            plainText: pboard.string(forType: .string),
+            fileURLs: fileURLs,
+            dataImages: {
+                (pboard.pasteboardItems ?? []).compactMap { item in
+                    guard let type = PastedImagePolicy.preferredDataType(in: item.types.map(\.rawValue)),
+                          let data = item.data(forType: NSPasteboard.PasteboardType(type.identifier)),
+                          !data.isEmpty
+                    else { return nil }
+                    return PastedImage(data: data, contentType: type)
+                }
+            }
+        )
     }
 
     private func pastePayload(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> PastePayload {

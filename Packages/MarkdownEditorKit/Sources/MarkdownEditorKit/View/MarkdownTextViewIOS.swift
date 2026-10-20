@@ -273,6 +273,10 @@ final class MarkdownUITextView: UITextView {
         adjustsFontForContentSizeCategory = true
         allowedWritingToolsResultOptions = [.plainText]
         pasteDelegate = self
+        pasteConfiguration = UIPasteConfiguration(
+            acceptableTypeIdentifiers: (pasteConfiguration?.acceptableTypeIdentifiers ?? [])
+                + PastedImagePolicy.dataTypes.map(\.identifier)
+        )
     }
 
     func textDidChange() {
@@ -458,7 +462,8 @@ final class MarkdownUITextView: UITextView {
     private func performPaste(forcePlain: Bool) -> Bool {
         guard let controller = markdownController, controller.isEditable, isEditable else { return false }
         let payload = Self.pastePayload(from: pasteboard, forcePlain: forcePlain)
-        guard !payload.isEmpty else { return false }
+        let images = Self.pastedImages(from: pasteboard, forcePlain: forcePlain)
+        guard !payload.isEmpty || !images.isEmpty else { return false }
         let selection = selectedRange
         let event = PasteEvent(
             text: payload.anyText,
@@ -466,12 +471,37 @@ final class MarkdownUITextView: UITextView {
             plainText: forcePlain,
             source: .paste,
             selection: selection,
-            inCode: controller.isLocationInCode(selection.location)
+            inCode: controller.isLocationInCode(selection.location),
+            images: images
         )
         for plugin in controller.plugins {
             if plugin.props.handlePaste?(controller, event) == true { return true }
         }
+        guard !payload.isEmpty else { return false }
         return controller.paste(payload, replacing: selection)
+    }
+
+    static func pastedImages(from pasteboard: UIPasteboard, forcePlain: Bool) -> [PastedImage] {
+        guard !forcePlain, pasteboard.hasImages || pasteboard.hasURLs else { return [] }
+        return PastedImagePolicy.images(
+            hasMarkdown: pasteboard.types.contains(markdownType),
+            forcePlain: forcePlain,
+            plainText: pasteboard.string,
+            fileURLs: (pasteboard.urls ?? []).filter(\.isFileURL),
+            dataImages: {
+                pasteboard.items.compactMap { item in
+                    guard let type = PastedImagePolicy.preferredDataType(in: Array(item.keys)) else { return nil }
+                    switch item[type.identifier] {
+                    case let data as Data where !data.isEmpty:
+                        return PastedImage(data: data, contentType: type)
+                    case let image as UIImage:
+                        return image.pngData().map { PastedImage(data: $0, contentType: .png) }
+                    default:
+                        return nil
+                    }
+                }
+            }
+        )
     }
 
     static func pastePayload(from pasteboard: UIPasteboard, forcePlain: Bool) -> PastePayload {
@@ -573,6 +603,8 @@ final class MarkdownUITextView: UITextView {
                 return isEditable && controller.canPerform(.bold)
             case #selector(UIResponderStandardEditActions.toggleItalics(_:)):
                 return isEditable && controller.canPerform(.italic)
+            case #selector(UIResponderStandardEditActions.paste(_:)) where pasteboard.hasImages:
+                return isEditable && controller.isEditable
             default:
                 break
             }
@@ -781,7 +813,55 @@ final class MarkdownUITextView: UITextView {
         )
     }
 }
+
+final class PastedImageAttachment: NSTextAttachment {
+    let pastedImage: PastedImage
+
+    init(pastedImage: PastedImage) {
+        self.pastedImage = pastedImage
+        super.init(data: nil, ofType: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 extension MarkdownUITextView: UITextPasteDelegate {
+    static let richTextTypeIdentifiers: [String] = [
+        markdownType, UTType.rtf.identifier, UTType.rtfd.identifier, UTType.flatRTFD.identifier
+    ]
+
+    func textPasteConfigurationSupporting(
+        _ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting,
+        transform item: any UITextPasteItem
+    ) {
+        let provider = item.itemProvider
+        let registered = provider.registeredTypeIdentifiers
+        guard !registered.contains(where: Self.richTextTypeIdentifiers.contains),
+              let type = PastedImagePolicy.preferredDataType(in: registered)
+                ?? registered.lazy.compactMap(UTType.init).first(where: { $0.conforms(to: .image) })
+        else {
+            item.setDefaultResult()
+            return
+        }
+        let suggestedName = provider.suggestedName.map { name in
+            (name as NSString).pathExtension.isEmpty
+                ? (name as NSString).appendingPathExtension(type.preferredFilenameExtension ?? "") ?? name
+                : name
+        }
+        provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+            DispatchQueue.main.async {
+                guard let data, !data.isEmpty else {
+                    item.setNoResult()
+                    return
+                }
+                let image = PastedImage(data: data, contentType: type, suggestedName: suggestedName)
+                item.setResult(attachment: PastedImageAttachment(pastedImage: image))
+            }
+        }
+    }
+
     func textPasteConfigurationSupporting(
         _ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting,
         performPasteOf attributedString: NSAttributedString,
@@ -792,17 +872,38 @@ extension MarkdownUITextView: UITextPasteDelegate {
         let start = offset(from: beginningOfDocument, to: textRange.start)
         let end = offset(from: beginningOfDocument, to: textRange.end)
         let range = NSRange(location: start, length: max(0, end - start))
-        let text = attributedString.string
-        let event = PasteEvent(text: text, selection: range, inCode: controller.isLocationInCode(start))
+        let images = Self.pastedImages(in: attributedString)
+        let text = images.isEmpty
+            ? attributedString.string
+            : attributedString.string.replacingOccurrences(of: "\u{FFFC}", with: "")
+        let event = PasteEvent(
+            text: text.isEmpty ? nil : text,
+            selection: range,
+            inCode: controller.isLocationInCode(start),
+            images: images
+        )
         for plugin in controller.plugins {
             if plugin.props.handlePaste?(controller, event) == true { return textRange }
         }
-        guard controller.paste(PastePayload(plainText: text), replacing: range) else { return textRange }
+        guard !text.isEmpty, controller.paste(PastePayload(plainText: text), replacing: range) else { return textRange }
         let caret = controller.currentSelection
         guard let from = position(from: beginningOfDocument, offset: caret.location),
               let to = position(from: beginningOfDocument, offset: NSMaxRange(caret)),
               let result = self.textRange(from: from, to: to) else { return textRange }
         return result
+    }
+
+    static func pastedImages(in attributedString: NSAttributedString) -> [PastedImage] {
+        var images: [PastedImage] = []
+        attributedString.enumerateAttribute(
+            .attachment,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, _ in
+            if let attachment = value as? PastedImageAttachment {
+                images.append(attachment.pastedImage)
+            }
+        }
+        return images
     }
 }
 #endif
