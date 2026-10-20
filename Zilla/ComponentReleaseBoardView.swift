@@ -665,7 +665,8 @@ struct ComponentReleaseBoardView: View {
         "id", "summary", "status", "resolution", "product", "component",
         "assigned_to", "assigned_to_detail", "priority", "severity", "keywords", "type",
         "last_change_time", "creation_time", "target_milestone", "cf_rank",
-        "flags.id", "flags.name", "flags.status",
+        "flags.id", "flags.name", "flags.status", "flags.requestee",
+        "flags.creation_date", "flags.modification_date",
         "attachments.id", "attachments.content_type", "attachments.is_obsolete"
     ]
 

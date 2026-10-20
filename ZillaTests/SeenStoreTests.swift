@@ -113,7 +113,8 @@ struct BugAttentionTests {
     private func makeBug(
         status: String = "NEW",
         created: Date? = date(-2 * 24 * 60 * 60),
-        changed: Date? = date(-60)
+        changed: Date? = date(-60),
+        flags: [Flag] = []
     ) -> Bug {
         Bug(
             id: 1,
@@ -123,36 +124,90 @@ struct BugAttentionTests {
             product: "Firefox",
             component: "General",
             creationTime: created,
-            lastChangeTime: changed
+            lastChangeTime: changed,
+            flags: flags
         )
     }
 
+    private func needinfo(
+        requestee: String = "me@mozilla.com",
+        status: String = "?",
+        created: Date = date(-60),
+        modified: Date? = nil
+    ) -> Flag {
+        Flag(
+            id: 7,
+            name: "needinfo",
+            status: status,
+            setter: "someone@mozilla.com",
+            requestee: requestee,
+            creationDate: created,
+            modificationDate: modified
+        )
+    }
+
+    private func oldBug(_ flags: [Flag]) -> Bug {
+        makeBug(created: date(-90 * 24 * 60 * 60), changed: date(-60), flags: flags)
+    }
+
     @Test func recentUnseenOpenBugNeedsAttention() {
-        #expect(BugAttention.needsAttention(makeBug(), mark: nil, now: now))
+        #expect(BugAttention.needsAttention(makeBug(), mark: nil, viewer: nil, now: now))
     }
 
     @Test func olderUnseenBugDoesNot() {
         let bug = makeBug(created: date(-10 * 24 * 60 * 60))
-        #expect(!BugAttention.needsAttention(bug, mark: nil, now: now))
+        #expect(!BugAttention.needsAttention(bug, mark: nil, viewer: nil, now: now))
     }
 
     @Test func unseenClosedBugDoesNot() {
-        #expect(!BugAttention.needsAttention(makeBug(status: "RESOLVED"), mark: nil, now: now))
+        #expect(!BugAttention.needsAttention(makeBug(status: "RESOLVED"), mark: nil, viewer: nil, now: now))
     }
 
     @Test func viewedBugChangedSinceNeedsAttention() {
         let mark = SeenMark(seenThrough: date(-120), recordedAt: date(-120))
-        #expect(BugAttention.needsAttention(makeBug(changed: date(-60)), mark: mark, now: now))
+        #expect(BugAttention.needsAttention(makeBug(changed: date(-60)), mark: mark, viewer: nil, now: now))
     }
 
     @Test func viewedBugUnchangedSinceDoesNot() {
         let mark = SeenMark(seenThrough: date(-30), recordedAt: date(-30))
-        #expect(!BugAttention.needsAttention(makeBug(changed: date(-60)), mark: mark, now: now))
+        #expect(!BugAttention.needsAttention(makeBug(changed: date(-60)), mark: mark, viewer: nil, now: now))
+    }
+
+    @Test func unseenRequestOnOldBugNeedsAttention() {
+        let bug = oldBug([needinfo()])
+        #expect(BugAttention.hasUnseenRequest(bug, for: "me@mozilla.com", mark: nil))
+        #expect(BugAttention.needsAttention(bug, mark: nil, viewer: "me@mozilla.com", now: now))
+        #expect(!BugAttention.needsAttention(bug, mark: nil, viewer: nil, now: now))
+    }
+
+    @Test func requestSeenSinceDoesNotCount() {
+        let mark = SeenMark(seenThrough: date(-30), recordedAt: date(-30))
+        #expect(!BugAttention.hasUnseenRequest(oldBug([needinfo(created: date(-60))]), for: "me@mozilla.com", mark: mark))
+    }
+
+    @Test func requestAfterLastViewCounts() {
+        let mark = SeenMark(seenThrough: date(-120), recordedAt: date(-120))
+        #expect(BugAttention.hasUnseenRequest(oldBug([needinfo(created: date(-60))]), for: "me@mozilla.com", mark: mark))
+    }
+
+    @Test func reRequestUsesModificationDate() {
+        let mark = SeenMark(seenThrough: date(-120), recordedAt: date(-120))
+        let flag = needinfo(created: date(-1000), modified: date(-60))
+        #expect(BugAttention.hasUnseenRequest(oldBug([flag]), for: "me@mozilla.com", mark: mark))
+    }
+
+    @Test func requestsForOthersOrResolvedFlagsDoNotCount() {
+        #expect(!BugAttention.hasUnseenRequest(oldBug([needinfo(requestee: "other@mozilla.com")]), for: "me@mozilla.com", mark: nil))
+        #expect(!BugAttention.hasUnseenRequest(oldBug([needinfo(status: "+")]), for: "me@mozilla.com", mark: nil))
+    }
+
+    @Test func requesteeMatchIgnoresCase() {
+        #expect(BugAttention.hasUnseenRequest(oldBug([needinfo(requestee: "Me@Mozilla.com")]), for: "me@mozilla.com", mark: nil))
     }
 
     @Test func markedUnviewedBugNeedsAttention() {
         let mark = SeenMark(seenThrough: nil, recordedAt: date(-30))
         let bug = makeBug(created: date(-30 * 24 * 60 * 60), changed: date(-20 * 24 * 60 * 60))
-        #expect(BugAttention.needsAttention(bug, mark: mark, now: now))
+        #expect(BugAttention.needsAttention(bug, mark: mark, viewer: nil, now: now))
     }
 }

@@ -2159,6 +2159,7 @@ struct Sidebar: View {
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(Workspace.self) private var workspace
     @Environment(ResourceCache.self) private var cache
+    @Environment(ViewedBugsStore.self) private var viewedBugs
     @Environment(ViewedRevisionsStore.self) private var viewedRevisions
     @Environment(RevisionActivityStore.self) private var revisionActivity
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
@@ -2169,6 +2170,7 @@ struct Sidebar: View {
 
     @State private var addMetaBugTarget: FollowedComponent?
     @State private var showAddComponent = false
+    @State private var needsInfoBugs: [Bug] = []
     @State private var needsInfoCount: Int?
 
     @AppStorage("sidebar.section.components.expanded") private var componentsExpanded = true
@@ -2181,10 +2183,16 @@ struct Sidebar: View {
                             TodoSidebarRow()
                                 .tag(SidebarSelection.smart(endpoint))
                         } else if endpoint == .needsReview {
-                            smartEndpointRow(endpoint, count: needsInfoCount)
-                                .tag(SidebarSelection.smart(endpoint))
+                            smartEndpointRow(endpoint) {
+                                if needsInfoAttentionCount > 0 {
+                                    AttentionBadge(count: needsInfoAttentionCount, noun: "unseen requests")
+                                } else {
+                                    SidebarCount(value: needsInfoCount)
+                                }
+                            }
+                            .tag(SidebarSelection.smart(endpoint))
                         } else {
-                            smartEndpointRow(endpoint)
+                            smartEndpointRow(endpoint) { EmptyView() }
                                 .tag(SidebarSelection.smart(endpoint))
                         }
                     }
@@ -2256,10 +2264,10 @@ struct Sidebar: View {
             }
         }
         .task(id: workspace.bugListRefreshToken) {
-            await loadNeedsInfoCount(force: true)
+            await loadNeedsInfo(force: true)
         }
         .task(id: needsInfoCountKey) {
-            await loadNeedsInfoCount(force: false)
+            await loadNeedsInfo(force: false)
         }
         .task(id: revisionBadgeKey) {
             await loadRevisionBadges(force: false)
@@ -2268,18 +2276,21 @@ struct Sidebar: View {
             await loadRevisionBadges(force: true)
         }
         #if os(macOS)
-        .onChange(of: reviewAttentionCount + patchAttentionCount, initial: true) { _, new in
+        .onChange(of: reviewAttentionCount + patchAttentionCount + needsInfoAttentionCount, initial: true) { _, new in
             NSApplication.shared.dockTile.badgeLabel = new > 0 ? "\(new)" : nil
         }
         #endif
     }
 
-    private func smartEndpointRow(_ endpoint: SmartEndpoint, count: Int? = nil) -> some View {
+    private func smartEndpointRow<Accessory: View>(
+        _ endpoint: SmartEndpoint,
+        @ViewBuilder accessory: () -> Accessory
+    ) -> some View {
         Label {
             HStack {
                 Text(endpoint.title)
                 Spacer()
-                SidebarCount(value: count)
+                accessory()
             }
         } icon: {
             Image(systemName: endpoint.systemImage)
@@ -2336,20 +2347,29 @@ struct Sidebar: View {
         }
     }
 
-    private func loadNeedsInfoCount(force: Bool) async {
-        guard auth.isSignedIn, auth.currentUser?.name != nil else {
+    private func loadNeedsInfo(force: Bool) async {
+        guard auth.isSignedIn, let login = auth.currentUser?.name, !login.isEmpty else {
+            needsInfoBugs = []
             needsInfoCount = nil
             return
         }
+        var query = BugStatusFilter.all.apply(to: .needsReviewFromMe).substitutingMe(with: login)
+        query.includeFields = ["id", "status", "creation_time", "last_change_time", "flags"]
+        query.limit = 0
+        guard let result = try? await cache.bugList(query, force: force, using: auth.client) else {
+            needsInfoBugs = []
+            needsInfoCount = nil
+            return
+        }
+        needsInfoBugs = result.bugs
+        needsInfoCount = result.bugs.count
+    }
 
-        needsInfoCount = await sidebarBugCount(
-            .needsReviewFromMe,
-            defaultFilter: .all,
-            login: auth.currentUser?.name,
-            force: force,
-            cache: cache,
-            client: auth.client
-        )
+    private var needsInfoAttentionCount: Int {
+        guard let login = auth.currentUser?.name else { return 0 }
+        return needsInfoBugs.filter {
+            BugAttention.hasUnseenRequest($0, for: login, mark: viewedBugs.mark(for: $0.id))
+        }.count
     }
 
     private var reviewQuery: RevisionQuery? {
@@ -3143,7 +3163,7 @@ struct BugListView: View {
         }
         BugMilestoneMenu(bug: bug)
         Divider()
-        if BugAttention.needsAttention(bug, mark: viewedBugs.mark(for: bug.id)) {
+        if BugAttention.needsAttention(bug, mark: viewedBugs.mark(for: bug.id), viewer: auth.currentUser?.name) {
             Button("Mark as Viewed") {
                 viewedBugs.markViewed(bug.id)
             }
@@ -3315,7 +3335,7 @@ struct BugListView: View {
     private static let bugIncludeFields = [
         "id", "summary", "status", "resolution", "product", "component",
         "assigned_to", "priority", "severity", "keywords", "type",
-        "last_change_time", "creation_time", "cf_rank", "groups",
+        "last_change_time", "creation_time", "cf_rank", "groups", "flags",
         "attachments.id", "attachments.content_type", "attachments.is_obsolete"
     ]
 
@@ -3651,6 +3671,7 @@ extension View {
 }
 
 struct BugRow: View {
+    @Environment(AuthStore.self) private var auth
     @Environment(ViewedBugsStore.self) private var viewedBugs
     let bug: Bug
 
@@ -3693,7 +3714,7 @@ struct BugRow: View {
     }
 
     private var needsAttention: Bool {
-        BugAttention.needsAttention(bug, mark: viewedBugs.mark(for: bug.id))
+        BugAttention.needsAttention(bug, mark: viewedBugs.mark(for: bug.id), viewer: auth.currentUser?.name)
     }
 
     private var statusIcon: String {
