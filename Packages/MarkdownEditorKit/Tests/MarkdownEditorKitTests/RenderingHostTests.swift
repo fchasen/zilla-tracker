@@ -90,5 +90,38 @@ struct RenderingHostTests {
         }
         #expect(tinted > 20)
     }
+
+    @Test func horizontalRuleSpansTheLineAndIsDrawn() throws {
+        let harness = EditorHarness(markdown: "above\n\n---\n\nbelow")
+        harness.spin()
+        let view = harness.textView
+        let frame = try #require(fragment(harness, at: 6)).layoutFragmentFrame
+        #expect(frame.width > 400)
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let scale = CGFloat(bitmap.pixelsWide) / view.bounds.width
+        let origin = view.textContainerOrigin
+        var widest = 0
+        for y in Int((origin.y + frame.minY) * scale)..<Int((origin.y + frame.maxY) * scale) {
+            var dark = 0
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                if color.brightnessComponent < 0.9 { dark += 1 }
+            }
+            widest = max(widest, dark)
+        }
+        #expect(CGFloat(widest) > frame.width * scale * 0.9)
+    }
+
+    @Test func blockAtomsTakeTheirMeasuredSize() throws {
+        let harness = EditorHarness(markdown: "| a | b |\n|---|---|\n| 1 | 2 |\n\n<div>hi</div>")
+        harness.spin()
+        let table = try #require(fragment(harness, at: 0)).layoutFragmentFrame
+        let html = try #require(fragment(harness, at: 2)).layoutFragmentFrame
+        #expect(table.width > 40)
+        #expect(table.height > 40)
+        #expect(html.width > 400)
+        #expect(html.height > 20)
+    }
 }
 #endif

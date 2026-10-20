@@ -58,6 +58,25 @@ public final class ChipTextAttachment: NSTextAttachment, MarkdownSourceAttachmen
     public var contentKind: String = ""
 
     public override func attachmentBounds(
+        for attributes: [NSAttributedString.Key: Any],
+        location: any NSTextLocation,
+        textContainer: NSTextContainer?,
+        proposedLineFragment: CGRect,
+        position: CGPoint
+    ) -> CGRect {
+        attachmentBounds(for: textContainer, proposedLineFragment: proposedLineFragment, glyphPosition: position, characterIndex: 0)
+    }
+
+    public override func image(
+        for bounds: CGRect,
+        attributes: [NSAttributedString.Key: Any],
+        location: any NSTextLocation,
+        textContainer: NSTextContainer?
+    ) -> PlatformImage? {
+        image(forBounds: bounds, textContainer: textContainer, characterIndex: 0)
+    }
+
+    public override func attachmentBounds(
         for textContainer: NSTextContainer?,
         proposedLineFragment lineFrag: CGRect,
         glyphPosition position: CGPoint,

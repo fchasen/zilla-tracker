@@ -45,7 +45,8 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
             code.fillColor = controller.theme.codeBlock.fillColor
             code.languageTagColor = controller.theme.codeBlock.languageTagColor
             fragment = code
-        } else if decorations.isDecorated {
+        } else if decorations.isDecorated
+                    || storage.containsImagelessAttachment(in: storage.markdownParagraphRange(at: elementStart)) {
             fragment = MarkdownLayoutFragment(textElement: textElement, range: textElement.elementRange)
         } else {
             return plain
@@ -53,6 +54,19 @@ public final class LayoutManagerDelegate: NSObject, NSTextLayoutManagerDelegate 
         fragment.controller = controller
         fragment.fixedDecorations = decorations
         return fragment
+    }
+}
+
+extension NSAttributedString {
+    func containsImagelessAttachment(in range: NSRange) -> Bool {
+        var found = false
+        enumerateAttribute(.attachment, in: range) { value, _, stop in
+            if let attachment = value as? NSTextAttachment, attachment.image == nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
     }
 }
 

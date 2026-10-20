@@ -70,6 +70,45 @@ public class MarkdownLayoutFragment: NSTextLayoutFragment {
     public override func draw(at point: CGPoint, in context: CGContext) {
         drawDecorations(decorations, at: point, in: context)
         super.draw(at: point, in: context)
+        drawImagelessAttachments(at: point, in: context)
+    }
+
+    func drawImagelessAttachments(at point: CGPoint, in context: CGContext) {
+        guard let elementStart = textElement?.elementRange?.location,
+              let contentManager = textLayoutManager?.textContentManager else { return }
+        let textContainer = textLayoutManager?.textContainer
+        var drawn: [(PlatformImage, CGRect)] = []
+        for line in textLineFragments {
+            let string = line.attributedString
+            string.enumerateAttribute(.attachment, in: line.characterRange) { value, range, _ in
+                guard let attachment = value as? NSTextAttachment, attachment.image == nil,
+                      let location = contentManager.location(elementStart, offsetBy: range.location) else { return }
+                let frame = frameForTextAttachment(at: location)
+                guard frame.width > 0, frame.height > 0,
+                      let image = attachment.image(
+                        for: CGRect(origin: .zero, size: frame.size),
+                        attributes: string.attributes(at: range.location, effectiveRange: nil),
+                        location: location,
+                        textContainer: textContainer
+                      ) else { return }
+                drawn.append((image, frame.offsetBy(dx: point.x, dy: point.y)))
+            }
+        }
+        guard !drawn.isEmpty else { return }
+        #if canImport(AppKit) && os(macOS)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        for (image, rect) in drawn {
+            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        #else
+        UIGraphicsPushContext(context)
+        for (image, rect) in drawn {
+            image.draw(in: rect)
+        }
+        UIGraphicsPopContext()
+        #endif
     }
 
     func drawDecorations(_ decorations: FragmentDecorations, at point: CGPoint, in context: CGContext) {
