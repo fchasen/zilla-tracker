@@ -113,6 +113,21 @@ struct PasteSanitizerTests {
         #expect(output.markdownInlineIntent(at: 6).isEmpty)
     }
 
+    @Test func blankLinesInsideMonospacedRunStayInCodeGroup() {
+        let input = NSMutableAttributedString(string: "Intro\n", attributes: [.font: body()])
+        input.append(NSAttributedString(string: "a\n\n  \nb\n\n", attributes: [.font: mono()]))
+        input.append(NSAttributedString(string: "outro\n", attributes: [.font: body()]))
+        let blocks = sanitizer.sanitize(input).blocks()
+        #expect(blocks.count == 7)
+        #expect(blocks[0] == .paragraph)
+        for index in 1...4 {
+            #expect(blocks[index]?.codeGroup == blocks[1]?.codeGroup)
+            #expect(blocks[index]?.isCode == true)
+        }
+        #expect(blocks[5] == .paragraph)
+        #expect(blocks[6] == .paragraph)
+    }
+
     @Test func largeBoldParagraphsBecomeHeadings() {
         let input = NSMutableAttributedString(string: "Title\n", attributes: [.font: bold(24)])
         input.append(NSAttributedString(string: "Section\n", attributes: [.font: bold(18)]))
@@ -197,6 +212,13 @@ struct PasteSanitizerHTMLTests {
         #expect(output.markdownBlock(at: oneIndex)?.isListItem == true)
         let codeIndex = (output.string as NSString).range(of: "code").location
         #expect(output.markdownBlock(at: codeIndex)?.isCode == true)
+    }
+
+    @Test func htmlPreWithBlankLineIsOneCodeBlock() throws {
+        let imported = try importHTML("<pre><code>a\n\nb\n    c</code></pre>")
+        let harness = EditorHarness(markdown: "")
+        #expect(harness.controller.paste(PastePayload(richText: imported), replacing: harness.selection))
+        #expect(harness.markdown == "```\na\n\nb\n    c\n```")
     }
 
     @Test func htmlTablePasteKeepsTextKit2() throws {

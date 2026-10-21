@@ -60,7 +60,42 @@ extension MarkdownEditorController {
                 return MarkdownWriter().markdown(from: fragment)
             }
         }
-        return MarkdownWriter().markdown(from: textStorage, range: target)
+        let drop = enclosingListLevels(of: paragraphs)
+        guard drop > 0 else { return MarkdownWriter().markdown(from: textStorage, range: target) }
+        let fragment = NSMutableAttributedString(attributedString: textStorage.attributedSubstring(from: target))
+        for paragraph in fragment.markdownParagraphRanges().filter({ $0.length > 0 }) {
+            let block = fragment.markdownBlock(at: paragraph.location) ?? .paragraph
+            var containers: [MarkdownBlock.Container] = []
+            var remaining = drop
+            for container in block.containers {
+                if container == .listItem, remaining > 0 {
+                    remaining -= 1
+                } else {
+                    containers.append(container)
+                }
+            }
+            let lists = Array(Self.textLists(in: fragment, at: paragraph.location).dropFirst(drop))
+            let adjusted = block.with(containers: containers)
+            fragment.addAttribute(.markdownBlock, value: adjusted, range: paragraph)
+            fragment.addAttribute(.paragraphStyle, value: restyler.paragraphStyle(for: adjusted, textLists: lists), range: paragraph)
+        }
+        return MarkdownWriter().markdown(from: fragment)
+    }
+
+    private func enclosingListLevels(of paragraphs: [NSRange]) -> Int {
+        guard let first = paragraphs.first, let firstBlock = textStorage.markdownBlock(at: first.location) else { return 0 }
+        let firstLists = Self.textLists(in: textStorage, at: first.location)
+        var drop = min(firstLists.count, firstBlock.isListItemStart ? firstBlock.listDepth - 1 : firstBlock.listDepth)
+        for paragraph in paragraphs.dropFirst() where drop > 0 {
+            let block = textStorage.markdownBlock(at: paragraph.location) ?? .paragraph
+            let lists = Self.textLists(in: textStorage, at: paragraph.location)
+            let shared = zip(firstLists, lists).prefix { $0 === $1 }.count
+            drop = min(drop, shared)
+            if block.isListItemStart {
+                drop = min(drop, block.listDepth - 1)
+            }
+        }
+        return max(0, drop)
     }
 
     func copySelection(_ range: NSRange) -> Bool {
@@ -112,9 +147,20 @@ extension MarkdownEditorController {
     func insertParsedMarkdown(_ markdown: String, replacing range: NSRange, actionName: String) -> Bool {
         let normalized = PasteSanitizer.normalizeLineEndings(markdown)
         let loader = MarkdownLoader(inlineContentRules: inlineContentRules, inlineContentProvider: inlineContentProvider)
-        let fragment = loader.load(normalized)
+        var fragment = loader.load(normalized)
         Self.trimTrailingSeparators(fragment)
         if !normalized.contains("\n") {
+            if let block = fragment.length > 0 ? fragment.markdownBlock(at: 0) : nil,
+               !block.containers.isEmpty || block.headingLevel != nil,
+               !replacesWholeParagraph(range),
+               let escaped = Self.escapingLeadingBlockMarker(in: normalized) {
+                fragment = loader.load(escaped.markdown)
+                Self.trimTrailingSeparators(fragment)
+                let startsParagraph = range.location <= paragraphInfo(at: range.location).content.location
+                if !startsParagraph, escaped.index < fragment.length, fragment.markdownLiteral(at: escaped.index) != nil {
+                    fragment.removeAttribute(.markdownLiteral, range: NSRange(location: escaped.index, length: 1))
+                }
+            }
             let leading = String(normalized.prefix(while: { $0 == " " || $0 == "\t" }))
             let trailing = String(normalized.reversed().prefix(while: { $0 == " " || $0 == "\t" }).reversed())
             if leading.count < normalized.count {
@@ -133,18 +179,36 @@ extension MarkdownEditorController {
         return insertFragment(fragment, replacing: range, actionName: actionName)
     }
 
+    private func replacesWholeParagraph(_ range: NSRange) -> Bool {
+        let target = Normalizer.clamp(range, to: textStorage.length)
+        let context = paragraphInfo(at: target.location)
+        let endContext = paragraphInfo(at: NSMaxRange(target))
+        return target.location <= context.content.location
+            && NSMaxRange(target) >= NSMaxRange(endContext.content)
+            && endContext.range.location == context.range.location
+    }
+
+    private static func escapingLeadingBlockMarker(in line: String) -> (markdown: String, index: Int)? {
+        let characters = Array(line)
+        var index = 0
+        while index < characters.count, characters[index] == " " || characters[index] == "\t" { index += 1 }
+        let start = index
+        while index < characters.count, characters[index].isASCII, characters[index].isNumber { index += 1 }
+        guard index < characters.count else { return nil }
+        var escaped = characters
+        escaped.insert("\\", at: index)
+        let offset = String(characters[start..<index]).utf16.count
+        return (String(escaped), offset)
+    }
+
     func insertFragment(_ fragment: NSAttributedString, replacing range: NSRange, actionName: String) -> Bool {
         guard isEditable, fragment.length > 0 else { return false }
         let target = Normalizer.clamp(range, to: textStorage.length)
         let context = paragraphInfo(at: target.location)
-        let endContext = paragraphInfo(at: NSMaxRange(target))
-        let prefixEmpty = target.location <= context.content.location
-        let suffixEmpty = NSMaxRange(target) >= NSMaxRange(endContext.content)
         let isSingleParagraph = !fragment.string.contains("\n")
         let fragmentBlock = fragment.markdownBlock(at: 0) ?? .paragraph
-        let replacesWholeParagraph = prefixEmpty && suffixEmpty && endContext.range.location == context.range.location
         let inline = isSingleParagraph
-            && (!replacesWholeParagraph || (fragmentBlock.leaf == .paragraph && fragmentBlock.containers.isEmpty))
+            && (!replacesWholeParagraph(target) || (fragmentBlock.leaf == .paragraph && fragmentBlock.containers.isEmpty))
 
         let built: NSMutableAttributedString
         if inline {
@@ -162,10 +226,15 @@ extension MarkdownEditorController {
 
     private func contextualized(_ fragment: NSAttributedString, in context: ParagraphInfo) -> NSMutableAttributedString {
         let result = NSMutableAttributedString(attributedString: fragment)
-        let contextContainers = context.block.containers
-        let contextLists = context.lists
+        var contextContainers = context.block.containers
+        var contextLists = context.lists
         let hasListContext = context.block.isListItem
         let paragraphs = result.markdownParagraphRanges().filter { $0.length > 0 }
+        if context.block.isListItemStart, contextContainers.last == .listItem, !contextLists.isEmpty,
+           let first = paragraphs.first, result.markdownBlock(at: first.location)?.containers.first == .listItem {
+            contextContainers.removeLast()
+            contextLists.removeLast()
+        }
         for (index, paragraph) in paragraphs.enumerated() {
             let block = result.markdownBlock(at: paragraph.location) ?? .paragraph
             let ownLists = Self.textLists(in: result, at: paragraph.location)
@@ -206,14 +275,17 @@ extension MarkdownEditorController {
                 task: first.task == nil ? nil : .unchecked
             )
         }
+        var intent: MarkdownInlineIntent = []
+        if !first.isCode, isLocationInCode(target.location) {
+            intent = textStorage.markdownInlineIntent(at: target.location - 1).intersection(.markdownMarks)
+        }
         let lines = normalized.components(separatedBy: "\n")
         let result = NSMutableAttributedString()
         for (index, line) in lines.enumerated() {
             let block = index == 0 ? first : rest
-            let attributes = paragraphAttributes(for: block, textLists: context.lists)
-            result.append(NSAttributedString(string: line, attributes: attributes))
+            result.append(NSAttributedString(string: line, attributes: typingAttributes(for: block, textLists: context.lists, intent: intent)))
             if index < lines.count - 1 {
-                result.append(NSAttributedString(string: "\n", attributes: attributes))
+                result.append(NSAttributedString(string: "\n", attributes: paragraphAttributes(for: block, textLists: context.lists)))
             }
         }
         let end = target.location + result.length

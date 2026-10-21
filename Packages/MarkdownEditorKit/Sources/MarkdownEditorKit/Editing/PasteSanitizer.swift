@@ -53,7 +53,9 @@ struct PasteSanitizer {
         var looseList: NSTextList?
         var openCodeGroup: GroupToken?
 
-        for analysis in analyses {
+        var openCodeLanguage: String?
+
+        for (index, analysis) in analyses.enumerated() {
             let paragraph = analysis.range
             let content = Self.contentRange(of: paragraph, in: working)
             var lists = analysis.textLists
@@ -65,7 +67,14 @@ struct PasteSanitizer {
                 looseList = nil
             }
 
-            let leaf = paragraphLeaf(content: content, storage: working, bodySize: bodySize, openCodeGroup: &openCodeGroup)
+            let leaf: MarkdownBlock.Leaf
+            if let group = openCodeGroup, Self.isBlank(content, in: working),
+               Self.nextNonBlankIsCode(after: index, in: analyses, storage: working) {
+                leaf = .code(language: openCodeLanguage, group: group)
+            } else {
+                leaf = paragraphLeaf(content: content, storage: working, bodySize: bodySize, openCodeGroup: &openCodeGroup)
+                if case .code(let language, _) = leaf { openCodeLanguage = language }
+            }
             let block = MarkdownBlock(leaf: leaf, containers: Array(repeating: .listItem, count: lists.count))
             output.addAttribute(.markdownBlock, value: block, range: paragraph)
             if !lists.isEmpty {
@@ -191,6 +200,22 @@ struct PasteSanitizer {
             return paragraph
         }
         return NSRange(location: paragraph.location, length: paragraph.length - 1)
+    }
+
+    private static func isBlank(_ content: NSRange, in storage: NSAttributedString) -> Bool {
+        !(storage.string as NSString).substring(with: content).contains { !$0.isWhitespace }
+    }
+
+    private static func nextNonBlankIsCode(after index: Int, in analyses: [ParagraphAnalysis], storage: NSAttributedString) -> Bool {
+        for analysis in analyses[(index + 1)...] {
+            let content = contentRange(of: analysis.range, in: storage)
+            guard !isBlank(content, in: storage) else { continue }
+            if let intent = presentationIntent(in: content, storage: storage), intent.level != nil || intent.isCode {
+                return intent.isCode
+            }
+            return fontProfile(in: content, storage: storage).isMonospace
+        }
+        return false
     }
 
     private static func dominantFontSize(in storage: NSAttributedString) -> CGFloat? {

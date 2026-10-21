@@ -558,6 +558,97 @@ struct ControllerClipboardTests {
         #expect(mention.string == "hi @fred ")
         #expect(mention.selection.location == 9)
     }
+
+    @Test func pastedListJoinsSurroundingList() {
+        let empty = EditorHarness(markdown: "- one")
+        empty.select(3)
+        empty.insertNewline()
+        #expect(empty.controller.paste(PastePayload(plainText: "- a\n- b"), replacing: empty.selection))
+        #expect(empty.markdown == "- one\n- a\n- b")
+
+        let end = EditorHarness(markdown: "- one")
+        end.select(3)
+        #expect(end.controller.paste(PastePayload(plainText: "- a\n- b"), replacing: end.selection))
+        #expect(end.markdown == "- onea\n- b")
+
+        let source = EditorHarness(markdown: "- a\n- b\n- c")
+        let copied = source.controller.markdownForCopy(range: NSRange(location: 2, length: 3))
+        #expect(copied == "- b\n- c")
+        source.select(source.storage.length)
+        source.insertNewline()
+        #expect(source.controller.paste(PastePayload(markdown: copied), replacing: source.selection))
+        #expect(source.markdown == "- a\n- b\n- c\n- b\n- c")
+
+        let nested = EditorHarness(markdown: "- one\n  - two")
+        nested.select(nested.storage.length)
+        nested.insertNewline()
+        #expect(nested.controller.paste(PastePayload(plainText: "- a\n  - b"), replacing: nested.selection))
+        #expect(nested.markdown == "- one\n  - two\n  - a\n    - b")
+    }
+
+    @Test func pasteInsideInlineCodeStaysInSpan() {
+        let pasted = EditorHarness(markdown: "a `xy` b")
+        pasted.select(3)
+        #expect(pasted.controller.paste(PastePayload(plainText: "Q"), replacing: pasted.selection))
+        #expect(pasted.markdown == "a `xQy` b")
+
+        let inserted = EditorHarness(markdown: "a `xy` b")
+        inserted.select(3)
+        inserted.step { _ = inserted.controller.insertMarkdown("**Q**") }
+        #expect(inserted.markdown == "a `x**Q**y` b")
+    }
+
+    @Test func plainPasteMidParagraphKeepsBlockMarkerText() {
+        for (pasted, expected) in [
+            ("1. Introduction", "see 1. Introduction now"),
+            ("> quoted", "see > quoted now"),
+            ("- [ ] **task**", "see - [ ] **task** now"),
+            ("## Title", "see ## Title now")
+        ] {
+            let harness = EditorHarness(markdown: "see  now")
+            harness.select(4)
+            #expect(harness.controller.paste(PastePayload(plainText: pasted), replacing: harness.selection))
+            #expect(harness.string == expected.replacingOccurrences(of: "**", with: ""))
+            #expect(harness.paragraphBlocks == [.paragraph])
+            #expect(harness.markdown == expected)
+        }
+
+        let start = EditorHarness(markdown: "abc")
+        #expect(start.controller.paste(PastePayload(plainText: "1. x"), replacing: start.selection))
+        #expect(start.string == "1. xabc")
+        #expect(start.markdown == "1\\. xabc")
+
+        let whole = EditorHarness(markdown: "")
+        #expect(whole.controller.paste(PastePayload(plainText: "> quoted"), replacing: whole.selection))
+        #expect(whole.markdown == "> quoted")
+    }
+
+    @Test func copyFromNestedItemStartsAtSelectedItem() {
+        let harness = EditorHarness(markdown: "- a\n  - b\n  - c\n- d")
+        let ns = harness.string as NSString
+        #expect(harness.controller.markdownForCopy(range: NSRange(location: ns.range(of: "b").location, length: 3)) == "- b\n- c")
+        let mixed = NSRange(location: ns.range(of: "c").location, length: ns.length - ns.range(of: "c").location)
+        #expect(harness.controller.markdownForCopy(range: mixed) == "- - c\n- d")
+        #expect(harness.controller.markdownForCopy(range: NSRange(location: ns.range(of: "b").location, length: 1)) == "- b")
+        #expect(harness.controller.markdownForCopy(range: NSRange(location: 0, length: 3)) == "- a\n  - b")
+
+        let quoted = EditorHarness(markdown: "> - a\n>   1. b\n>   2. c")
+        let qs = quoted.string as NSString
+        #expect(quoted.controller.markdownForCopy(range: NSRange(location: qs.range(of: "b").location, length: 3)) == "> 1. b\n> 2. c")
+    }
+
+    @Test func copyMultipleRangesSerializesEachRange() {
+        let harness = EditorHarness(markdown: "a**bc**\n\ndef\n\nghi")
+        harness.textView.selectedRanges = [
+            NSValue(range: NSRange(location: 1, length: 2)),
+            NSValue(range: NSRange(location: 5, length: 0)),
+            NSValue(range: NSRange(location: 9, length: 2))
+        ]
+        let pasteboard = harness.privatePasteboard()
+        pasteboard.declareTypes([.string], owner: nil)
+        #expect(harness.textView.writeSelection(to: pasteboard, type: .string))
+        #expect(pasteboard.string(forType: .string) == "**bc**\nhi")
+    }
 }
 
 @Suite("Controller format commands (macOS)")
@@ -698,6 +789,30 @@ struct ControllerFormatCommandTests {
         continuation.select(continuation.storage.length)
         continuation.step { continuation.controller.perform(.orderedList) }
         #expect(continuation.markdown == "1. a\n\n   cont")
+    }
+
+    @Test func bulletedListOnTaskListConvertsToPlainBullets() {
+        let harness = EditorHarness(markdown: "- [ ] a\n- [x] b")
+        harness.select(NSRange(location: 0, length: harness.storage.length))
+        #expect(!harness.controller.isActive(.unorderedList))
+        harness.step { harness.controller.perform(.unorderedList) }
+        #expect(harness.markdown == "- a\n- b")
+        #expect(harness.controller.isActive(.unorderedList))
+        harness.step { harness.controller.perform(.unorderedList) }
+        #expect(harness.markdown == "a\n\nb")
+    }
+
+    @Test func codeBlockOverMixedSelectionKeepsLanguage() {
+        let harness = EditorHarness(markdown: "```swift\nx\n```\n\np")
+        harness.select(NSRange(location: 0, length: harness.storage.length))
+        harness.step { harness.controller.perform(.codeBlock) }
+        #expect(harness.markdown == "```swift\nx\np\n```")
+
+        let partial = EditorHarness(markdown: "```swift\nx\ny\n```\n\np")
+        let ns = partial.string as NSString
+        partial.select(NSRange(location: ns.range(of: "y").location, length: ns.length - ns.range(of: "y").location))
+        partial.step { partial.controller.perform(.codeBlock) }
+        #expect(partial.markdown == "```swift\nx\ny\np\n```")
     }
 
     @Test func horizontalRuleCommand() {

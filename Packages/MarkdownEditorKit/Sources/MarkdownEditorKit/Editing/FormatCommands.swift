@@ -197,7 +197,7 @@ extension MarkdownEditorController {
             if effective.count >= depth {
                 let current = effective[depth - 1]
                 if let index = lists.firstIndex(where: { $0 === current }) { lists[index] = fresh }
-                if ordered, effective.count == depth { task = nil }
+                if effective.count == depth { task = nil }
             } else {
                 lists.append(fresh)
                 containers.append(.listItem)
@@ -285,9 +285,11 @@ extension MarkdownEditorController {
     func toggleCodeBlock() {
         let paragraphs = selectedParagraphs(in: currentSelection).filter { !$0.block.isAtom }
         let removing = paragraphs.allSatisfy { $0.block.isCode }
-        let group = GroupToken.mint()
+        let existing = paragraphs.first { $0.block.isCode }?.block
+        let group = existing?.codeGroup ?? GroupToken.mint()
+        let language = existing?.codeLanguage
         _ = rewriteParagraphs(paragraphs, actionName: "Code Block") { info in
-            let leaf: MarkdownBlock.Leaf = removing ? .paragraph : .code(language: nil, group: group)
+            let leaf: MarkdownBlock.Leaf = removing ? .paragraph : .code(language: language, group: group)
             return (info.block.with(leaf: leaf).with(task: removing ? info.block.task : nil), info.lists)
         }
     }

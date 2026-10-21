@@ -331,11 +331,10 @@ final class MarkdownNSTextView: NSTextView {
         guard let controller = markdownController, type == .string || type == Self.markdownType else {
             return super.writeSelection(to: pboard, type: type)
         }
-        let range = selectedRanges.map(\.rangeValue).reduce(nil as NSRange?) { partial, next in
-            partial.map { NSUnionRange($0, next) } ?? next
-        } ?? selectedRange()
-        guard range.length > 0 else { return false }
-        return pboard.setString(controller.markdownForCopy(range: range), forType: type)
+        let ranges = selectedRanges.map(\.rangeValue).filter { $0.length > 0 }.sorted { $0.location < $1.location }
+        guard !ranges.isEmpty else { return false }
+        let markdown = ranges.map { controller.markdownForCopy(range: $0) }.joined(separator: "\n")
+        return pboard.setString(markdown, forType: type)
     }
 
     override func pasteAsPlainText(_ sender: Any?) {
