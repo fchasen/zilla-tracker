@@ -36,6 +36,48 @@ struct LoaderAtomTests {
         #expect(chips.map(\.markdownSource) == ["![a diagram](d.png)", "![](e.png)"])
     }
 
+    @Test(arguments: [
+        ("![a](x.png)![b](x.png)", ["![a](x.png)", "![b](x.png)"]),
+        ("![](x.png)![](x.png)", ["![](x.png)", "![](x.png)"]),
+        ("![a](x.png)![](x.png)![c](x.png)", ["![a](x.png)", "![](x.png)", "![c](x.png)"]),
+        ("**![a](x.png)![b](x.png)**", ["![a](x.png)", "![b](x.png)"])
+    ])
+    func adjacentImagesWithTheSameURLStayDistinct(markdown: String, sources: [String]) {
+        let (storage, report) = LoaderFixture.load(markdown)
+        #expect(report.fallbackRuns == 0)
+        #expect(LoaderFixture.attachments(storage).map(\.markdownSource) == sources)
+        #expect(storage.string == String(repeating: "\u{FFFC}", count: sources.count))
+        #expect(Corpus.roundTrip(markdown) == markdown)
+    }
+
+    @Test(arguments: [
+        ("[](http://x.com) text", 1),
+        ("a [](http://x.com) text", 1),
+        ("text [](http://x.com)", 1),
+        ("**a [](u) b**", 1),
+        ("[](u) [](v \"t\")", 2),
+        ("[](http://x.com)", 1),
+        ("- [](u)\n- b", 1),
+        ("- a\n  [](u)", 1),
+        ("[](u)\nb", 1),
+        ("> [](u)", 1),
+        ("## [](u) heading", 1)
+    ])
+    func emptyLinksSurviveAsAtoms(markdown: String, count: Int) {
+        let (storage, report) = LoaderFixture.load(markdown)
+        #expect(report.fallbackRuns == 0)
+        let atoms = LoaderFixture.attachments(storage)
+        #expect(atoms.count == count)
+        #expect(atoms.allSatisfy { $0.contentKind == AtomKind.emptyLink })
+        #expect(Corpus.roundTrip(markdown) == markdown)
+    }
+
+    @Test(arguments: ["[a](http://x/[](y)) b", "`[](x)` b", "\\[](x) b", "![](x.png) b"])
+    func emptyLinkLookalikesAreNotAtoms(markdown: String) {
+        let atoms = LoaderFixture.attachments(LoaderFixture.load(markdown).storage)
+        #expect(!atoms.contains { $0.contentKind == AtomKind.emptyLink })
+    }
+
     @Test func imagesInsideLinksCarryTheLink() throws {
         let storage = LoaderFixture.load("[![img](a.png)](https://b.com)").storage
         #expect(storage.string == "\u{FFFC}")
@@ -69,6 +111,22 @@ struct LoaderAtomTests {
         let storage = LoaderFixture.load(markdown).storage
         let table = try #require(storage.markdownSourceAttachment(at: 0) as? TableAttachment)
         #expect(table.markdownSource == markdown)
+    }
+
+    @Test(arguments: ["```x|y\n```", "> ```x|y\n> ```"])
+    func tableSourceStopsAtAFollowingEmptyFence(fence: String) throws {
+        let quoted = fence.hasPrefix(">")
+        let table = quoted ? "> | a |\n> |---|\n> | 1 |" : "| a |\n|---|\n| 1 |"
+        let markdown = table + "\n" + fence
+        let storage = LoaderFixture.load(markdown).storage
+        let attachment = try #require(storage.markdownSourceAttachment(at: 0) as? TableAttachment)
+        #expect(attachment.markdownSource == "| a |\n|---|\n| 1 |")
+        let paragraphs = LoaderFixture.paragraphs(storage)
+        #expect(paragraphs.count == 2)
+        #expect(paragraphs.last?.block?.isCode == true)
+        let written = Corpus.roundTrip(markdown)
+        #expect(written == table + (quoted ? "\n>\n" : "\n\n") + fence)
+        #expect(Corpus.roundTrip(written) == written)
     }
 
     @Test(arguments: [

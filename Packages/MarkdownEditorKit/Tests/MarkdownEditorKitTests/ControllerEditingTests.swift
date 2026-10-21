@@ -815,6 +815,19 @@ struct ControllerFormatCommandTests {
         #expect(partial.markdown == "```swift\nx\ny\np\n```")
     }
 
+    @Test func headingOnTaskItemDropsTheCheckbox() {
+        let harness = EditorHarness(markdown: "- [ ] h")
+        harness.select(0)
+        harness.step { harness.controller.perform(.heading(level: 2)) }
+        #expect(harness.block(at: 0)?.task == nil)
+        #expect(harness.markdown == "- ## h")
+        let reloaded = LoaderFixture.paragraphs(MarkdownLoader().load(harness.markdown))
+        #expect(reloaded.map(\.text) == ["h"])
+        #expect(reloaded.first?.block?.headingLevel == 2)
+        harness.step { harness.controller.perform(.taskList) }
+        #expect(harness.markdown == "- [ ] h")
+    }
+
     @Test func horizontalRuleCommand() {
         let harness = EditorHarness(markdown: "a")
         harness.select(1)

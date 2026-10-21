@@ -52,6 +52,8 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     var bindingDirty = false
     var originalText: String
     var serializedAtLoad: String
+    private var stringAtLoad = ""
+    private var vocabularyAtLoad: VocabularySnapshot?
     var restyler: Restyler
     let normalizer = Normalizer()
     private(set) var isLoading = false
@@ -126,8 +128,15 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     }
 
     public func markdown() -> String {
-        let serialized = serialize()
-        return serialized == serializedAtLoad ? originalText : serialized
+        markdown(serialized: serialize())
+    }
+
+    private func markdown(serialized: String) -> String {
+        serialized == serializedAtLoad && storageMatchesLoad ? originalText : serialized
+    }
+
+    private var storageMatchesLoad: Bool {
+        textStorage.string == stringAtLoad && vocabularyAtLoad?.matches(textStorage) != false
     }
 
     func serialize() -> String {
@@ -158,6 +167,11 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         lastPushed = markdown
         bindingDirty = false
         serializedAtLoad = serialize()
+        stringAtLoad = textStorage.string
+        vocabularyAtLoad = VocabularySnapshot(
+            capturing: textStorage,
+            in: NSRange(location: 0, length: textStorage.length)
+        )
         let caret = min(currentSelection.location, textStorage.length)
         headlessSelection = NSRange(location: caret, length: 0)
         if caret < textStorage.length {
@@ -288,7 +302,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         guard !isLoading, !hostHasMarkedText, !isSettingMarkedText, bindingDirty else { return }
         bindingDirty = false
         let serialized = serialize()
-        let value = serialized == serializedAtLoad ? originalText : serialized
+        let value = markdown(serialized: serialized)
         guard value != lastPushed else { return }
         lastPushed = value
         textSink?(value)

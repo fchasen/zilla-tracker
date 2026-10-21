@@ -150,7 +150,7 @@ extension MarkdownEditorController {
                     }
                 }
                 if mark == .code, !removing {
-                    storage.removeAttribute(.markdownLiteral, range: range)
+                    SeparatorLiteral.removeOtherLiterals(in: storage, range: range)
                 }
             }
         }
@@ -161,7 +161,7 @@ extension MarkdownEditorController {
         let removing = paragraphs.allSatisfy { $0.block.headingLevel == level }
         _ = rewriteParagraphs(paragraphs, actionName: "Heading") { info in
             let leaf: MarkdownBlock.Leaf = removing ? .paragraph : .heading(level: level)
-            return (info.block.with(leaf: leaf), info.lists)
+            return (info.block.with(leaf: leaf).with(task: removing ? info.block.task : nil), info.lists)
         }
     }
 
@@ -261,8 +261,7 @@ extension MarkdownEditorController {
                 lists.append(fresh)
                 containers.append(.listItem)
             }
-            let leaf: MarkdownBlock.Leaf = info.block.isCode ? .paragraph : info.block.leaf
-            return (MarkdownBlock(leaf: leaf, containers: containers, isContinuation: false, task: info.block.task ?? .unchecked), lists)
+            return (MarkdownBlock(leaf: .paragraph, containers: containers, isContinuation: false, task: info.block.task ?? .unchecked), lists)
         }
     }
 

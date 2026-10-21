@@ -17,14 +17,15 @@ public struct MarkdownWriter: DocumentWriter {
         write(StorageReader().document(from: storage, range: range))
     }
 
-    static func thematicBreak(source: String, isFirstInItem: Bool) -> String {
+    static func thematicBreak(source: String, itemBullet: Character?) -> String {
+        let fallback = itemBullet == "-" ? "***" : "---"
         let trimmed = source.trimmingCharacters(in: .whitespaces)
         let marks = trimmed.filter { $0 != " " && $0 != "\t" }
         guard let mark = marks.first, "-*_".contains(mark), marks.count >= 3,
               marks.allSatisfy({ $0 == mark }), !trimmed.contains("\n") else {
-            return isFirstInItem ? "***" : "---"
+            return fallback
         }
-        return isFirstInItem && mark == "-" ? "***" : trimmed
+        return mark == itemBullet ? fallback : trimmed
     }
 
     static func longestRun(of character: Character, in text: String) -> Int {
@@ -64,55 +65,62 @@ private struct LineOutput {
 
     private(set) var text = ""
     private var prefixes: [Prefix] = []
+    private var itemBullet: Character = "-"
     private var lineCount = 0
 
     mutating func write(_ blocks: [EditorDocument.Block], context: Context) {
-        var hasPrevious = false
+        var previous: EditorDocument.Block?
+        var usesAlternateMarker = false
         for block in blocks {
-            let isFirstInItem = context == .item && !hasPrevious
+            let firstBullet: Character? = context == .item && previous == nil ? itemBullet : nil
             switch block {
             case .paragraph(let runs):
                 let rendered = InlineSerializer.serialize(runs, inHeading: false)
                 guard !rendered.isEmpty else { continue }
-                separate(block, hasPrevious: hasPrevious, context: context)
-                lines(rendered)
+                separate(block, after: previous, context: context)
+                lines(Self.protectingLeadingIndent(rendered))
             case .list(let list):
                 guard !list.items.isEmpty else { continue }
-                separate(block, hasPrevious: hasPrevious, context: context)
-                write(list)
+                separate(block, after: previous, context: context)
+                if case .list(let prior)? = previous, prior.kind.isOrdered == list.kind.isOrdered {
+                    if list.separatesFromPrevious { usesAlternateMarker.toggle() }
+                } else {
+                    usesAlternateMarker = false
+                }
+                write(list, alternateMarker: usesAlternateMarker)
             case .heading(let level, let runs):
-                separate(block, hasPrevious: hasPrevious, context: context)
+                separate(block, after: previous, context: context)
                 let marker = String(repeating: "#", count: max(1, min(6, level)))
                 let rendered = InlineSerializer.serialize(runs, inHeading: true)
                 line(rendered.isEmpty ? marker : marker + " " + rendered)
             case .code(let code):
-                separate(block, hasPrevious: hasPrevious, context: context)
+                separate(block, after: previous, context: context)
                 write(code)
             case .thematicBreak:
-                separate(block, hasPrevious: hasPrevious, context: context)
-                line(isFirstInItem ? "***" : "---")
+                separate(block, after: previous, context: context)
+                line(MarkdownWriter.thematicBreak(source: "---", itemBullet: firstBullet))
             case .atom(let atom):
-                separate(block, hasPrevious: hasPrevious, context: context)
+                separate(block, after: previous, context: context)
                 if atom.kind == AtomKind.thematicBreak {
-                    line(MarkdownWriter.thematicBreak(source: atom.source, isFirstInItem: isFirstInItem))
+                    line(MarkdownWriter.thematicBreak(source: atom.source, itemBullet: firstBullet))
                 } else {
                     lines(atom.source)
                 }
             case .quote(let inner):
-                separate(block, hasPrevious: hasPrevious, context: context)
+                separate(block, after: previous, context: context)
                 let start = lineCount
                 prefixes.append(.quote)
                 write(inner, context: .quote)
                 prefixes.removeLast()
                 if lineCount == start { line(">") }
             }
-            hasPrevious = true
+            previous = block
         }
     }
 
-    private mutating func separate(_ block: EditorDocument.Block, hasPrevious: Bool, context: Context) {
-        guard hasPrevious else { return }
-        guard context == .item else {
+    private mutating func separate(_ block: EditorDocument.Block, after previous: EditorDocument.Block?, context: Context) {
+        guard let previous else { return }
+        guard context == .item, !Self.needsBlankLine(after: previous, before: block) else {
             line("")
             return
         }
@@ -130,6 +138,31 @@ private struct LineOutput {
         if needsBlankLine { line("") }
     }
 
+    private static func needsBlankLine(after previous: EditorDocument.Block, before block: EditorDocument.Block) -> Bool {
+        switch (previous, block) {
+        case (.atom(let atom), _):
+            return atom.kind != AtomKind.thematicBreak && atom.kind != AtomKind.table
+        case (.quote, .quote):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func protectingLeadingIndent(_ rendered: String) -> String {
+        var column = 0
+        for byte in rendered.utf8 {
+            switch byte {
+            case 0x20: column += 1
+            case 0x09: column += 4 - column % 4
+            default: return rendered
+            }
+            if column >= 4 { break }
+        }
+        guard column >= 4, let first = rendered.utf8.first else { return rendered }
+        return (first == 0x09 ? "&#9;" : "&#32;") + rendered.dropFirst()
+    }
+
     private static func rendersNothing(_ blocks: [EditorDocument.Block]) -> Bool {
         blocks.allSatisfy { block in
             switch block {
@@ -140,14 +173,17 @@ private struct LineOutput {
         }
     }
 
-    private mutating func write(_ list: EditorDocument.ListBlock) {
+    private mutating func write(_ list: EditorDocument.ListBlock, alternateMarker: Bool) {
+        let enclosingBullet = itemBullet
+        itemBullet = alternateMarker && !list.kind.isOrdered ? "*" : "-"
+        defer { itemBullet = enclosingBullet }
         for (index, item) in list.items.enumerated() {
             let marker: String
             switch list.kind {
             case .bullet:
-                marker = "-"
+                marker = alternateMarker ? "*" : "-"
             case .ordered(let start):
-                marker = "\(start + index)."
+                marker = "\(start + index)" + (alternateMarker ? ")" : ".")
             }
             let head: String
             switch item.task {
@@ -250,6 +286,7 @@ enum InlineSerializer {
             if index > 0 { trimLeading(&segments[index]) }
             if index < segments.count - 1 { trimTrailing(&segments[index]) }
         }
+        joinLinkedSegments(&segments, breaks: &breaks, inHeading: inHeading)
 
         var output = ""
         var pendingBreak: Bool?
@@ -269,6 +306,25 @@ enum InlineSerializer {
             }
         }
         return output
+    }
+
+    private static func joinLinkedSegments(_ segments: inout [[Run]], breaks: inout [Bool], inHeading: Bool) {
+        guard !breaks.isEmpty else { return }
+        var joined: [[Run]] = [segments[0]]
+        var joinedBreaks: [Bool] = []
+        for index in breaks.indices {
+            let next = segments[index + 1]
+            if let link = joined[joined.count - 1].last?.link, link == next.first?.link {
+                let separator = inHeading ? " " : (breaks[index] ? "  \n" : "\n")
+                joined[joined.count - 1].append(.text(separator, link: link))
+                joined[joined.count - 1].append(contentsOf: next)
+            } else {
+                joinedBreaks.append(breaks[index])
+                joined.append(next)
+            }
+        }
+        segments = joined
+        breaks = joinedBreaks
     }
 
     private static func isTrimmable(_ scalar: Unicode.Scalar) -> Bool {
@@ -490,6 +546,7 @@ enum InlineSerializer {
     }
 
     static func destination(_ url: String) -> String {
+        let url = encodingUnsafeDestinationCharacters(url)
         if url.utf8.allSatisfy({ $0 < 0x80 }) {
             return asciiDestination(url)
         }
@@ -503,11 +560,23 @@ enum InlineSerializer {
             }
         }
         if depth != 0 { balanced = false }
-        let needsAngle = !balanced || url.contains { $0 == " " || $0 == "\t" }
-        if needsAngle, !url.contains("<"), !url.contains(">") {
-            return "<" + url + ">"
+        let needsAngle = !balanced || url.unicodeScalars.contains { $0.value < 0x21 || $0.value == 0x7F }
+        return needsAngle ? "<" + url + ">" : url
+    }
+
+    private static let destinationAllowed = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=%"
+    )
+
+    private static func encodingUnsafeDestinationCharacters(_ url: String) -> String {
+        let needsEncoding = url.utf8.contains { byte in
+            switch byte {
+            case 0x3C, 0x3E, 0x5C, 0x0A, 0x0D: return true
+            default: return false
+            }
         }
-        return url
+        guard needsEncoding else { return url }
+        return url.addingPercentEncoding(withAllowedCharacters: destinationAllowed) ?? url
     }
 }
 
@@ -516,7 +585,6 @@ extension InlineSerializer {
         var depth = 0
         var balanced = true
         var hasSpace = false
-        var hasAngle = false
         for byte in url.utf8 {
             switch byte {
             case UInt8(ascii: "("):
@@ -524,16 +592,14 @@ extension InlineSerializer {
             case UInt8(ascii: ")"):
                 depth -= 1
                 if depth < 0 { balanced = false }
-            case UInt8(ascii: " "), UInt8(ascii: "\t"):
+            case 0x00...0x20, 0x7F:
                 hasSpace = true
-            case UInt8(ascii: "<"), UInt8(ascii: ">"):
-                hasAngle = true
             default:
                 break
             }
         }
         if depth != 0 { balanced = false }
-        return (!balanced || hasSpace) && !hasAngle ? "<" + url + ">" : url
+        return !balanced || hasSpace ? "<" + url + ">" : url
     }
 }
 
@@ -542,6 +608,7 @@ private struct PieceEmitter {
 
     enum Piece {
         case text(String)
+        case plain(String)
         case open(Marks, Int)
         case close(Marks, Int)
     }
@@ -607,7 +674,11 @@ private struct PieceEmitter {
     private mutating func emitContent(of item: InlineSerializer.Item) {
         switch item {
         case .run(let run, _):
-            pieces.append(.text(InlineSerializer.emittedText(of: run)))
+            if case .text(let text) = run.content, !run.marks.has(.code) {
+                pieces.append(.plain(text))
+            } else {
+                pieces.append(.text(InlineSerializer.emittedText(of: run)))
+            }
         case .link(let url, let outer, let runs, let bare):
             if let bare {
                 pieces.append(.text(bare))
@@ -642,11 +713,19 @@ private struct PieceEmitter {
             underscore.insert(span.open)
             underscore.insert(span.close)
         }
+        let repairs = flankingRepairs(underscore: underscore)
         var output = ""
         for index in 0..<pieces.count {
             switch pieces[index] {
             case .text(let text):
                 output += text
+            case .plain(let text):
+                if repairs.isEmpty {
+                    output += text
+                } else {
+                    output += Self.repaired(text, first: repairs.contains(Repair(piece: index, atStart: true)),
+                                            last: repairs.contains(Repair(piece: index, atStart: false)))
+                }
             case .open(let mark, _), .close(let mark, _):
                 if mark == .emphasis {
                     output += underscore.contains(index) ? "_" : "*"
@@ -656,6 +735,114 @@ private struct PieceEmitter {
             }
         }
         return output
+    }
+
+    private struct Repair: Equatable {
+        let piece: Int
+        let atStart: Bool
+    }
+
+    private func delimiterByte(_ index: Int, underscore: Set<Int>) -> UInt8? {
+        switch pieces[index] {
+        case .open(let mark, _), .close(let mark, _):
+            if mark == .emphasis { return underscore.contains(index) ? UInt8(ascii: "_") : UInt8(ascii: "*") }
+            return mark == .strikethrough ? UInt8(ascii: "~") : UInt8(ascii: "*")
+        case .text, .plain:
+            return nil
+        }
+    }
+
+    private func isEmptyText(_ index: Int) -> Bool {
+        switch pieces[index] {
+        case .text(let text), .plain(let text): return text.isEmpty
+        case .open, .close: return false
+        }
+    }
+
+    private func edgeScalar(_ index: Int, last: Bool, underscore: Set<Int>) -> Unicode.Scalar? {
+        switch pieces[index] {
+        case .text(let text), .plain(let text):
+            return last ? text.unicodeScalars.last : text.unicodeScalars.first
+        case .open, .close:
+            return delimiterByte(index, underscore: underscore).map { Unicode.Scalar($0) }
+        }
+    }
+
+    private func flankingRepairs(underscore: Set<Int>) -> [Repair] {
+        var repairs: [Repair] = []
+        var index = 0
+        while index < pieces.count {
+            guard let byte = delimiterByte(index, underscore: underscore) else {
+                index += 1
+                continue
+            }
+            var end = index
+            var opens = false
+            var closes = false
+            while end < pieces.count, delimiterByte(end, underscore: underscore) == byte {
+                if case .open = pieces[end] { opens = true } else { closes = true }
+                end += 1
+            }
+            var before = index - 1
+            while before >= 0, isEmptyText(before) { before -= 1 }
+            var after = end
+            while after < pieces.count, isEmptyText(after) { after += 1 }
+            index = end
+            guard before >= 0 || after < pieces.count else { continue }
+            var previous = before >= 0 ? edgeScalar(before, last: true, underscore: underscore) : nil
+            let next = after < pieces.count ? edgeScalar(after, last: false, underscore: underscore) : nil
+            if before >= 0, repairs.last == Repair(piece: before, atStart: true),
+               case .plain(let text) = pieces[before], text.unicodeScalars.count == 1 {
+                previous = ";"
+            }
+            if opens, before >= 0, case .plain = pieces[before], let previous, let next,
+               Self.isPunctuation(next), !Self.isFlankingSpace(previous), !Self.isPunctuation(previous) {
+                repairs.append(Repair(piece: before, atStart: false))
+            }
+            if closes, after < pieces.count, case .plain = pieces[after], let previous, let next,
+               Self.isPunctuation(previous), !Self.isFlankingSpace(next), !Self.isPunctuation(next) {
+                repairs.append(Repair(piece: after, atStart: true))
+            }
+        }
+        return repairs
+    }
+
+    private static func repaired(_ text: String, first: Bool, last: Bool) -> String {
+        guard first || last else { return text }
+        var scalars = Substring(text).unicodeScalars
+        var head = ""
+        var tail = ""
+        if first, let scalar = scalars.first {
+            head = entity(scalar)
+            scalars.removeFirst()
+        }
+        if last, let scalar = scalars.last {
+            tail = entity(scalar)
+            scalars.removeLast()
+        }
+        return head + String(scalars) + tail
+    }
+
+    private static func entity(_ scalar: Unicode.Scalar) -> String {
+        "&#\(scalar.value);"
+    }
+
+    private static func isFlankingSpace(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar {
+        case "\t", "\n", "\u{0C}", "\r": return true
+        default: return scalar.properties.generalCategory == .spaceSeparator
+        }
+    }
+
+    private static func isPunctuation(_ scalar: Unicode.Scalar) -> Bool {
+        if scalar.isASCII { return SourceAligner.isASCIIPunctuation(scalar) }
+        switch scalar.properties.generalCategory {
+        case .connectorPunctuation, .dashPunctuation, .openPunctuation, .closePunctuation,
+             .initialPunctuation, .finalPunctuation, .otherPunctuation:
+            return true
+        default:
+            return false
+        }
     }
 
     private static func token(_ mark: Marks) -> String {
@@ -701,7 +888,7 @@ private struct PieceEmitter {
 
     private static func firstCharacter(_ piece: Piece?) -> Character? {
         switch piece {
-        case .text(let text)?: return text.first
+        case .text(let text)?, .plain(let text)?: return text.first
         case .open(let mark, _)?, .close(let mark, _)?: return token(mark).first
         case nil: return nil
         }
@@ -709,7 +896,7 @@ private struct PieceEmitter {
 
     private static func lastCharacter(_ piece: Piece?) -> Character? {
         switch piece {
-        case .text(let text)?: return text.last
+        case .text(let text)?, .plain(let text)?: return text.last
         case .open(let mark, _)?, .close(let mark, _)?: return token(mark).last
         case nil: return nil
         }

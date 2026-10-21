@@ -108,7 +108,8 @@ struct Normalizer {
         if block.isCode {
             storage.removeAttribute(.markdownInlineIntent, range: paragraph)
             storage.removeAttribute(.link, range: paragraph)
-            storage.removeAttribute(.markdownLiteral, range: paragraph)
+            SeparatorLiteral.removeOtherLiterals(in: storage, range: paragraph)
+            dropStaleLiterals(in: content, storage: storage)
         } else {
             dropStaleLiterals(in: content, storage: storage)
             stripSoftBreakBits(in: content, storage: storage)
@@ -167,7 +168,7 @@ struct Normalizer {
         if listCount == 0 {
             isContinuation = false
             task = nil
-        } else if isContinuation {
+        } else if isContinuation || block.leaf != .paragraph {
             task = nil
         }
 
@@ -212,7 +213,7 @@ struct Normalizer {
                 let character = NSIntersectionRange(composed, run)
                 let keep = rendered != nil
                     && ns.substring(with: character) == rendered
-                    && !storage.markdownInlineIntent(at: index).contains(.code)
+                    && (SeparatorLiteral.isSource(source) || !storage.markdownInlineIntent(at: index).contains(.code))
                 if !keep { stale.append(character) }
                 index = NSMaxRange(character)
             }
@@ -272,6 +273,7 @@ struct Normalizer {
     }
 
     static func renderedText(forLiteral source: String) -> String? {
+        if SeparatorLiteral.isSource(source) { return SeparatorLiteral.substitute }
         if source.hasPrefix("\\") {
             let rest = source.dropFirst()
             return rest.count == 1 ? String(rest) : nil
@@ -288,7 +290,7 @@ struct Normalizer {
             }
             guard let value else { return nil }
             guard value != 0, let scalar = Unicode.Scalar(value) else { return "\u{FFFD}" }
-            return String(Character(scalar))
+            return SeparatorLiteral.storable(String(Character(scalar)))
         }
         if let named = namedEntities[String(body)] { return named }
         guard let parsed = try? AttributedString(markdown: source) else { return nil }

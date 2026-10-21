@@ -31,6 +31,7 @@ enum ListNumbering {
     static func ordinals(in storage: NSAttributedString) -> [Int: Int] {
         struct Run {
             var containers: ArraySlice<MarkdownBlock.Container>
+            var marker: UInt8?
             var start: Int?
             var count = 0
         }
@@ -50,10 +51,15 @@ enum ListNumbering {
                     continue
                 }
                 let containers = containerPrefix(of: block, throughListDepth: depth + 1)
+                let marker = MarkdownTextList.sourceMarker(of: lists[depth])
                 if depth < runs.count {
-                    if runs[depth]?.containers != containers { runs[depth] = Run(containers: containers) }
+                    if let run = runs[depth], run.containers == containers, !MarkdownTextList.areDistinct(run.marker, marker) {
+                        if run.marker == nil { runs[depth]?.marker = marker }
+                    } else {
+                        runs[depth] = Run(containers: containers, marker: marker)
+                    }
                 } else {
-                    runs.append(Run(containers: containers))
+                    runs.append(Run(containers: containers, marker: marker))
                 }
             }
             guard let list = lists.last, list.hasOrderedMarker, block?.isContinuation != true,

@@ -57,7 +57,10 @@ public struct MarkdownLoader {
             switch leaf.kind {
             case .paragraph, .heading:
                 let startByte = leaf.lines.map { source.lineStarts[$0.lowerBound - 1] } ?? 0
-                let content = inline.build(leaf.runs, startByte: startByte)
+                let endByte = leaf.lines.map { source.lineByteRange($0.upperBound).upperBound }
+                let content = inline.build(leaf.runs, startByte: startByte, endByte: endByte) { line in
+                    structure.stripContinuationPrefix(line, chain: leaf.chain, markerLine: false)
+                }
                 var task: TaskState?
                 if leaf.chain.last.map(Self.isItem) == true, !leaf.isContinuation, case .paragraph = leaf.kind {
                     task = Self.stripTask(content)
@@ -86,7 +89,7 @@ public struct MarkdownLoader {
                         containers: containers,
                         isContinuation: leaf.isContinuation || index > 0
                     )
-                    paragraphs.append((NSAttributedString(string: line), block, lists))
+                    paragraphs.append((SeparatorLiteral.substituting(line, attributes: [:]), block, lists))
                 }
             case .thematicBreak:
                 let attachment = HorizontalRuleAttachment(color: .horizontalRuleDefault)

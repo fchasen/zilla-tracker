@@ -19,6 +19,7 @@ struct LoaderStructure {
     init(source: MarkdownSourceText, runs: [LoaderRun]) {
         self.source = source
         group(runs)
+        extendParagraphsOverEmptyLinks()
         extendTables()
         coverSetextUnderlines()
         for leaf in leaves {
@@ -112,32 +113,67 @@ struct LoaderStructure {
     }
 
     private mutating func extendTables() {
+        let nextStarts = nextStartLines()
         for (index, leaf) in leaves.enumerated() {
             guard case .table = leaf.kind, let lines = leaf.lines else { continue }
-            let limit = nextStartLine(after: index) ?? (source.lineCount + 1)
+            let limit = nextStarts[index] ?? (source.lineCount + 1)
             var end = lines.upperBound
-            while end + 1 < limit, !source.isBlank(end + 1), source.lineBytes(end + 1).contains(UInt8(ascii: "|")) {
+            while end + 1 < limit, !source.isBlank(end + 1), source.lineBytes(end + 1).contains(UInt8(ascii: "|")),
+                  !startsUnparsedBlock(end + 1) {
                 end += 1
             }
             leaf.lines = lines.lowerBound...end
         }
     }
 
-    private func nextStartLine(after index: Int) -> Int? {
-        leaves[(index + 1)...].lazy.compactMap { $0.lines?.lowerBound }.first
+    private mutating func extendParagraphsOverEmptyLinks() {
+        let nextStarts = nextStartLines()
+        var previousEnd = 0
+        for (index, leaf) in leaves.enumerated() {
+            defer { previousEnd = max(previousEnd, leaf.lines?.upperBound ?? 0) }
+            guard case .paragraph = leaf.kind, !leaf.runs.isEmpty, var lines = leaf.lines else { continue }
+            while lines.lowerBound - 1 > previousEnd, !opensItem(lines.lowerBound), isEmptyLinkLine(lines.lowerBound - 1) {
+                lines = (lines.lowerBound - 1)...lines.upperBound
+            }
+            let limit = nextStarts[index] ?? (source.lineCount + 1)
+            while lines.upperBound + 1 < limit, !opensItem(lines.upperBound + 1), isEmptyLinkLine(lines.upperBound + 1) {
+                lines = lines.lowerBound...(lines.upperBound + 1)
+            }
+            leaf.lines = lines
+        }
     }
 
-    private func previousEndLine(before index: Int) -> Int? {
-        leaves[..<index].reversed().lazy.compactMap { $0.lines?.upperBound }.first
+    private func opensItem(_ line: Int) -> Bool {
+        ContainerPrefix.tokenize(source.lineBytes(line)).tokens.contains { $0.kind.isItem }
+    }
+
+    private func isEmptyLinkLine(_ line: Int) -> Bool {
+        LinkTailScanner.isEmptyLinkLine(ContainerPrefix.tokenize(source.lineBytes(line)).rest)
+    }
+
+    private func startsUnparsedBlock(_ line: Int) -> Bool {
+        let rest = ContainerPrefix.tokenize(source.lineBytes(line)).restString
+        return ContainerPrefix.fenceOpening(rest) != nil || ContainerPrefix.emptyHeadingLevel(rest) != nil
+    }
+
+    private func nextStartLines() -> [Int?] {
+        var result = [Int?](repeating: nil, count: leaves.count)
+        var next: Int?
+        for index in leaves.indices.reversed() {
+            result[index] = next
+            if let lower = leaves[index].lines?.lowerBound { next = lower }
+        }
+        return result
     }
 
     private mutating func coverSetextUnderlines() {
+        let nextStarts = nextStartLines()
         for (index, leaf) in leaves.enumerated() {
             guard case .heading = leaf.kind, let lines = leaf.lines else { continue }
             let rest = ContainerPrefix.tokenize(source.lineBytes(lines.lowerBound)).trimmedRest
-            guard !rest.hasPrefix("#") else { continue }
+            guard rest.range(of: #"^#{1,6}([ \t]|$)"#, options: .regularExpression) == nil else { continue }
             let underline = lines.upperBound + 1
-            guard underline <= source.lineCount, underline < (nextStartLine(after: index) ?? Int.max) else { continue }
+            guard underline <= source.lineCount, underline < (nextStarts[index] ?? Int.max) else { continue }
             let underlineRest = String(source.line(underline).drop { $0 == " " || $0 == "\t" || $0 == ">" })
             if ContainerPrefix.isSetextUnderline(underlineRest) {
                 leaf.lines = lines.lowerBound...underline
@@ -146,10 +182,13 @@ struct LoaderStructure {
     }
 
     private mutating func placeThematicBreaks() {
+        let nextStarts = nextStartLines()
+        var previousEnd: Int?
         for (index, leaf) in leaves.enumerated() {
+            defer { if let upper = leaf.lines?.upperBound { previousEnd = upper } }
             guard case .thematicBreak = leaf.kind, leaf.lines == nil else { continue }
-            let lower = (previousEndLine(before: index) ?? 0) + 1
-            let upper = (nextStartLine(after: index) ?? (source.lineCount + 1)) - 1
+            let lower = (previousEnd ?? 0) + 1
+            let upper = (nextStarts[index] ?? (source.lineCount + 1)) - 1
             guard lower <= upper else { continue }
             for line in lower...upper where !covered.contains(line) {
                 let prefix = ContainerPrefix.tokenize(source.lineBytes(line))
@@ -225,12 +264,12 @@ struct LoaderStructure {
 
     static func makeList(ordered: Bool, start: Int, depth: Int) -> NSTextList {
         if ordered {
-            let list = NSTextList(markerFormat: .decimal, options: 0)
+            let list = MarkdownTextList(markerFormat: .decimal, options: 0)
             list.startingItemNumber = start
             return list
         }
         let formats: [NSTextList.MarkerFormat] = [.disc, .circle, .square]
-        return NSTextList(markerFormat: formats[max(0, depth - 1) % formats.count], options: 0)
+        return MarkdownTextList(markerFormat: formats[max(0, depth - 1) % formats.count], options: 0)
     }
 
     private mutating func detectMarkers(for leaf: LoaderLeaf, floor: Int) {
@@ -274,6 +313,8 @@ struct LoaderStructure {
 
     private mutating func recoverUncoveredLines() {
         guard source.lineCount > 0 else { return }
+        var insertion = RecoveryInsertion()
+        defer { insertion.merge(into: &leaves) }
         var line = 1
         while line <= source.lineCount {
             defer { line += 1 }
@@ -301,20 +342,31 @@ struct LoaderStructure {
                 }
                 lastLine = found ? close : line
                 kind = .code(fence.info.isEmpty ? nil : fence.info)
+            } else if LinkTailScanner.isEmptyLinkLine(prefix.rest) {
+                kind = .paragraph
             } else {
                 continue
             }
-            insertRecovered(kind: kind, line: line, lastLine: lastLine, prefix: prefix)
+            insertRecovered(kind: kind, line: line, lastLine: lastLine, prefix: prefix, insertion: &insertion)
             covered.formUnion(line...lastLine)
             recoveredLines.append(line)
             line = lastLine
         }
     }
 
-    private mutating func insertRecovered(kind: LoaderLeafKind, line: Int, lastLine: Int, prefix: LinePrefix) {
-        let insertIndex = leaves.firstIndex { ($0.lines?.lowerBound ?? Int.max) > line } ?? leaves.count
-        let previous = leaves[..<insertIndex].last
-        let next = leaves[insertIndex...].first { !$0.isRecovered }
+    private mutating func insertRecovered(
+        kind: LoaderLeafKind,
+        line: Int,
+        lastLine: Int,
+        prefix: LinePrefix,
+        insertion: inout RecoveryInsertion
+    ) {
+        while insertion.index < leaves.count, let lower = leaves[insertion.index].lines?.lowerBound, lower <= line {
+            insertion.index += 1
+        }
+        let insertIndex = insertion.index
+        let previous = insertion.last(at: insertIndex) ?? leaves[..<insertIndex].last
+        let next = insertIndex < leaves.count ? leaves[insertIndex] : nil
         let reference = previous?.chain ?? []
 
         var chain: [LoaderLink] = []
@@ -376,7 +428,33 @@ struct LoaderStructure {
                 return false
             }
         }
-        leaves.insert(leaf, at: insertIndex)
+        insertion.pending.append((insertIndex, leaf))
+    }
+
+    private struct RecoveryInsertion {
+        var index = 0
+        var pending: [(index: Int, leaf: LoaderLeaf)] = []
+
+        func last(at index: Int) -> LoaderLeaf? {
+            guard let last = pending.last, last.index == index else { return nil }
+            return last.leaf
+        }
+
+        func merge(into leaves: inout [LoaderLeaf]) {
+            guard !pending.isEmpty else { return }
+            var merged: [LoaderLeaf] = []
+            merged.reserveCapacity(leaves.count + pending.count)
+            var next = 0
+            for (index, leaf) in leaves.enumerated() {
+                while next < pending.count, pending[next].index == index {
+                    merged.append(pending[next].leaf)
+                    next += 1
+                }
+                merged.append(leaf)
+            }
+            merged.append(contentsOf: pending[next...].map(\.leaf))
+            leaves = merged
+        }
     }
 
     private static func indentColumn(of prefix: LinePrefix) -> Int {

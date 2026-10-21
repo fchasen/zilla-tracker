@@ -119,19 +119,24 @@ private final class ListNode {
     let kind: EditorDocument.ListKind
     var lists: [ObjectIdentifier]
     var items: [ItemNode] = []
+    var sourceMarker: UInt8?
 
     init(list: NSTextList, kind: EditorDocument.ListKind) {
         self.kind = kind
         lists = [ObjectIdentifier(list)]
+        sourceMarker = MarkdownTextList.sourceMarker(of: list)
     }
 
     func accepts(_ list: NSTextList, kind other: EditorDocument.ListKind) -> Bool {
-        lists.contains(ObjectIdentifier(list)) || other.isOrdered == kind.isOrdered
+        if lists.contains(ObjectIdentifier(list)) { return true }
+        return other.isOrdered == kind.isOrdered
+            && !MarkdownTextList.areDistinct(sourceMarker, MarkdownTextList.sourceMarker(of: list))
     }
 
     func adopt(_ list: NSTextList) {
         let id = ObjectIdentifier(list)
         if !lists.contains(id) { lists.append(id) }
+        if sourceMarker == nil { sourceMarker = MarkdownTextList.sourceMarker(of: list) }
     }
 
     static func kind(of list: NSTextList) -> EditorDocument.ListKind {
@@ -344,7 +349,11 @@ private struct TreeBuilder {
     }
 
     private static func materialize(_ pending: [PendingBlock]) -> [EditorDocument.Block] {
-        pending.map { block in
+        var previousList: ListNode?
+        return pending.map { block in
+            defer {
+                if case .list(let node) = block { previousList = node } else { previousList = nil }
+            }
             switch block {
             case .leaf(let leaf):
                 return leaf
@@ -353,9 +362,14 @@ private struct TreeBuilder {
             case .quote(let node):
                 return .quote(materialize(node.blocks))
             case .list(let node):
+                let separates = previousList.map {
+                    $0.kind.isOrdered == node.kind.isOrdered
+                        && MarkdownTextList.areDistinct($0.sourceMarker, node.sourceMarker)
+                } ?? false
                 return .list(EditorDocument.ListBlock(
                     kind: node.kind,
-                    items: node.items.map { EditorDocument.ListItem(task: $0.task, blocks: materialize($0.blocks)) }
+                    items: node.items.map { EditorDocument.ListItem(task: $0.task, blocks: materialize($0.blocks)) },
+                    separatesFromPrevious: separates
                 ))
             }
         }
@@ -365,6 +379,21 @@ private struct TreeBuilder {
 private struct InlineExtractor {
     let storage: NSAttributedString
     let text: UTF16Text
+
+    private func codeText(_ range: NSRange) -> String {
+        guard range.length > 0 else { return "" }
+        guard text.units[range.location..<NSMaxRange(range)].contains(0x00A0) else { return text.substring(range) }
+        var output = ""
+        storage.enumerateAttribute(.markdownLiteral, in: range) { value, run, _ in
+            let piece = text.substring(run)
+            if let literal = value as? String, SeparatorLiteral.isSource(literal) {
+                output += piece.replacingOccurrences(of: SeparatorLiteral.substitute, with: literal)
+            } else {
+                output += piece
+            }
+        }
+        return output
+    }
 
     func codeLines(in range: NSRange) -> [String] {
         var lines: [String] = []
@@ -376,7 +405,7 @@ private struct InlineExtractor {
             while index < end {
                 let unit = text[index]
                 if unit == MarkdownBreak.utf16 || unit == MarkdownParagraph.objectReplacement {
-                    current += text.substring(NSRange(location: start, length: index - start))
+                    current += codeText(NSRange(location: start, length: index - start))
                     if unit == MarkdownBreak.utf16 {
                         lines.append(current)
                         current = ""
@@ -387,7 +416,7 @@ private struct InlineExtractor {
                 }
                 index += 1
             }
-            current += text.substring(NSRange(location: start, length: end - start))
+            current += codeText(NSRange(location: start, length: end - start))
         }
         lines.append(current)
         return lines
@@ -426,7 +455,8 @@ private struct InlineExtractor {
             let marks = Self.marks(fromIntentBits: intentBits)
             let isSoftBreak = intentBits & MarkdownInlineIntent.softBreak.rawValue != 0
             let link = Self.linkString(linkValue)
-            let literal = marks.has(.code) ? nil : literalValue as? String
+            let rawLiteral = literalValue as? String
+            let literal = marks.has(.code) && !SeparatorLiteral.isSource(rawLiteral) ? nil : rawLiteral
             var start = location
             var index = location
             while index < end {
@@ -457,6 +487,11 @@ private struct InlineExtractor {
         to runs: inout [EditorDocument.InlineRun]
     ) {
         guard range.length > 0 else { return }
+        if marks.has(.code), let literal {
+            let restored = text.substring(range).replacingOccurrences(of: SeparatorLiteral.substitute, with: literal)
+            appendPlain(restored, marks: marks, link: link, to: &runs)
+            return
+        }
         guard let literal, let rendered = LiteralDecoder.rendered(literal), !rendered.isEmpty else {
             appendPlain(text.substring(range), marks: marks, link: link, to: &runs)
             return
@@ -559,17 +594,79 @@ struct UTF16Text {
     }
 }
 
+enum SeparatorLiteral {
+    static let substitute = "\u{00A0}"
+
+    static func isSeparator(_ scalar: Unicode.Scalar) -> Bool {
+        scalar == "\u{2028}" || scalar == "\u{2029}" || scalar == "\u{85}"
+    }
+
+    static func containsSeparator(_ text: String) -> Bool {
+        text.unicodeScalars.contains(where: isSeparator)
+    }
+
+    static func isSource(_ literal: String?) -> Bool {
+        guard let scalars = literal?.unicodeScalars, scalars.count == 1, let scalar = scalars.first else { return false }
+        return isSeparator(scalar)
+    }
+
+    static func storable(_ decoded: String) -> String {
+        guard containsSeparator(decoded) else { return decoded }
+        var out = String.UnicodeScalarView()
+        for scalar in decoded.unicodeScalars {
+            if isSeparator(scalar) {
+                out.append(contentsOf: substitute.unicodeScalars)
+            } else {
+                out.append(scalar)
+            }
+        }
+        return String(out)
+    }
+
+    static func substituting(_ text: String, attributes: [NSAttributedString.Key: Any]) -> NSAttributedString {
+        guard containsSeparator(text) else { return NSAttributedString(string: text, attributes: attributes) }
+        let out = NSMutableAttributedString()
+        var pending = String.UnicodeScalarView()
+        func flush() {
+            guard !pending.isEmpty else { return }
+            out.append(NSAttributedString(string: String(pending), attributes: attributes))
+            pending = String.UnicodeScalarView()
+        }
+        for scalar in text.unicodeScalars {
+            guard isSeparator(scalar) else {
+                pending.append(scalar)
+                continue
+            }
+            flush()
+            var literal = attributes
+            literal[.markdownLiteral] = String(scalar)
+            out.append(NSAttributedString(string: substitute, attributes: literal))
+        }
+        flush()
+        return out
+    }
+
+    static func removeOtherLiterals(in storage: NSMutableAttributedString, range: NSRange) {
+        var removable: [NSRange] = []
+        storage.enumerateAttribute(.markdownLiteral, in: range) { value, run, _ in
+            if value != nil, !isSource(value as? String) { removable.append(run) }
+        }
+        for run in removable { storage.removeAttribute(.markdownLiteral, range: run) }
+    }
+}
+
 enum LiteralDecoder {
     private static let cache = Mutex<[String: String]>([:])
 
     static func rendered(_ source: String) -> String? {
+        if SeparatorLiteral.isSource(source) { return SeparatorLiteral.substitute }
         let scalars = source.unicodeScalars
         if scalars.count == 2, scalars.first == "\\", let second = scalars.last, second.isASCII,
            second.properties.generalCategory.isPunctuationOrSymbol {
             return String(second)
         }
         if let numeric = numericEntity(source) {
-            return numeric
+            return SeparatorLiteral.storable(numeric)
         }
         let value: String
         if let cached = cache.withLock({ $0[source] }) {

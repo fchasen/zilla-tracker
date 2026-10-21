@@ -351,7 +351,7 @@ struct PasteSanitizer {
             if let attachment = attributes[.attachment] as? MarkdownSourceAttachment {
                 output.addAttribute(.attachment, value: attachment, range: run)
             }
-            if !block.isCode, let literal = attributes[.markdownLiteral] as? String {
+            if let literal = attributes[.markdownLiteral] as? String, !block.isCode || SeparatorLiteral.isSource(literal) {
                 output.addAttribute(.markdownLiteral, value: literal, range: run)
             }
             #if canImport(AppKit) && os(macOS)

@@ -16,4 +16,5 @@ public enum AtomKind {
     public static let thematicBreak = "markdown.thematicBreak"
     public static let table = "markdown.table"
     public static let htmlBlock = "markdown.htmlBlock"
+    public static let emptyLink = "markdown.emptyLink"
 }

@@ -69,6 +69,18 @@ struct NormalizerTests {
         #expect(storage.markdownBlock(at: 0) == MarkdownBlock(containers: [.quote(quote)]))
     }
 
+    @Test func nonParagraphLeavesDropTheirTask() {
+        let list = NSTextList(markerFormat: .disc, options: 0)
+        let storage = StorageBuilder.build {
+            $0.paragraph("h", MarkdownBlock(leaf: .heading(level: 2), containers: [.listItem], task: .unchecked), lists: [list])
+            $0.paragraph("p", MarkdownBlock(containers: [.listItem], task: .checked), lists: [list])
+        }
+        normalizer.normalize(storage, editedRange: NSRange(location: 0, length: storage.length))
+        #expect(storage.markdownBlock(at: 0) == MarkdownBlock(leaf: .heading(level: 2), containers: [.listItem]))
+        #expect(storage.markdownBlock(at: 2)?.task == .checked)
+        #expect(MarkdownWriter().markdown(from: storage) == "- ## h\n- [x] p")
+    }
+
     @Test func emptyMarkerListsDoNotCountAsListItems() {
         let list = NSTextList(markerFormat: .decimal, options: 0)
         let empty = NSTextList(markerFormat: NSTextList.MarkerFormat(rawValue: ""), options: 0)

@@ -130,6 +130,13 @@ struct RenderingTests {
         #expect(editor.paragraphStarts.indices.compactMap { editor.marker(paragraph: $0) } == expected)
     }
 
+    @Test func orderedListsWithDistinctDelimitersNumberSeparately() {
+        let editor = Rendered("1. a\n2. b\n1) c\n2) d")
+        #expect(editor.marker(paragraph: 1) == .ordinal(2))
+        #expect(editor.marker(paragraph: 2) == .ordinal(1))
+        #expect(editor.marker(paragraph: 3) == .ordinal(2))
+    }
+
     @Test func continuationAlignsWithItemContent() throws {
         let editor = Rendered("1. first\n\n   continued\n2. second")
         let item = try #require(editor.contentX(paragraph: 0))

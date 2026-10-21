@@ -9,17 +9,51 @@ struct LoaderInline {
     let source: MarkdownSourceText
     var fallbackRuns = 0
     var projection = ""
+    var breaklessProjection = ""
+    private var lineContent: ((Int) -> String)?
 
     init(source: MarkdownSourceText) {
         self.source = source
     }
 
-    mutating func build(_ runs: [LoaderRun], startByte: Int) -> NSMutableAttributedString {
+    mutating func build(
+        _ runs: [LoaderRun],
+        startByte: Int,
+        endByte: Int? = nil,
+        lineContent: ((Int) -> String)? = nil
+    ) -> NSMutableAttributedString {
+        self.lineContent = lineContent
         let out = NSMutableAttributedString()
-        append(runs, source: source, outerMarks: [], forcedLink: nil, cursor: startByte, allowReparse: true, into: out)
+        let cursor = append(runs, source: source, outerMarks: [], forcedLink: nil, cursor: startByte, allowReparse: true, into: out)
+        if let endByte {
+            Self.appendEmptyLinks(in: source, cursor..<max(cursor, endByte), intent: runs.last.map(Self.marks) ?? [], into: out)
+        }
         return out
     }
 
+    private static func marks(of run: LoaderRun) -> MarkdownInlineIntent {
+        run.inline.intersection(.markdownMarks)
+    }
+
+    private static func appendEmptyLinks(
+        in source: MarkdownSourceText,
+        _ gap: Range<Int>,
+        intent: MarkdownInlineIntent,
+        into out: NSMutableAttributedString
+    ) {
+        for link in LinkTailScanner.emptyLinks(in: source.bytes, gap) {
+            let text = source.string(link)
+            let attachment = ChipAttachment.make(
+                label: String(text.dropFirst(3).dropLast()),
+                systemImage: "link",
+                markdownSource: text,
+                contentKind: AtomKind.emptyLink
+            )
+            out.append(atom(attachment, intent: intent, link: nil))
+        }
+    }
+
+    @discardableResult
     private mutating func append(
         _ runs: [LoaderRun],
         source: MarkdownSourceText,
@@ -28,7 +62,7 @@ struct LoaderInline {
         cursor startCursor: Int,
         allowReparse: Bool,
         into out: NSMutableAttributedString
-    ) {
+    ) -> Int {
         var cursor = startCursor
         var index = 0
         let presplit = Self.presplit(runs, source: source)
@@ -37,46 +71,53 @@ struct LoaderInline {
             let marks = run.inline.intersection(.markdownMarks).union(outerMarks)
             let link = forcedLink ?? run.link
             let byteRange = run.position.flatMap { source.byteRange($0) }
+            if allowReparse, let byteRange, cursor < byteRange.lowerBound {
+                let shared = index > 0 ? Self.marks(of: runs[index - 1]).intersection(marks) : marks
+                Self.appendEmptyLinks(in: source, cursor..<byteRange.lowerBound, intent: shared, into: out)
+            }
             projection += run.text
+            if run.inline.isDisjoint(with: [.softBreak, .lineBreak]) { breaklessProjection += run.text }
             defer {
                 if let byteRange { cursor = max(cursor, byteRange.upperBound) }
                 index += 1
             }
 
-            if run.inline.contains(.softBreak) {
-                out.append(Self.piece(MarkdownBreak.string, intent: [.softBreak], link: link))
-                continue
-            }
-            if run.inline.contains(.lineBreak) {
-                out.append(Self.piece(MarkdownBreak.string, intent: [], link: link))
+            if !run.inline.isDisjoint(with: [.softBreak, .lineBreak]) {
+                if allowReparse, byteRange == nil {
+                    let lineEnd = source.lineByteRange(source.lineIndex(containingByte: cursor)).upperBound
+                    if cursor < lineEnd {
+                        Self.appendEmptyLinks(in: source, cursor..<lineEnd, intent: marks, into: out)
+                        cursor = lineEnd
+                    }
+                }
+                out.append(Self.breakPiece(intent: run.inline.contains(.softBreak) ? [.softBreak] : [], link: link))
                 continue
             }
             if let imageURL = run.imageURL {
+                if Self.isEmptyAltRun(run) {
+                    for _ in run.text.unicodeScalars {
+                        let imageSource = Self.imageSource(in: source, altRange: nil, cursor: cursor, url: imageURL, alt: "")
+                        if let end = imageSource.end { cursor = max(cursor, end) }
+                        out.append(Self.imageAtom(source: imageSource.text, alt: "", intent: marks, link: link))
+                    }
+                    continue
+                }
                 var alt = run.text
                 var lastIndex = index
+                var imageSource = Self.imageSource(in: source, altRange: byteRange, cursor: cursor, url: imageURL, alt: alt)
                 while lastIndex + 1 < runs.count, runs[lastIndex + 1].imageURL == imageURL,
-                      !runs[lastIndex + 1].inline.contains(.softBreak) {
+                      !runs[lastIndex + 1].inline.contains(.softBreak),
+                      Self.continuesImage(runs[lastIndex + 1], endingAt: imageSource.end, in: source) {
                     lastIndex += 1
                     alt += runs[lastIndex].text
                     projection += runs[lastIndex].text
                 }
-                let imageSource = Self.imageSource(
-                    in: source,
-                    altRange: byteRange,
-                    cursor: cursor,
-                    url: imageURL,
-                    alt: alt
-                )
+                if imageSource.end == nil {
+                    imageSource = Self.imageSource(in: source, altRange: byteRange, cursor: cursor, url: imageURL, alt: alt)
+                }
                 if let end = imageSource.end { cursor = max(cursor, end) }
                 index = lastIndex
-                let label = alt.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FFFC}")).isEmpty ? "image" : alt
-                let attachment = ChipAttachment.make(
-                    label: label,
-                    systemImage: "photo",
-                    markdownSource: imageSource.text,
-                    contentKind: AtomKind.image
-                )
-                out.append(Self.atom(attachment, intent: marks, link: link))
+                out.append(Self.imageAtom(source: imageSource.text, alt: alt, intent: marks, link: link))
                 continue
             }
             if run.inline.contains(.inlineHTML) {
@@ -108,10 +149,12 @@ struct LoaderInline {
             }
             let span = byteRange.map { source.string($0) }
             if link != nil, forcedLink == nil, allowReparse,
-               let labelSpan = byteRange.map({ source.string(Self.widenedOverBackticks($0, in: source.bytes)) }),
+               let labelSpan = byteRange.map({ labelSource(Self.widenedOverBackticks($0, in: source.bytes)) }),
                labelSpan != run.text {
                 let label = MarkdownSourceText(labelSpan)
-                if let reparsed = try? AttributedString(markdown: labelSpan, options: Self.inlineOptions) {
+                let spansLines = labelSpan.contains("\n")
+                let options = spansLines ? MarkdownLoader.parsingOptions : Self.inlineOptions
+                if let reparsed = try? AttributedString(markdown: labelSpan, options: options) {
                     let nested = NSMutableAttributedString()
                     var inner = LoaderInline(source: label)
                     inner.append(
@@ -123,7 +166,8 @@ struct LoaderInline {
                         allowReparse: false,
                         into: nested
                     )
-                    if inner.projection == run.text, inner.fallbackRuns == 0 {
+                    let matches = spansLines ? inner.breaklessProjection == run.text : inner.projection == run.text
+                    if matches, inner.fallbackRuns == 0 {
                         out.append(nested)
                         continue
                     }
@@ -167,6 +211,20 @@ struct LoaderInline {
             #endif
             out.append(Self.piece(run.text, intent: marks, link: link))
         }
+        return cursor
+    }
+
+    private func labelSource(_ range: Range<Int>) -> String {
+        let firstLine = source.lineIndex(containingByte: range.lowerBound)
+        let lastLine = source.lineIndex(containingByte: max(range.lowerBound, range.upperBound - 1))
+        guard lastLine > firstLine, let lineContent else { return source.string(range) }
+        var lines = [source.string(range.lowerBound..<min(range.upperBound, source.lineByteRange(firstLine).upperBound))]
+        for line in (firstLine + 1)...lastLine {
+            let bounds = source.lineByteRange(line)
+            let contentStart = bounds.upperBound - lineContent(line).utf8.count
+            lines.append(source.string(contentStart..<max(contentStart, min(range.upperBound, bounds.upperBound))))
+        }
+        return lines.joined(separator: "\n")
     }
 
     static func widenedOverBackticks(_ range: Range<Int>, in bytes: [UInt8]) -> Range<Int> {
@@ -306,13 +364,45 @@ struct LoaderInline {
         link: URL?,
         literal: String? = nil
     ) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: attributes(intent: intent, link: link, literal: literal))
+        if let literal {
+            return NSAttributedString(
+                string: SeparatorLiteral.storable(text),
+                attributes: attributes(intent: intent, link: link, literal: literal)
+            )
+        }
+        return SeparatorLiteral.substituting(text, attributes: attributes(intent: intent, link: link))
+    }
+
+    static func breakPiece(intent: MarkdownInlineIntent, link: URL?) -> NSAttributedString {
+        NSAttributedString(string: MarkdownBreak.string, attributes: attributes(intent: intent, link: link))
     }
 
     static func atom(_ attachment: NSTextAttachment, intent: MarkdownInlineIntent, link: URL?) -> NSAttributedString {
         var attributes = attributes(intent: intent, link: link)
         attributes[.attachment] = attachment
         return NSAttributedString(string: "\u{FFFC}", attributes: attributes)
+    }
+
+    private static func isEmptyAltRun(_ run: LoaderRun) -> Bool {
+        run.position == nil && !run.text.isEmpty && run.text.unicodeScalars.allSatisfy { $0 == "\u{FFFC}" }
+    }
+
+    private static func continuesImage(_ run: LoaderRun, endingAt end: Int?, in source: MarkdownSourceText) -> Bool {
+        if let range = run.position.flatMap({ source.byteRange($0) }) {
+            return end.map { range.lowerBound < $0 } ?? true
+        }
+        return !isEmptyAltRun(run)
+    }
+
+    static func imageAtom(source: String, alt: String, intent: MarkdownInlineIntent, link: URL?) -> NSAttributedString {
+        let label = alt.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FFFC}")).isEmpty ? "image" : alt
+        let attachment = ChipAttachment.make(
+            label: label,
+            systemImage: "photo",
+            markdownSource: source,
+            contentKind: AtomKind.image
+        )
+        return atom(attachment, intent: intent, link: link)
     }
 
     static func imageSource(
@@ -383,6 +473,39 @@ enum LinkTailScanner {
             return k < bytes.count ? k + 1 : after
         }
         return after
+    }
+
+    static func emptyLinks(in bytes: [UInt8], _ range: Range<Int>) -> [Range<Int>] {
+        var links: [Range<Int>] = []
+        let upper = min(range.upperBound, bytes.count)
+        var k = max(0, range.lowerBound)
+        while k + 2 < upper {
+            if bytes[k] == UInt8(ascii: "["), bytes[k + 1] == UInt8(ascii: "]"), bytes[k + 2] == UInt8(ascii: "("),
+               k == 0 || (bytes[k - 1] != UInt8(ascii: "!") && bytes[k - 1] != UInt8(ascii: "\\")),
+               let end = closingParen(bytes, open: k + 2), end <= upper {
+                links.append(k..<end)
+                k = end
+                continue
+            }
+            if bytes[k] == UInt8(ascii: "]"), bytes[k + 1] == UInt8(ascii: "("), let end = closingParen(bytes, open: k + 1) {
+                k = end
+                continue
+            }
+            k += 1
+        }
+        return links
+    }
+
+    static func isEmptyLinkLine(_ line: ArraySlice<UInt8>) -> Bool {
+        let bytes = Array(line)
+        let links = emptyLinks(in: bytes, 0..<bytes.count)
+        guard !links.isEmpty else { return false }
+        var k = 0
+        for link in links {
+            guard bytes[k..<link.lowerBound].allSatisfy({ $0 == 0x20 || $0 == 0x09 }) else { return false }
+            k = link.upperBound
+        }
+        return bytes[k...].allSatisfy { $0 == 0x20 || $0 == 0x09 }
     }
 
     private static func closingParen(_ bytes: [UInt8], open: Int) -> Int? {

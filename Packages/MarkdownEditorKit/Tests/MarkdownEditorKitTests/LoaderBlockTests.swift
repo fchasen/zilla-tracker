@@ -225,6 +225,19 @@ struct LoaderBlockTests {
         #expect(report.recoveredLines.isEmpty)
     }
 
+    @Test(arguments: ["#5 crashes on start\n-\nSteps below.", "#hashtag title\n===\nSteps below."])
+    func setextHeadingTextStartingWithHashIsNotATX(markdown: String) {
+        let (storage, report) = LoaderFixture.load(markdown)
+        let paragraphs = LoaderFixture.paragraphs(storage)
+        #expect(paragraphs.count == 2)
+        #expect(paragraphs.first?.block?.headingLevel != nil)
+        #expect(paragraphs.allSatisfy { $0.lists.isEmpty })
+        #expect(report.recoveredLines.isEmpty)
+        let reloaded = LoaderFixture.paragraphs(Corpus.load(Corpus.roundTrip(markdown)))
+        #expect(reloaded.map(\.text) == paragraphs.map(\.text))
+        #expect(reloaded.map { $0.block?.headingLevel } == paragraphs.map { $0.block?.headingLevel })
+    }
+
     @Test func linkReferenceDefinitionsVanishAndLinksResolve() {
         let (storage, report) = LoaderFixture.load("[r]: https://r.com\n\nsee [r]")
         #expect(LoaderFixture.paragraphs(storage).map(\.text) == ["see r"])

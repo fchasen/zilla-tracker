@@ -59,3 +59,22 @@ struct WriterPerformanceTests {
         #expect(best < Self.budget, "best of 7 runs took \(best)")
     }
 }
+
+@Suite("Loader performance")
+struct LoaderPerformanceTests {
+    #if DEBUG
+    static let budget = Duration.milliseconds(600)
+    #else
+    static let budget = Duration.milliseconds(300)
+    #endif
+
+    @Test(arguments: [("-\n", 8_000), ("***\n", 6_000)])
+    func recoveringThousandsOfLinesIsLinear(line: String, count: Int) {
+        let markdown = String(repeating: line, count: count)
+        let clock = ContinuousClock()
+        var storage = NSMutableAttributedString()
+        let elapsed = clock.measure { storage = MarkdownLoader().load(markdown) }
+        #expect(LoaderFixture.paragraphs(storage).count == count)
+        #expect(elapsed < Self.budget, "load took \(elapsed)")
+    }
+}

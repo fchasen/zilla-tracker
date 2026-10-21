@@ -16,6 +16,25 @@ struct WriterBlockTests {
         #expect(WF.write(WF.p("a"), WF.p("  "), WF.p("b")) == "a\n\nb")
     }
 
+    @Test(arguments: ["    x", "\tx", "  \t x", "      deep text"])
+    func deeplyIndentedParagraphTextReloadsAsParagraph(text: String) throws {
+        let list = WF.bullet()
+        let quote = GroupToken.mint()
+        let storages = [
+            WF.storage([WF.p(text)]),
+            WF.storage([WF.item(text, [list])]),
+            WF.storage([WF.p(text, block: MarkdownBlock(containers: [.quote(quote)]))])
+        ]
+        for storage in storages {
+            let written = MarkdownWriter().markdown(from: storage)
+            let paragraph = try #require(LoaderFixture.paragraphs(MarkdownLoader().load(written)).first)
+            #expect(paragraph.leaf == .paragraph, "\(written)")
+            #expect(paragraph.text == storage.string.trimmingCharacters(in: .newlines), "\(written)")
+            #expect(Corpus.roundTrip(written) == written)
+        }
+        #expect(WF.write(WF.p("   x")) == "   x")
+    }
+
     @Test func trailingEmptyParagraphsAreStripped() {
         #expect(WF.write(WF.p("a"), trailingNewline: true) == "a")
         #expect(WF.write(WF.p("a"), WF.p(""), WF.p(""), trailingNewline: true) == "a")
@@ -233,6 +252,23 @@ struct WriterBlockTests {
         #expect(WF.write(WF.item("a", [list]), WF.p("p"), WF.item("b", [list])) == "- a\n\np\n\n- b")
     }
 
+    @Test(arguments: [
+        ("- a\n* b", "- a\n\n* b"),
+        ("1. a\n1) b", "1. a\n\n1) b"),
+        ("- a\n* b\n+ c", "- a\n\n* b\n\n- c"),
+        ("- a\n* ---", "- a\n\n* ---"),
+        ("- x\n  - a\n  * b", "- x\n  - a\n  * b")
+    ])
+    func adjacentListsTheLoaderKeepsApartStayApart(markdown: String, expected: String) {
+        let written = Corpus.roundTrip(markdown)
+        #expect(written == expected)
+        func listCount(_ source: String) -> Int {
+            Set(LoaderFixture.paragraphs(Corpus.load(source)).compactMap { $0.lists.last.map(ObjectIdentifier.init) }).count
+        }
+        #expect(listCount(written) == listCount(markdown))
+        #expect(Corpus.roundTrip(written) == written)
+    }
+
     @Test func textListsWinOverBlockContainers() {
         #expect(WF.write(WF.p("a", block: MarkdownBlock(containers: [.listItem]))) == "a")
         #expect(WF.write(WF.p("a", lists: [WF.bullet()])) == "- a")
@@ -260,6 +296,22 @@ struct WriterBlockTests {
         let quoteFirst = WF.p("q", block: MarkdownBlock(containers: [.listItem, .quote(quote)]), lists: [list])
         let quoteSecond = WF.p("r", block: MarkdownBlock(containers: [.listItem, .quote(quote)], isContinuation: true), lists: [list])
         #expect(WF.write(quoteFirst, quoteSecond, WF.item("b", [list])) == "- > q\n  >\n  > r\n- b")
+    }
+
+    @Test(arguments: [
+        "- x\n\n  <div>\n  hi\n  </div>\n\n  > q",
+        "- x\n\n  <div>\n  hi\n  </div>\n\n  ```\n  c\n  ```",
+        "- x\n\n  <div>\n  hi\n  </div>\n\n  - nested",
+        "- x\n\n  <div>\n  hi\n  </div>\n\n  ## h",
+        "- x\n  > a\n\n  > b"
+    ])
+    func itemBlocksThatWouldMergeKeepABlankLine(markdown: String) {
+        let written = Corpus.roundTrip(markdown)
+        #expect(written == markdown)
+        let original = LoaderFixture.paragraphs(Corpus.load(markdown))
+        let reloaded = LoaderFixture.paragraphs(Corpus.load(written))
+        #expect(reloaded.map(\.text) == original.map(\.text))
+        #expect(reloaded.map(\.containers.count) == original.map(\.containers.count))
     }
 
     @Test func listsInsideQuotes() {

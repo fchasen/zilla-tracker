@@ -47,6 +47,34 @@ struct WriterInlineTests {
         #expect(WF.inline(WF.t("a", .strong), WF.t("b", .strong)) == "**ab**")
     }
 
+    static let nonFlankingDelimiters: [[NSAttributedString]] = [
+        [WF.t("foo.", .strong), WF.t("bar")],
+        [WF.t("a"), WF.t("(b)", .strong)],
+        [WF.t("see"), WF.t("[x]", .strong, link: "u")],
+        [WF.t("a"), WF.t("(b)", .strikethrough), WF.t("c")],
+        [WF.t("x"), WF.t("(y)", .emphasis), WF.t("z")],
+        [WF.t("中文"), WF.t("「重要」", .strong), WF.t("继续")],
+        [WF.t("a"), WF.t("(b)", [.strong, .strikethrough]), WF.t("c")]
+    ]
+
+    @Test(arguments: nonFlankingDelimiters)
+    func delimitersNextToPunctuationReloadAsMarks(content: [NSAttributedString]) {
+        let storage = WF.storage([WF.Para(content: content, block: .paragraph, lists: [])])
+        let written = MarkdownWriter().markdown(from: storage)
+        let reloaded = LoaderFixture.load(written).storage
+        #expect(reloaded.string == storage.string, "\(written)")
+        #expect(LoaderFixture.intentRuns(reloaded).map(\.0) == LoaderFixture.intentRuns(storage).map(\.0), "\(written)")
+        #expect(LoaderFixture.intentRuns(reloaded).map(\.1) == LoaderFixture.intentRuns(storage).map(\.1), "\(written)")
+        #expect(MarkdownWriter().markdown(from: reloaded) == written)
+    }
+
+    @Test func flankingDelimitersEncodeOnlyTheBlockingNeighbor() {
+        #expect(WF.inline(WF.t("foo.", .strong), WF.t("bar")) == "**foo.**&#98;ar")
+        #expect(WF.inline(WF.t("a"), WF.t("(b)", .strong)) == "&#97;**(b)**")
+        #expect(WF.inline(WF.t("a "), WF.t("(b)", .strong), WF.t(" c")) == "a **(b)** c")
+        #expect(WF.inline(WF.t("a"), WF.t("b.", .strong), WF.t(",")) == "a**b.**,")
+    }
+
     @Test func noEscapesAreAdded() {
         let text = "2 * 3 = _x_ # [a](b) <b> \\ ` ~ | & 1. - >"
         #expect(WF.inline(WF.t(text)) == text)
@@ -97,6 +125,22 @@ struct WriterInlineTests {
         #expect(WF.inline(WF.t("a", link: "u v")) == "[a](<u v>)")
         #expect(WF.inline(WF.t("a", link: "x(1)")) == "[a](x(1))")
         #expect(WF.inline(WF.t("a", link: "x(1")) == "[a](<x(1>)")
+    }
+
+    @Test(arguments: [
+        ("a<b c", "a%3Cb%20c"),
+        ("<x>", "%3Cx%3E"),
+        ("a\nb", "a%0Ab"),
+        ("a\\*b", "a%5C*b"),
+        ("x(1<", "x(1%3C"),
+        ("日本 <語>", "%E6%97%A5%E6%9C%AC%20%3C%E8%AA%9E%3E")
+    ])
+    func unsafeLinkDestinationsReloadAsLinks(url: String, reloaded: String) {
+        let storage = WF.storage([WF.p(WF.t("see", link: url), WF.t(" after"))])
+        let written = MarkdownWriter().markdown(from: storage)
+        let loaded = LoaderFixture.load(written).storage
+        #expect(loaded.string == "see after", "\(written)")
+        #expect(loaded.markdownLink(at: 0) == reloaded, "\(written)")
     }
 
     @Test func linkValuesMayBeURLs() {

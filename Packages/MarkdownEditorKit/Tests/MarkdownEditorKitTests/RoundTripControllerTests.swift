@@ -30,7 +30,29 @@ struct RoundTripControllerTests {
         #expect(controller.markdown() == "+ b\n+ c")
     }
 
+    @Test(arguments: [
+        ("- a\n-", NSRange(location: 2, length: 1), "- a"),
+        ("a\n\n#\n\nb", NSRange(location: 2, length: 1), "a\n\nb")
+    ])
+    func deletingContentTheWriterDropsDoesNotRestoreIt(source: String, deletion: NSRange, expected: String) {
+        let controller = MarkdownEditorController(markdown: source)
+        #expect(controller.markdown() == source)
+        controller.textStorage.replaceCharacters(in: deletion, with: "")
+        #expect(controller.markdown() == expected)
+    }
+
     #if canImport(AppKit) && os(macOS)
+    @Test func bindingPushesAfterDeletingAnEmptyTrailingItem() {
+        let harness = EditorHarness(markdown: "- a\n-")
+        harness.select(NSRange(location: 1, length: harness.storage.length - 1))
+        harness.deleteBackward()
+        #expect(harness.string == "a")
+        #expect(harness.pushes.last == "- a")
+        #expect(harness.controller.markdown() == "- a")
+        harness.undo()
+        #expect(harness.controller.markdown() == "- a\n-")
+    }
+
     @Test(arguments: CorpusFixtures.canonicalizing)
     func undoingBackToTheLoadedStateReturnsOriginalBytes(_ sample: CorpusSample) throws {
         let harness = EditorHarness(markdown: sample.source)

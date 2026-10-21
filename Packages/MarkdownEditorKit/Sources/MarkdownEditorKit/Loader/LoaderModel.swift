@@ -70,10 +70,32 @@ enum LoaderLeafKind {
     }
 }
 
+final class MarkdownTextList: NSTextList {
+    var sourceMarker: UInt8?
+
+    static func sourceMarker(of list: NSTextList) -> UInt8? {
+        (list as? MarkdownTextList)?.sourceMarker
+    }
+
+    static func areDistinct(_ lhs: UInt8?, _ rhs: UInt8?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        return lhs != rhs
+    }
+}
+
 final class LoaderItem {
     let key: Int
     let list: NSTextList
-    var marker: PrefixToken.Kind?
+    var marker: PrefixToken.Kind? {
+        didSet {
+            guard let list = list as? MarkdownTextList, list.sourceMarker == nil else { return }
+            switch marker {
+            case .bullet(let byte)?: list.sourceMarker = byte
+            case .ordered(_, let delimiter)?: list.sourceMarker = delimiter
+            default: break
+            }
+        }
+    }
     var markerColumn: Int?
     var contentColumn: Int?
 

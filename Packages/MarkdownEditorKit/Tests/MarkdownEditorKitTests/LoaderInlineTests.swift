@@ -63,6 +63,28 @@ struct LoaderInlineTests {
         #expect(LoaderFixture.literals(storage) == ["\(rendered)=\(entity)"])
     }
 
+    @Test(arguments: [
+        ("a\u{2029}b c", "a\u{00A0}b c"),
+        ("a\u{2028}b", "a\u{00A0}b"),
+        ("a\u{85}b", "a\u{00A0}b"),
+        ("- a\n  b\u{2029}c", "a\u{2028}b\u{00A0}c"),
+        ("x `a\u{2028}b` y", "x a\u{00A0}b y"),
+        ("&#x2028;x", "\u{00A0}x"),
+        ("```\na\u{2028}b\n```", "a\u{00A0}b")
+    ])
+    func unicodeSeparatorsInSourceStayInsideTheirParagraph(markdown: String, text: String) {
+        let storage = LoaderFixture.load(markdown).storage
+        #expect(LoaderFixture.paragraphs(storage).map(\.text) == [text])
+        #expect(Corpus.roundTrip(markdown) == markdown)
+    }
+
+    @Test func separatorLiteralsSurviveEditsInCode() {
+        let storage = LoaderFixture.load("```\na\u{2028}b\n```").storage
+        storage.insert(NSAttributedString(string: "z"), at: 0)
+        Normalizer().normalizeAll(storage)
+        #expect(Corpus.write(storage) == "```\nza\u{2028}b\n```")
+    }
+
     @Test func invalidEntitiesStayText() {
         let storage = LoaderFixture.load("a &bogus; & b").storage
         #expect(storage.string == "a &bogus; & b")
@@ -129,6 +151,32 @@ struct LoaderInlineTests {
         #expect(storage.markdownInlineIntent(at: 2) == .code)
         #expect(storage.markdownInlineIntent(at: 4) == .stronglyEmphasized)
         #expect(LoaderFixture.literals(storage) == ["*=\\*", "&=&amp;"])
+    }
+
+    @Test(arguments: [
+        ("See [the release\nnotes](http://x) for details.", "See the release\u{2028}notes for details."),
+        ("> [quoted\n> link](http://x)", "quoted\u{2028}link"),
+        ("- [item\n  link](http://x)", "item\u{2028}link"),
+        ("> - [nested\n>   label](http://x) tail", "nested\u{2028}label tail")
+    ])
+    func linkLabelsSpanningLinesKeepTheirBreaks(markdown: String, text: String) {
+        let (storage, report) = LoaderFixture.load(markdown)
+        #expect(storage.string == text)
+        #expect(report.fallbackRuns == 0)
+        #expect(Corpus.roundTrip(markdown) == markdown)
+    }
+
+    @Test func linkLabelsSpanningLinesKeepInnerEmphasis() {
+        let markdown = "[a *b\nc*](http://x)"
+        let (storage, report) = LoaderFixture.load(markdown)
+        #expect(storage.string == "a b\u{2028}c")
+        #expect(report.fallbackRuns == 0)
+        #expect(storage.markdownInlineIntent(at: 2) == .emphasized)
+        #expect(storage.markdownInlineIntent(at: 4) == .emphasized)
+        #expect(storage.markdownLink(at: 4) == "http://x")
+        let reloaded = LoaderFixture.load(Corpus.write(storage)).storage
+        #expect(reloaded.string == storage.string)
+        #expect(LoaderFixture.intentRuns(reloaded).map(\.1) == LoaderFixture.intentRuns(storage).map(\.1))
     }
 
     @Test func marksAroundLinksApplyToTheLinkText() {

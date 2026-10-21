@@ -50,10 +50,12 @@ public struct EditorDocument: Hashable, Sendable {
     public struct ListBlock: Hashable, Sendable {
         public var kind: ListKind
         public var items: [ListItem]
+        public var separatesFromPrevious: Bool
 
-        public init(kind: ListKind, items: [ListItem]) {
+        public init(kind: ListKind, items: [ListItem], separatesFromPrevious: Bool = false) {
             self.kind = kind
             self.items = items
+            self.separatesFromPrevious = separatesFromPrevious
         }
     }
 
