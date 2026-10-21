@@ -217,6 +217,33 @@ struct CompletionPluginTests {
         #expect(committed == 0)
     }
 
+    @Test func caretLeavingTheQueryCancelsTheSession() {
+        let (editor, plugin) = makeEditor("hello world")
+        var committed: [CompletionSession] = []
+        plugin.onCommit = { _, session in committed.append(session) }
+        editor.typeEach(" @fr")
+        plugin.updateItemCount(3, controller: editor.controller)
+        editor.select(2)
+        editor.controller.selectionDidChange(NSRange(location: 2, length: 0))
+        #expect(plugin.session(controller: editor.controller) == nil)
+        #expect(!editor.key(PluginKeyName.enter))
+        #expect(committed.isEmpty)
+    }
+
+    @Test func caretInsideTheQueryKeepsTheSession() {
+        let (editor, plugin) = makeEditor("hello world")
+        editor.typeEach(" @fr")
+        editor.select(14)
+        editor.controller.selectionDidChange(NSRange(location: 14, length: 0))
+        #expect(plugin.session(controller: editor.controller)?.context.range == NSRange(location: 12, length: 3))
+        editor.select(13)
+        editor.controller.selectionDidChange(NSRange(location: 13, length: 0))
+        #expect(plugin.session(controller: editor.controller) != nil)
+        editor.select(12)
+        editor.controller.selectionDidChange(NSRange(location: 12, length: 0))
+        #expect(plugin.session(controller: editor.controller) == nil)
+    }
+
     @Test func commitWithReplaceTextIsUndoable() {
         let (editor, plugin) = makeEditor()
         plugin.onCommit = { controller, session in
@@ -285,6 +312,20 @@ struct CompletionPluginHostTests {
         harness.settle()
         #expect(plugin.session(controller: harness.controller) == nil)
         #expect(harness.string.hasPrefix("@fr\n"))
+    }
+
+    @Test func returnAfterMovingTheCaretInsertsANewline() {
+        let (harness, plugin) = makeHarness("hello\n\nworld")
+        var committed = 0
+        plugin.onCommit = { _, _ in committed += 1 }
+        harness.typeEach(" @fr")
+        plugin.updateItemCount(1, controller: harness.controller)
+        harness.select(2)
+        #expect(plugin.session(controller: harness.controller) == nil)
+        harness.step { harness.textView.keyDown(with: keyEvent(harness, keyCode: 36, characters: "\r")) }
+        harness.settle()
+        #expect(committed == 0)
+        #expect(harness.string.hasPrefix("he\nllo"))
     }
 
     @Test func newlineInsertTextCommits() {

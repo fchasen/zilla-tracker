@@ -104,6 +104,10 @@ extension MarkdownEditorController {
         return backward ? outdentList(paragraphs, actionName: "Outdent") : indentList(paragraphs, actionName: "Indent")
     }
 
+    var canExitCodeBlock: Bool {
+        canApplyKeyRules && paragraphInfo(at: currentSelection.location).block.isCode
+    }
+
     func exitCodeBlock() -> Bool {
         guard canApplyKeyRules else { return false }
         let caret = currentSelection.location

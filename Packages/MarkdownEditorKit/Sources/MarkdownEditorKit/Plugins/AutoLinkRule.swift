@@ -60,14 +60,14 @@ public struct AutoLinkRule {
 
     public static let url = AutoLinkRule(
         id: "markdowneditorkit.url",
-        pattern: #"(https?://[^\s<>"'\[\]]+[^\s<>"'\[\]\.,!?;:\)])(?=[\s\.,!?;:\)\]]|$)"#,
+        pattern: #"(https?://(?:\([^\s<>"'\[\]()]*\)|[^\s<>"'\[\]()]|\((?![^\s<>"'\[\]()]*\)))*(?:\([^\s<>"'\[\]()]*\)|[^\s<>"'\[\]()\.,!?;:*]))(?=[\s\.,!?;:\)\]"'*]|$)"#,
         linkCapture: 1,
         href: { $0.linkText }
     )
 
     public static let email = AutoLinkRule(
         id: "markdowneditorkit.email",
-        pattern: #"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?=[\s\.,!?;:\)\]]|$)"#,
+        pattern: #"(?<![A-Za-z0-9._%+-])([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?=[\s\.,!?;:\)\]]|$)"#,
         linkCapture: 1,
         href: { match in "mailto:\(match.linkText)" }
     )

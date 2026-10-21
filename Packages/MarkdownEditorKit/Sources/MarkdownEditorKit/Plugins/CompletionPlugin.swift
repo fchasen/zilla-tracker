@@ -60,6 +60,10 @@ public final class CompletionPlugin: EditorPlugin {
     public func attach(to controller: MarkdownEditorController) {
         guard !controller.plugins.contains(where: { $0 === self }) else { return }
         controller.register(plugin: self)
+        controller.addOnSelectionChanged { [weak self, weak controller] selection in
+            guard let self, let controller else { return }
+            self.selectionDidChange(selection, controller: controller)
+        }
     }
 
     public var props: PluginProps {
@@ -118,6 +122,15 @@ public final class CompletionPlugin: EditorPlugin {
     public func refresh(controller: MarkdownEditorController) {
         guard !isCommitting, let session = currentSession(controller) else { return }
         deriveSession(from: session, controller: controller)
+    }
+
+    private func selectionDidChange(_ selection: NSRange, controller: MarkdownEditorController) {
+        guard !isCommitting, !isComposing(controller), !controller.hasPendingDocumentChange,
+              let session = currentSession(controller) else { return }
+        let range = session.context.range
+        if selection.location < range.location + 1 || NSMaxRange(selection) > NSMaxRange(range) {
+            cancel(controller: controller)
+        }
     }
 
     private func isComposing(_ controller: MarkdownEditorController) -> Bool {

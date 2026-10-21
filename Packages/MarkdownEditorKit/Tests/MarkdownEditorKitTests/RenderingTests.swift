@@ -118,6 +118,18 @@ struct RenderingTests {
         #expect(editor.marker(paragraph: 4) == .ordinal(9))
     }
 
+    @Test(arguments: [
+        ("> 3. a\n\n> 7. b", [ListMarker.Kind.ordinal(3), .ordinal(7)]),
+        ("> 1. a\n\n1. b", [.ordinal(1), .ordinal(1)]),
+        ("1. a\n\n> 1. b", [.ordinal(1), .ordinal(1)]),
+        ("- x\n  1. a\n\n> 5. b", [.bullet("•"), .ordinal(1), .ordinal(5)]),
+        ("> 1. a\n> 2. b", [.ordinal(1), .ordinal(2)]),
+    ])
+    func orderedNumberingRestartsAtQuoteBoundaries(markdown: String, expected: [ListMarker.Kind]) {
+        let editor = Rendered(markdown)
+        #expect(editor.paragraphStarts.indices.compactMap { editor.marker(paragraph: $0) } == expected)
+    }
+
     @Test func continuationAlignsWithItemContent() throws {
         let editor = Rendered("1. first\n\n   continued\n2. second")
         let item = try #require(editor.contentX(paragraph: 0))
@@ -150,6 +162,37 @@ struct RenderingTests {
         #expect(box.minX >= contentX - MarkdownTaskGutter.width)
     }
 
+    @Test func rightToLeftParagraphsResolveTheirWritingDirection() {
+        let editor = Rendered("1. שלום עולם\n2. second\n3. 42 שלום\n4. abc שלום\n\n```\nשלום\n```")
+        let storage = editor.controller.textStorage
+        let directions = editor.paragraphStarts.map {
+            (storage.attribute(.paragraphStyle, at: $0, effectiveRange: nil) as? NSParagraphStyle)?.baseWritingDirection
+        }
+        #expect(directions == [.rightToLeft, .natural, .rightToLeft, .natural, .natural])
+    }
+
+    @Test func rightToLeftMarkersSitOnTheRightOfTheText() throws {
+        let editor = Rendered("1. שלום עולם זה טקסט\n- [ ] שלום עולם\n- שלום \n\n> - שלום")
+        for index in 0..<4 {
+            let fragment = try #require(editor.fragment(paragraph: index) as? MarkdownLayoutFragment)
+            let line = try #require(fragment.textLineFragments.first)
+            let box = try #require(fragment.markerRect)
+            #expect(box.minX >= line.typographicBounds.maxX, "paragraph \(index)")
+            #expect(box.maxX <= line.typographicBounds.maxX + Restyler.listIndent, "paragraph \(index)")
+            #expect(fragment.layoutFragmentFrame.minX + box.maxX <= 480, "paragraph \(index)")
+        }
+    }
+
+    @Test func rightToLeftQuoteBarsSitOnTheRightOfTheText() throws {
+        let editor = Rendered("> שלום עולם")
+        let fragment = try #require(editor.fragment(paragraph: 0) as? MarkdownLayoutFragment)
+        let line = try #require(fragment.textLineFragments.first)
+        let bars = fragment.quoteBarRects(fragment.decorations)
+        #expect(bars.count == 1)
+        #expect(bars.allSatisfy { $0.minX >= line.typographicBounds.maxX })
+        #expect(bars.allSatisfy { fragment.layoutFragmentFrame.minX + $0.maxX <= 480 })
+    }
+
     @Test func togglingTaskRefreshesItsMarker() {
         let editor = Rendered("- [ ] open")
         #expect(editor.marker(paragraph: 0) == .task(.unchecked))
@@ -172,6 +215,43 @@ struct RenderingTests {
         #expect(storage.string == "a\nnew\nb\nc")
         let numbers = editor.paragraphStarts.indices.compactMap { editor.marker(paragraph: $0) }
         #expect(numbers == [.ordinal(1), .ordinal(2), .ordinal(3), .ordinal(4)])
+    }
+
+    @Test func markersFollowCommandsThatChangeListStructure() {
+        let editor = Rendered("1. a\n2. b\n3. c\n4. d")
+        _ = editor.fragments()
+        let markers = { editor.paragraphStarts.indices.map { editor.marker(paragraph: $0) } }
+        editor.controller.setSelection(NSRange(location: 2, length: 0))
+        editor.controller.perform(.blockquote)
+        #expect(editor.controller.markdown() == "1. a\n\n> 1. b\n\n1. c\n2. d")
+        #expect(markers() == [.ordinal(1), .ordinal(1), .ordinal(1), .ordinal(2)])
+        editor.controller.undoManager.undo()
+        #expect(markers() == [.ordinal(1), .ordinal(2), .ordinal(3), .ordinal(4)])
+        editor.controller.setSelection(NSRange(location: 0, length: 0))
+        editor.controller.perform(.orderedList)
+        #expect(markers() == [nil, .ordinal(1), .ordinal(2), .ordinal(3)])
+    }
+
+    @Test func numberingALongListIsLinear() {
+        let markdown = (1...2000).map { "\($0). item \($0)" }.joined(separator: "\n")
+        let editor = Rendered(markdown)
+        let clock = ContinuousClock()
+        var fragments: [MarkdownLayoutFragment] = []
+        let layout = clock.measure {
+            editor.controller.textLayoutManager.ensureLayout(for: editor.controller.textContentStorage.documentRange)
+            fragments = editor.fragments().values.compactMap { $0 as? MarkdownLayoutFragment }
+        }
+        #expect(fragments.count == 2000)
+        #expect(layout < .milliseconds(600), "layout took \(layout)")
+        let starts = editor.paragraphStarts
+        var last: ListMarker.Kind?
+        let access = clock.measure {
+            for _ in 0..<5 {
+                for start in starts { last = FragmentDecorations.make(paragraphAt: start, controller: editor.controller).marker?.kind }
+            }
+        }
+        #expect(last == .ordinal(2000))
+        #expect(access < .milliseconds(300), "decorations took \(access)")
     }
 
     @Test func markersAndBarsDrawInk() throws {

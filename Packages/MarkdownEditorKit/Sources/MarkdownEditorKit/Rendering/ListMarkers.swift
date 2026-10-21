@@ -28,35 +28,62 @@ public struct ListMarker: Equatable {
 }
 
 enum ListNumbering {
-    static func itemNumber(at paragraphStart: Int, in storage: NSAttributedString) -> Int? {
-        let lists = Normalizer.effectiveTextLists(in: storage, at: paragraphStart)
-        guard let list = lists.last, list.hasOrderedMarker else { return nil }
-        let depth = lists.count
-        var count = 0
-        var start = list.startingItemNumber
-        var location = paragraphStart
-        let ns = storage.string as NSString
-        while location > 0 {
-            let previous = ns.paragraphRange(for: NSRange(location: location - 1, length: 0))
-            let previousLists = Normalizer.effectiveTextLists(in: storage, at: previous.location)
-            guard previousLists.count >= depth, previousLists[depth - 1].hasOrderedMarker else { break }
-            if previousLists.count == depth, storage.markdownBlock(at: previous.location)?.isContinuation != true {
-                count += 1
-                start = previousLists[depth - 1].startingItemNumber
-            }
-            location = previous.location
+    static func ordinals(in storage: NSAttributedString) -> [Int: Int] {
+        struct Run {
+            var containers: ArraySlice<MarkdownBlock.Container>
+            var start: Int?
+            var count = 0
         }
-        return start + count
+        var result: [Int: Int] = [:]
+        var runs: [Run?] = []
+        let ns = storage.string as NSString
+        var location = 0
+        while location < ns.length {
+            let paragraph = ns.paragraphRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(paragraph)
+            let lists = Normalizer.effectiveTextLists(in: storage, at: paragraph.location)
+            let block = storage.markdownBlock(at: paragraph.location)
+            if runs.count > lists.count { runs.removeSubrange(lists.count...) }
+            for depth in lists.indices {
+                guard lists[depth].hasOrderedMarker else {
+                    if depth < runs.count { runs[depth] = nil } else { runs.append(nil) }
+                    continue
+                }
+                let containers = containerPrefix(of: block, throughListDepth: depth + 1)
+                if depth < runs.count {
+                    if runs[depth]?.containers != containers { runs[depth] = Run(containers: containers) }
+                } else {
+                    runs.append(Run(containers: containers))
+                }
+            }
+            guard let list = lists.last, list.hasOrderedMarker, block?.isContinuation != true,
+                  var run = runs[lists.count - 1] else { continue }
+            result[paragraph.location] = (run.start ?? list.startingItemNumber) + run.count
+            if run.start == nil { run.start = list.startingItemNumber }
+            run.count += 1
+            runs[lists.count - 1] = run
+        }
+        return result
     }
 
-    static func markerKind(at paragraphStart: Int, in storage: NSAttributedString) -> ListMarker.Kind? {
+    static func containerPrefix(of block: MarkdownBlock?, throughListDepth depth: Int) -> ArraySlice<MarkdownBlock.Container> {
+        guard let containers = block?.containers else { return [] }
+        var remaining = depth
+        for (index, container) in containers.enumerated() where container == .listItem {
+            remaining -= 1
+            if remaining == 0 { return containers[...index] }
+        }
+        return containers[...]
+    }
+
+    static func markerKind(at paragraphStart: Int, in storage: NSAttributedString, ordinal: (Int) -> Int?) -> ListMarker.Kind? {
         guard paragraphStart >= 0, paragraphStart < storage.length,
               let block = storage.markdownBlock(at: paragraphStart),
               !block.isContinuation else { return nil }
         let lists = Normalizer.effectiveTextLists(in: storage, at: paragraphStart)
         guard let list = lists.last else { return nil }
         if let task = block.task { return .task(task) }
-        if list.hasOrderedMarker, let number = itemNumber(at: paragraphStart, in: storage) {
+        if list.hasOrderedMarker, let number = ordinal(paragraphStart) {
             return .ordinal(number)
         }
         return .bullet(bulletGlyph(for: list, depth: lists.count))
@@ -97,12 +124,27 @@ enum ListNumbering {
     }
 }
 
+final class DecorationCache {
+    private(set) var generation = 0
+    private var ordinals: [Int: Int]?
+
+    func invalidate() {
+        generation &+= 1
+        ordinals = nil
+    }
+
+    func ordinal(at paragraphStart: Int, in storage: NSAttributedString) -> Int? {
+        if ordinals == nil { ordinals = ListNumbering.ordinals(in: storage) }
+        return ordinals?[paragraphStart]
+    }
+}
+
 enum ListMarkerRenderer {
     static let gap: CGFloat = 6
     static let bulletCenterInset: CGFloat = 16
     static let taskBoxScale: CGFloat = 0.95
 
-    static func draw(_ marker: ListMarker, anchorX: CGFloat, baseline: CGFloat, in context: CGContext) {
+    static func draw(_ marker: ListMarker, anchorX: CGFloat, baseline: CGFloat, isRightToLeft: Bool, in context: CGContext) {
         switch marker.kind {
         case .bullet, .ordinal:
             guard let text = marker.text else { return }
@@ -114,9 +156,9 @@ enum ListMarkerRenderer {
             let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let x: CGFloat
             if case .bullet = marker.kind {
-                x = anchorX - bulletCenterInset - width / 2
+                x = anchorX + (isRightToLeft ? bulletCenterInset : -bulletCenterInset) - width / 2
             } else {
-                x = anchorX - gap - width
+                x = isRightToLeft ? anchorX + gap : anchorX - gap - width
             }
             context.saveGState()
             context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
@@ -124,7 +166,7 @@ enum ListMarkerRenderer {
             CTLineDraw(line, context)
             context.restoreGState()
         case .task(let state):
-            let rect = taskBoxRect(font: marker.font, anchorX: anchorX, baseline: baseline)
+            let rect = taskBoxRect(font: marker.font, anchorX: anchorX, baseline: baseline, isRightToLeft: isRightToLeft)
             context.saveGState()
             #if canImport(AppKit) && os(macOS)
             NSGraphicsContext.saveGraphicsState()
@@ -140,13 +182,31 @@ enum ListMarkerRenderer {
         }
     }
 
-    static func taskBoxRect(font: PlatformFont, anchorX: CGFloat, baseline: CGFloat) -> CGRect {
+    static func taskBoxRect(font: PlatformFont, anchorX: CGFloat, baseline: CGFloat, isRightToLeft: Bool) -> CGRect {
         let side = max(10, (font.ascender - font.descender) * taskBoxScale)
         let centerY = baseline - font.capHeight / 2
-        return CGRect(x: anchorX - gap - side, y: centerY - side / 2, width: side, height: side)
+        let x = isRightToLeft ? anchorX + gap : anchorX - gap - side
+        return CGRect(x: x, y: centerY - side / 2, width: side, height: side)
     }
 }
 
 enum MarkdownTaskGutter {
     static let width: CGFloat = 28
+
+    static func hitRect(caret: CGRect, isRightToLeft: Bool) -> CGRect {
+        CGRect(
+            x: isRightToLeft ? caret.maxX : caret.minX - width,
+            y: caret.minY,
+            width: width,
+            height: max(caret.height, 1)
+        )
+    }
+}
+
+extension NSAttributedString {
+    func isRightToLeftParagraph(at index: Int) -> Bool {
+        guard index >= 0, index < length,
+              let style = attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle else { return false }
+        return style.baseWritingDirection == .rightToLeft
+    }
 }

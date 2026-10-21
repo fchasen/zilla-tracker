@@ -95,13 +95,9 @@ public struct MarkdownTextViewMac: NSViewRepresentable {
             if mtv.minimumIntrinsicHeight != minHeight {
                 mtv.minimumIntrinsicHeight = minHeight
             }
-            mtv.updateCodeBlockBgLayerFill()
             mtv.onSubmit = onSubmit
         }
-        let inset = controller.theme.textContainerInset
-        if textView.textContainerInset != inset {
-            textView.textContainerInset = inset
-        }
+        controller.applyThemeToHost()
         if textView.isEditable != isEditable {
             textView.isEditable = isEditable
         }
@@ -488,8 +484,29 @@ final class MarkdownNSTextView: NSTextView {
         let info = controller.paragraphInfo(at: charIndex)
         guard !info.isTrailingEmpty, info.block.isListItemStart, info.block.task != nil,
               let rect = controller.rect(forCharacterAt: info.content.location) else { return nil }
-        let gutter = NSRect(x: rect.minX - MarkdownTaskGutter.width, y: rect.minY, width: MarkdownTaskGutter.width, height: max(rect.height, 1))
+        let gutter = MarkdownTaskGutter.hitRect(
+            caret: rect,
+            isRightToLeft: controller.textStorage.isRightToLeftParagraph(at: info.content.location)
+        )
         return gutter.contains(point) ? info.content.location : nil
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown,
+           Self.isCommandReturn(event),
+           window?.firstResponder === self,
+           !hasMarkedText(),
+           markdownController?.canExitCodeBlock == true,
+           markdownController?.exitCodeBlock() == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private static func isCommandReturn(_ event: NSEvent) -> Bool {
+        event.modifierFlags.contains(.command)
+            && !event.modifierFlags.contains(.control)
+            && (event.keyCode == 36 || event.keyCode == 76)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -501,9 +518,7 @@ final class MarkdownNSTextView: NSTextView {
                 if plugin.props.handleKeyDown?(controller, key) == true { return }
             }
         }
-        if event.modifierFlags.contains(.command),
-           !event.modifierFlags.contains(.control),
-           event.keyCode == 36 || event.keyCode == 76,
+        if Self.isCommandReturn(event),
            !hasMarkedText(),
            markdownController?.exitCodeBlock() == true {
             return
@@ -579,7 +594,7 @@ final class MarkdownNSTextView: NSTextView {
         scheduleCodeBlockBgUpdate()
     }
 
-    private let codeBlockBgLayer: CAShapeLayer = {
+    let codeBlockBgLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.actions = ["path": NSNull(), "frame": NSNull(), "bounds": NSNull(), "position": NSNull()]
         layer.zPosition = -1
@@ -594,7 +609,7 @@ final class MarkdownNSTextView: NSTextView {
         wantsLayer = true
         guard let layer else { return }
         let fill = markdownController?.theme.codeBlock.fillColor ?? .codeBlockDefaultFill
-        codeBlockBgLayer.fillColor = fill.cgColor
+        codeBlockBgLayer.fillColor = resolvedFillCGColor(fill)
         codeBlockBgLayer.frame = layer.bounds
         layer.insertSublayer(codeBlockBgLayer, at: 0)
         codeBlockBgLayerInstalled = true
@@ -602,7 +617,18 @@ final class MarkdownNSTextView: NSTextView {
 
     func updateCodeBlockBgLayerFill() {
         guard let controller = markdownController else { return }
-        codeBlockBgLayer.fillColor = controller.theme.codeBlock.fillColor.cgColor
+        codeBlockBgLayer.fillColor = resolvedFillCGColor(controller.theme.codeBlock.fillColor)
+    }
+
+    private func resolvedFillCGColor(_ color: NSColor) -> CGColor {
+        var resolved = color.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { resolved = color.cgColor }
+        return resolved
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateCodeBlockBgLayerFill()
     }
 
     func scheduleCodeBlockBgUpdate() {

@@ -73,16 +73,8 @@ public struct MarkdownTextViewIOS: UIViewRepresentable {
 
     public func updateUIView(_ uiView: UITextView, context: Context) {
         context.coordinator.parent = self
-        let themeInset = controller.theme.textContainerInset
-        let desired = UIEdgeInsets(
-            top: themeInset.height, left: themeInset.width,
-            bottom: themeInset.height, right: themeInset.width
-        )
-        if uiView.textContainerInset != desired {
-            uiView.textContainerInset = desired
-        }
+        controller.applyThemeToHost()
         if let markdownView = uiView as? MarkdownUITextView {
-            markdownView.updateCodeBlockBgLayerFill()
             markdownView.onSubmit = onSubmit
         }
         if uiView.isEditable != isEditable {
@@ -93,15 +85,16 @@ public struct MarkdownTextViewIOS: UIViewRepresentable {
         controller.applyExternalText(text)
     }
 
-    fileprivate func applySpellChecking(_ mode: MarkdownSpellChecking, to textView: UITextView) {
+    @discardableResult
+    fileprivate func applySpellChecking(_ mode: MarkdownSpellChecking, to textView: UITextView) -> Bool {
         let spelling: UITextSpellCheckingType = mode.spellingEnabled ? .yes : .no
         if textView.spellCheckingType != spelling {
             textView.spellCheckingType = spelling
         }
         let autocorrect: UITextAutocorrectionType = mode.autocorrectEnabled ? .yes : .no
-        if textView.autocorrectionType != autocorrect {
-            textView.autocorrectionType = autocorrect
-        }
+        guard textView.autocorrectionType != autocorrect else { return false }
+        textView.autocorrectionType = autocorrect
+        return true
     }
 
     public func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
@@ -145,9 +138,12 @@ public struct MarkdownTextViewIOS: UIViewRepresentable {
             refreshSpellCheckingForCaret(textView)
         }
 
-        func refreshSpellCheckingForCaret(_ textView: UITextView) {
+        @discardableResult
+        func refreshSpellCheckingForCaret(_ textView: UITextView) -> Bool {
             let inCode = parent.controller.isLocationInCode(textView.selectedRange.location)
-            parent.applySpellChecking(inCode ? .off : parent.spellChecking, to: textView)
+            guard parent.applySpellChecking(inCode ? .off : parent.spellChecking, to: textView) else { return false }
+            if textView.isFirstResponder { textView.reloadInputViews() }
+            return true
         }
 
         public func textView(
@@ -239,7 +235,6 @@ public struct MarkdownTextViewIOS: UIViewRepresentable {
 
 final class MarkdownUITextView: UITextView {
     static let markdownType = MarkdownEditorController.markdownPasteboardType
-    static let taskGutterWidth: CGFloat = MarkdownTaskGutter.width
 
     weak var markdownController: MarkdownEditorController? {
         didSet {
@@ -436,11 +431,9 @@ final class MarkdownUITextView: UITextView {
         let info = controller.paragraphInfo(at: charIndex)
         guard !info.isTrailingEmpty, info.block.isListItemStart, info.block.task != nil,
               let rect = controller.rect(forCharacterAt: info.content.location) else { return nil }
-        let gutter = CGRect(
-            x: rect.minX - Self.taskGutterWidth,
-            y: rect.minY,
-            width: Self.taskGutterWidth,
-            height: max(rect.height, 1)
+        let gutter = MarkdownTaskGutter.hitRect(
+            caret: rect,
+            isRightToLeft: controller.textStorage.isRightToLeftParagraph(at: info.content.location)
         )
         return gutter.contains(point) ? info.content.location : nil
     }
@@ -597,6 +590,9 @@ final class MarkdownUITextView: UITextView {
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if Self.refusedActions.contains(action) { return false }
+        if action == #selector(handleCommandReturn(_:)) {
+            return isEditable && markedTextRange == nil && markdownController?.canExitCodeBlock == true
+        }
         if let controller = markdownController {
             switch action {
             case #selector(UIResponderStandardEditActions.toggleBoldface(_:)):
@@ -747,7 +743,7 @@ final class MarkdownUITextView: UITextView {
         _ = markdownController?.exitCodeBlock()
     }
 
-    private let codeBlockBgLayer: CAShapeLayer = {
+    let codeBlockBgLayer: CAShapeLayer = {
         let layer = CAShapeLayer()
         layer.actions = ["path": NSNull(), "frame": NSNull(), "bounds": NSNull(), "position": NSNull()]
         layer.zPosition = -1

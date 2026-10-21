@@ -43,7 +43,8 @@ struct Restyler {
             for: block,
             textLists: existing?.textLists ?? [],
             isFirstCodeLine: isFirstCodeLine,
-            isLastCodeLine: isLastCodeLine
+            isLastCodeLine: isLastCodeLine,
+            isRightToLeft: !block.isCode && Self.startsRightToLeft(storage.string as NSString, in: paragraph)
         )
         var styleRange = NSRange()
         let current = storage.attribute(.paragraphStyle, at: paragraph.location, longestEffectiveRange: &styleRange, in: paragraph)
@@ -131,6 +132,18 @@ struct Restyler {
         return theme.foregroundColor
     }
 
+    static func startsRightToLeft(_ string: NSString, in range: NSRange) -> Bool {
+        for scalar in string.substring(with: range).unicodeScalars {
+            switch scalar.value {
+            case 0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFF, 0x10800...0x10FFF, 0x1E800...0x1EFFF:
+                return true
+            default:
+                if scalar.properties.isAlphabetic { return false }
+            }
+        }
+        return false
+    }
+
     static func indent(for block: MarkdownBlock) -> CGFloat {
         var indent: CGFloat = 0
         for container in block.containers {
@@ -147,10 +160,12 @@ struct Restyler {
         for block: MarkdownBlock,
         textLists: [NSTextList],
         isFirstCodeLine: Bool = false,
-        isLastCodeLine: Bool = false
+        isLastCodeLine: Bool = false,
+        isRightToLeft: Bool = false
     ) -> NSParagraphStyle {
         let style = (theme.defaultParagraphStyle().mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
         style.lineBreakMode = .byWordWrapping
+        if isRightToLeft { style.baseWritingDirection = .rightToLeft }
         style.textLists = textLists
         let indent = Self.indent(for: block)
         style.firstLineHeadIndent = indent

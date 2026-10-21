@@ -72,6 +72,55 @@ struct RenderingHostTests {
         #expect(harness.textView.taskGutterIndex(at: NSPoint(x: rect.minX + 5, y: rect.midY), charIndex: 0) == nil)
     }
 
+    @Test func rightToLeftGutterSitsRightOfTheContent() throws {
+        let harness = EditorHarness(markdown: "- [ ] שלום עולם")
+        harness.spin()
+        let rect = try #require(harness.controller.rect(forCharacterAt: 0))
+        #expect(harness.textView.taskGutterIndex(at: NSPoint(x: rect.maxX + 10, y: rect.midY), charIndex: 0) == 0)
+        #expect(harness.textView.taskGutterIndex(at: NSPoint(x: rect.minX - 10, y: rect.midY), charIndex: 0) == nil)
+        let fragment = try #require(fragment(harness, at: 0))
+        let box = try #require(fragment.markerRect)
+        let origin = harness.textView.textContainerOrigin
+        click(harness, at: NSPoint(
+            x: origin.x + fragment.layoutFragmentFrame.minX + box.midX,
+            y: origin.y + fragment.layoutFragmentFrame.minY + box.midY
+        ))
+        #expect(harness.controller.markdown() == "- [x] שלום עולם")
+    }
+
+    @Test func codeBlockFillFollowsTheEffectiveAppearance() throws {
+        let harness = EditorHarness(markdown: "```\ncode\n```")
+        harness.textView.appearance = NSAppearance(named: .aqua)
+        var theme = MarkdownEditorTheme.default
+        theme.codeBlock.fillColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+        }
+        harness.controller.theme = theme
+        harness.textView.updateCodeBlockBgLayerFill()
+        harness.spin()
+        let white = NSColor.white.usingColorSpace(.sRGB)?.cgColor
+        let black = NSColor.black.usingColorSpace(.sRGB)?.cgColor
+        func fill() -> CGColor? { harness.textView.codeBlockBgLayer.fillColor.flatMap { $0.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil) } }
+        #expect(fill() == black)
+        harness.textView.appearance = NSAppearance(named: .darkAqua)
+        harness.spin()
+        #expect(fill() == white)
+        harness.textView.appearance = NSAppearance(named: .aqua)
+        harness.spin()
+        #expect(fill() == black)
+    }
+
+    @Test func themeChangeUpdatesTheHostInsetAndCodeFill() {
+        let harness = EditorHarness(markdown: "```\ncode\n```")
+        harness.spin()
+        var theme = MarkdownEditorTheme.default
+        theme.textContainerInset = CGSize(width: 21, height: 13)
+        theme.codeBlock.fillColor = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        harness.controller.theme = theme
+        #expect(harness.textView.textContainerInset == NSSize(width: 21, height: 13))
+        #expect(harness.textView.codeBlockBgLayer.fillColor == NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1).cgColor)
+    }
+
     @Test func nativeReturnNumbersTheNewItem() {
         let harness = EditorHarness(markdown: "1. one\n2. two")
         harness.select(3)

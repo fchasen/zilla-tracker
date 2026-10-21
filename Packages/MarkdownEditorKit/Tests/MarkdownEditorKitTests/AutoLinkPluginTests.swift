@@ -64,6 +64,45 @@ struct AutoLinkPluginTests {
         #expect(editor.linkRange(at: 0) == NSRange(location: 0, length: 4))
     }
 
+    @Test(arguments: [
+        ("q https://example.com/s?q=1 now", 2, "https://example.com/s?q=1"),
+        ("go http://localhost:8080/x now", 3, "http://localhost:8080/x"),
+        ("mail fred@mail.example.com now", 5, "mailto:fred@mail.example.com"),
+        ("see https://example.com/a.b/c now", 4, "https://example.com/a.b/c"),
+    ])
+    func typingCharacterByCharacterLinksTheWholeRun(text: String, start: Int, href: String) {
+        let editor = makeEditor()
+        editor.typeEach(text)
+        editor.settle()
+        #expect(editor.link(at: start) == href)
+        let length = href.hasPrefix("mailto:") ? href.utf16.count - 7 : href.utf16.count
+        #expect(editor.linkRange(at: start) == NSRange(location: start, length: length))
+    }
+
+    @Test(arguments: [
+        ("see https://en.wikipedia.org/wiki/Foo_(bar) ok", ["https://en.wikipedia.org/wiki/Foo_(bar)"]),
+        ("(see https://en.wikipedia.org/wiki/Foo_(bar))", ["https://en.wikipedia.org/wiki/Foo_(bar)"]),
+        ("(https://example.com)", ["https://example.com"]),
+        ("\"https://example.com\" ok", ["https://example.com"]),
+        ("'https://example.com' ok", ["https://example.com"]),
+        ("https://example.com/'x' ok", ["https://example.com/"]),
+        ("**https://example.com**", ["https://example.com"]),
+        ("https://example.com/a.", ["https://example.com/a"]),
+        ("https://x.example/a(b c", ["https://x.example/a(b"]),
+    ])
+    func urlRuleTrimsQuotesAndUnbalancedParentheses(text: String, expected: [String]) {
+        let ns = text as NSString
+        let matches = AutoLinkRule.url.pattern.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        #expect(matches.map { ns.substring(with: $0.range(at: 1)) } == expected)
+    }
+
+    @Test func typingAURLWithBalancedParenthesesLinksTheWholeURL() {
+        let editor = makeEditor()
+        editor.typeEach("see https://en.wikipedia.org/wiki/Foo_(bar) ")
+        editor.settle()
+        #expect(editor.link(at: 4) == "https://en.wikipedia.org/wiki/Foo_(bar)")
+    }
+
     @Test func captureRulesLinkOnlyTheLinkCapture() {
         let editor = makeEditor(rules: PluginFixtures.referenceRules)
         editor.typeEach("see bug 42, ok")
@@ -159,6 +198,43 @@ struct AutoLinkPluginTests {
         #expect(editor.link(at: 2) == nil)
         #expect(editor.link(at: 25) == nil)
         #expect(editor.string == "https://a.example and https://b.example")
+    }
+
+    @Test func emailPatternStaysLinearOnLongLocalPartRuns() {
+        let line = String(repeating: "a", count: 20_000)
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            _ = AutoLinkRule.email.pattern.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length))
+        }
+        #expect(elapsed < .milliseconds(200), "took \(elapsed)")
+    }
+
+    @Test func emailPatternStillMatchesAfterPunctuation() {
+        let line = "(fred.x+y@example.org) and -a@b.co"
+        let matches = AutoLinkRule.email.pattern.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length))
+        #expect(matches.map { (line as NSString).substring(with: $0.range(at: 1)) } == ["fred.x+y@example.org", "-a@b.co"])
+    }
+
+    @Test func keystrokeInALongParagraphScansOnlyNearTheEdit() throws {
+        let words = Array(repeating: "word", count: 40_000).joined(separator: " ")
+        let editor = makeEditor(words)
+        let plugin = try #require(editor.controller.plugins.first as? AutoLinkPlugin)
+        let end = editor.controller.textStorage.length
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            for _ in 0..<50 {
+                _ = plugin.matches(around: NSRange(location: end - 1, length: 1), origin: .user, controller: editor.controller)
+            }
+        }
+        #expect(elapsed < .milliseconds(100), "took \(elapsed)")
+    }
+
+    @Test func multiWordRuleStillLinksWhenTheEditIsOnTheLastWord() {
+        let editor = makeEditor("see bug    42", rules: PluginFixtures.referenceRules)
+        editor.select(editor.controller.textStorage.length)
+        editor.type(" ")
+        editor.settle()
+        #expect(editor.link(at: 4) == "https://bugzilla.mozilla.org/show_bug.cgi?id=42")
     }
 
     @Test func notEditableDoesNothing() {

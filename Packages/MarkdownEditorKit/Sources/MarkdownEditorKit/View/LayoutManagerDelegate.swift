@@ -76,6 +76,7 @@ struct FragmentDecorations {
     var barColor: PlatformColor = .blockquoteDefaultBar
     var leadingIndent: CGFloat = 0
     var markerIndent: CGFloat = 0
+    var isRightToLeft = false
 
     var isDecorated: Bool { marker != nil || !quoteBars.isEmpty }
 
@@ -90,13 +91,16 @@ struct FragmentDecorations {
         let font = block.headingLevel.map { controller.theme.headingFont(level: $0) } ?? controller.theme.bodyFont
         let color = controller.restyler.color(for: block.with(leaf: .paragraph), isLink: false)
         return FragmentDecorations(
-            marker: ListNumbering.markerKind(at: paragraph.location, in: storage).map {
+            marker: ListNumbering.markerKind(at: paragraph.location, in: storage, ordinal: {
+                controller.decorationCache.ordinal(at: $0, in: storage)
+            }).map {
                 ListMarker(kind: $0, font: font, color: color)
             },
             quoteBars: quoteBars(for: block, previous: previous, next: next),
             barColor: controller.theme.blockquote.barColor,
             leadingIndent: Restyler.indent(for: block),
-            markerIndent: ListNumbering.listContentIndent(for: block)
+            markerIndent: ListNumbering.listContentIndent(for: block),
+            isRightToLeft: storage.isRightToLeftParagraph(at: paragraph.location)
         )
     }
 

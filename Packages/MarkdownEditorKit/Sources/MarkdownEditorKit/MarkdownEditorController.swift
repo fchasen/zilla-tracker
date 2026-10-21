@@ -19,9 +19,11 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     public var theme: MarkdownEditorTheme {
         didSet {
             guard theme != oldValue else { return }
+            decorationCache.invalidate()
             restyler.theme = theme
             withoutBinding { restyler.restyleAll(textStorage) }
             textLayoutManager.invalidateLayout(for: textContentStorage.documentRange)
+            applyThemeToHost()
             requestHostRedisplay()
         }
     }
@@ -70,9 +72,12 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     private var typedEdit: (range: NSRange, isParagraphLocal: Bool)?
     private var flushScheduled = false
     private let layoutDelegate = LayoutManagerDelegate()
+    let decorationCache = DecorationCache()
     private var pluginStates: [AnyPluginKey: Any] = [:]
     private var documentObservers: [(UUID, (DocumentChange) -> Void)] = []
     private var selectionObservers: [(UUID, (NSRange) -> Void)] = []
+    private var queuedChanges: [DocumentChange] = []
+    private var isFanningOut = false
     var headlessSelection = NSRange(location: 0, length: 0)
 
     public init(
@@ -107,7 +112,17 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         layoutDelegate.controller = self
         textLayoutManager.delegate = layoutDelegate
         textStorage.delegate = self
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(invalidateDecorationCache(_:)),
+            name: NSTextStorage.didProcessEditingNotification,
+            object: textStorage
+        )
         setMarkdown(markdown)
+    }
+
+    @objc private func invalidateDecorationCache(_ notification: Notification) {
+        decorationCache.invalidate()
     }
 
     public func markdown() -> String {
@@ -451,8 +466,15 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     }
 
     func fanoutDocumentChange(_ change: DocumentChange) {
-        for plugin in plugins { plugin.documentDidChange(change, controller: self) }
-        for (_, handler) in documentObservers { handler(change) }
+        queuedChanges.append(change)
+        guard !isFanningOut else { return }
+        isFanningOut = true
+        defer { isFanningOut = false }
+        while !queuedChanges.isEmpty {
+            let next = queuedChanges.removeFirst()
+            for plugin in plugins { plugin.documentDidChange(next, controller: self) }
+            for (_, handler) in documentObservers { handler(next) }
+        }
     }
 
     func selectionDidChange(_ range: NSRange) {
@@ -620,6 +642,8 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         }
     }
 
+    var hasPendingDocumentChange: Bool { pendingChange != nil }
+
     func flushDocumentChanges() {
         refreshInlineContentIfNeeded()
         guard let change = pendingChange else { return }
@@ -653,6 +677,23 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
               let range = NSTextRange(location: from, end: to) else { return }
         textLayoutManager.invalidateLayout(for: range)
         requestHostRedisplay()
+    }
+
+    func applyThemeToHost() {
+        guard let hostTextView else { return }
+        let inset = theme.textContainerInset
+        #if canImport(AppKit) && os(macOS)
+        if hostTextView.textContainerInset != inset {
+            hostTextView.textContainerInset = inset
+        }
+        (hostTextView as? MarkdownNSTextView)?.updateCodeBlockBgLayerFill()
+        #elseif canImport(UIKit)
+        let insets = UIEdgeInsets(top: inset.height, left: inset.width, bottom: inset.height, right: inset.width)
+        if hostTextView.textContainerInset != insets {
+            hostTextView.textContainerInset = insets
+        }
+        (hostTextView as? MarkdownUITextView)?.updateCodeBlockBgLayerFill()
+        #endif
     }
 
     func requestHostRedisplay() {

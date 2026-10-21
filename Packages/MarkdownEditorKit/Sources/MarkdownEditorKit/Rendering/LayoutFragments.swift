@@ -22,13 +22,18 @@ public class MarkdownLayoutFragment: NSTextLayoutFragment {
     public var barInset: CGFloat = 1
     weak var controller: MarkdownEditorController?
     var fixedDecorations = FragmentDecorations()
+    private var cachedDecorations: (generation: Int, decorations: FragmentDecorations)?
 
     var decorations: FragmentDecorations {
         guard let controller,
               let elementStart = textElement?.elementRange?.location else { return fixedDecorations }
+        let generation = controller.decorationCache.generation
+        if let cachedDecorations, cachedDecorations.generation == generation { return cachedDecorations.decorations }
         let storage = controller.textContentStorage
         let offset = storage.offset(from: storage.documentRange.location, to: elementStart)
-        return FragmentDecorations.make(paragraphAt: offset, controller: controller)
+        let decorations = FragmentDecorations.make(paragraphAt: offset, controller: controller)
+        cachedDecorations = (generation, decorations)
+        return decorations
     }
 
     public var marker: ListMarker? { decorations.marker }
@@ -37,6 +42,7 @@ public class MarkdownLayoutFragment: NSTextLayoutFragment {
 
     var contentStartX: CGFloat {
         guard let line = textLineFragments.first else { return 0 }
+        if decorations.isRightToLeft { return line.typographicBounds.maxX }
         return line.typographicBounds.minX + line.locationForCharacter(at: 0).x
     }
 
@@ -50,7 +56,8 @@ public class MarkdownLayoutFragment: NSTextLayoutFragment {
     }
 
     func markerAnchorX(_ decorations: FragmentDecorations) -> CGFloat {
-        contentStartX - (decorations.leadingIndent - decorations.markerIndent)
+        let offset = decorations.leadingIndent - decorations.markerIndent
+        return decorations.isRightToLeft ? contentStartX + offset : contentStartX - offset
     }
 
     var markerRect: CGRect? {
@@ -59,11 +66,17 @@ public class MarkdownLayoutFragment: NSTextLayoutFragment {
         let anchor = markerAnchorX(decorations)
         switch marker.kind {
         case .task:
-            return ListMarkerRenderer.taskBoxRect(font: marker.font, anchorX: anchor, baseline: baseline)
+            return ListMarkerRenderer.taskBoxRect(
+                font: marker.font,
+                anchorX: anchor,
+                baseline: baseline,
+                isRightToLeft: decorations.isRightToLeft
+            )
         case .bullet, .ordinal:
             let height = marker.font.ascender - marker.font.descender
             let width = Restyler.listIndent - ListMarkerRenderer.gap
-            return CGRect(x: anchor - Restyler.listIndent, y: baseline - marker.font.ascender, width: width, height: height)
+            let x = decorations.isRightToLeft ? anchor + ListMarkerRenderer.gap : anchor - Restyler.listIndent
+            return CGRect(x: x, y: baseline - marker.font.ascender, width: width, height: height)
         }
     }
 
@@ -116,26 +129,45 @@ public class MarkdownLayoutFragment: NSTextLayoutFragment {
         context.saveGState()
         context.translateBy(x: point.x, y: point.y)
         if !decorations.quoteBars.isEmpty {
-            let bounds = layoutFragmentFrame
-            let lines = textLineFragments
-            let origin = contentStartX - decorations.leadingIndent - lineFragmentPadding
             context.setFillColor(decorations.barColor.cgColor)
-            for bar in decorations.quoteBars {
-                let topY = bar.isFirstInRun ? (lines.first?.typographicBounds.minY ?? 0) : 0
-                let bottomY = bar.isLastInRun ? (lines.last?.typographicBounds.maxY ?? bounds.height) : bounds.height
-                let rect = CGRect(x: origin + bar.offset + barInset, y: topY, width: barWidth, height: max(0, bottomY - topY))
+            for rect in quoteBarRects(decorations) {
                 context.fill(rect)
             }
         }
         if let marker = decorations.marker, let baseline = firstBaseline {
-            ListMarkerRenderer.draw(marker, anchorX: markerAnchorX(decorations), baseline: baseline, in: context)
+            ListMarkerRenderer.draw(
+                marker,
+                anchorX: markerAnchorX(decorations),
+                baseline: baseline,
+                isRightToLeft: decorations.isRightToLeft,
+                in: context
+            )
         }
         context.restoreGState()
+    }
+
+    func quoteBarRects(_ decorations: FragmentDecorations) -> [CGRect] {
+        let bounds = layoutFragmentFrame
+        let lines = textLineFragments
+        let edge = decorations.leadingIndent + lineFragmentPadding
+        let origin = decorations.isRightToLeft ? contentStartX + edge : contentStartX - edge
+        return decorations.quoteBars.map { bar in
+            let topY = bar.isFirstInRun ? (lines.first?.typographicBounds.minY ?? 0) : 0
+            let bottomY = bar.isLastInRun ? (lines.last?.typographicBounds.maxY ?? bounds.height) : bounds.height
+            let inset = bar.offset + barInset
+            let x = decorations.isRightToLeft ? origin - inset - barWidth : origin + inset
+            return CGRect(x: x, y: topY, width: barWidth, height: max(0, bottomY - topY))
+        }
     }
 
     public override var renderingSurfaceBounds: CGRect {
         let typographic = super.renderingSurfaceBounds
         guard fixedDecorations.isDecorated || controller != nil else { return typographic }
+        if decorations.isRightToLeft {
+            let containerWidth = textLayoutManager?.textContainer?.size.width ?? typographic.maxX
+            let maxX = max(typographic.maxX, containerWidth - layoutFragmentFrame.origin.x)
+            return CGRect(x: typographic.minX, y: typographic.minY, width: maxX - typographic.minX, height: typographic.height)
+        }
         let minX = min(typographic.minX, -layoutFragmentFrame.origin.x)
         return CGRect(x: minX, y: typographic.minY, width: typographic.maxX - minX, height: typographic.height)
     }

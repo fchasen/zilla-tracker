@@ -265,6 +265,17 @@ struct IOSHostTests {
         #expect(host.markdown == "```\nx\n```\n\ny")
     }
 
+    @Test func commandReturnIsAvailableOnlyInsideCodeBlocks() {
+        let host = IOSHostHarness(markdown: "```\nx\n```\n\nplain")
+        let action = #selector(MarkdownUITextView.handleCommandReturn(_:))
+        host.select(host.string.utf16.count)
+        #expect(!host.textView.canPerformAction(action, withSender: nil))
+        host.select(1)
+        #expect(host.textView.canPerformAction(action, withSender: nil))
+        host.textView.isEditable = false
+        #expect(!host.textView.canPerformAction(action, withSender: nil))
+    }
+
     @Test func typingAtTheEndOfABoldRunStaysBold() {
         let host = IOSHostHarness(markdown: "**bold** plain")
         host.select(4)
@@ -505,6 +516,42 @@ struct IOSHostTests {
         #expect(host.textView.taskGutterIndex(at: onText, charIndex: 0) == nil)
         #expect(host.controller.toggleTask(at: 0))
         #expect(host.markdown == "- [x] task")
+    }
+
+    @Test func rightToLeftTaskGutterHitTestsRightOfTheContent() throws {
+        let host = IOSHostHarness(markdown: "- [ ] שלום עולם")
+        host.textView.layoutIfNeeded()
+        let rect = try #require(host.controller.rect(forCharacterAt: 0))
+        #expect(host.textView.taskGutterIndex(at: CGPoint(x: rect.maxX + 10, y: rect.midY), charIndex: 0) == 0)
+        #expect(host.textView.taskGutterIndex(at: CGPoint(x: rect.minX - 10, y: rect.midY), charIndex: 0) == nil)
+    }
+
+    @Test func themeChangeUpdatesTheHostInsetAndCodeFill() {
+        let host = IOSHostHarness(markdown: "```\ncode\n```")
+        var theme = MarkdownEditorTheme.default
+        theme.textContainerInset = CGSize(width: 21, height: 13)
+        theme.codeBlock.fillColor = UIColor(red: 1, green: 0, blue: 0, alpha: 1)
+        host.controller.theme = theme
+        #expect(host.textView.textContainerInset == UIEdgeInsets(top: 13, left: 21, bottom: 13, right: 21))
+        #expect(host.textView.codeBlockBgLayer.fillColor == UIColor(red: 1, green: 0, blue: 0, alpha: 1).cgColor)
+    }
+
+    @Test func caretMovesReloadInputTraitsOnlyWhenAutocorrectChanges() {
+        let host = IOSHostHarness(markdown: "plain words\n\n```\nlet x = 1\nlet y = 2\n```")
+        host.select(2)
+        #expect(host.textView.autocorrectionType == .yes)
+        host.textView.delegate = nil
+        #expect(!host.coordinator.refreshSpellCheckingForCaret(host.textView))
+        host.textView.selectedRange = NSRange(location: 4, length: 0)
+        #expect(!host.coordinator.refreshSpellCheckingForCaret(host.textView))
+        host.textView.selectedRange = NSRange(location: 14, length: 0)
+        #expect(host.coordinator.refreshSpellCheckingForCaret(host.textView))
+        #expect(host.textView.autocorrectionType == .no)
+        host.textView.selectedRange = NSRange(location: 24, length: 0)
+        #expect(!host.coordinator.refreshSpellCheckingForCaret(host.textView))
+        host.textView.selectedRange = NSRange(location: 1, length: 0)
+        #expect(host.coordinator.refreshSpellCheckingForCaret(host.textView))
+        #expect(host.textView.autocorrectionType == .yes)
     }
 
     @Test func readOnlyHostIgnoresKeyRules() {

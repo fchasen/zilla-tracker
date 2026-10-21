@@ -27,6 +27,37 @@ struct DocumentChangeTests {
         #expect(earlier.merged(withEdit: NSRange(location: 2, length: 3), changeInLength: 3) == NSRange(location: 2, length: 22))
     }
 
+    @MainActor
+    private final class EditingPlugin: EditorPlugin {
+        let key = AnyPluginKey(name: "test.editing")
+        func documentDidChange(_ change: DocumentChange, controller: MarkdownEditorController) {
+            guard change.origin == .user else { return }
+            controller.replaceText(in: NSRange(location: controller.textStorage.length, length: 0), with: "!")
+        }
+    }
+
+    @MainActor
+    private final class RecordingPlugin: EditorPlugin {
+        let key = AnyPluginKey(name: "test.recording")
+        var origins: [DocumentChange.Origin] = []
+        func documentDidChange(_ change: DocumentChange, controller: MarkdownEditorController) {
+            origins.append(change.origin)
+        }
+    }
+
+    @Test @MainActor func editsMadeDuringFanoutReachLaterListenersInOrder() {
+        let editor = HeadlessEditor(markdown: "a")
+        let recorder = RecordingPlugin()
+        editor.controller.register(plugin: EditingPlugin())
+        editor.controller.register(plugin: recorder)
+        var observed: [DocumentChange.Origin] = []
+        editor.controller.addOnDocumentChange { observed.append($0.origin) }
+        editor.type("b")
+        #expect(editor.string == "ab!")
+        #expect(recorder.origins == [.user, .command])
+        #expect(observed == [.user, .command])
+    }
+
     @Test @MainActor func coalescedChangeCoversEditsMadeOutOfOrder() throws {
         let controller = MarkdownEditorController(markdown: "0123456789abcdefghij0123456789")
         var changes: [DocumentChange] = []

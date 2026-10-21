@@ -74,6 +74,25 @@ struct ControllerHostTests {
         #expect(harness.string == "Title")
     }
 
+    @Test func commandReturnKeyEquivalentExitsOnlyCodeBlocks() {
+        let harness = EditorHarness(markdown: "```\nx\n```\n\nplain")
+        harness.window.makeFirstResponder(harness.textView)
+        let commandReturn = keyEvent(harness, keyCode: 36, characters: "\r", flags: .command)
+        harness.select(harness.string.utf16.count)
+        #expect(!harness.textView.performKeyEquivalent(with: commandReturn))
+        #expect(harness.controller.markdown() == "```\nx\n```\n\nplain")
+        harness.select(1)
+        harness.window.makeFirstResponder(nil)
+        #expect(!harness.textView.performKeyEquivalent(with: commandReturn))
+        harness.window.makeFirstResponder(harness.textView)
+        harness.select(1)
+        var handled = false
+        harness.step { handled = harness.textView.performKeyEquivalent(with: commandReturn) }
+        #expect(handled)
+        harness.type("y")
+        #expect(harness.controller.markdown() == "```\nx\n```\n\ny\n\nplain")
+    }
+
     @Test func pluginTextInputIsSkippedForCommands() {
         let harness = EditorHarness(markdown: "")
         let plugin = RecordingPlugin()

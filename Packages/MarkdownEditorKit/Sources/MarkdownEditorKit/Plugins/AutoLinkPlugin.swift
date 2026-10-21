@@ -87,17 +87,21 @@ public final class AutoLinkPlugin: EditorPlugin {
             guard content.length > 0,
                   let block = storage.markdownBlock(at: content.location),
                   !block.isCode, !block.isAtom else { continue }
-            let line = ns.substring(with: content)
-            let search = NSRange(location: 0, length: (line as NSString).length)
+            let window = Self.searchWindow(around: edit, in: ns, within: content)
+            let line = ns.substring(with: window)
+            let search = NSRange(location: 0, length: window.length)
             for rule in rules {
                 rule.pattern.enumerateMatches(in: line, options: [], range: search) { result, _, _ in
                     guard let result, result.numberOfRanges > rule.linkCapture else { return }
                     let relative = result.range(at: rule.linkCapture)
                     guard relative.location != NSNotFound, relative.length > 0 else { return }
-                    let linkRange = NSRange(location: content.location + relative.location, length: relative.length)
-                    let matchedRange = NSRange(location: content.location + result.range.location, length: result.range.length)
+                    let linkRange = NSRange(location: window.location + relative.location, length: relative.length)
+                    let matchedRange = NSRange(location: window.location + result.range.location, length: result.range.length)
                     guard Self.touches(linkRange, edit) else { return }
-                    if let caret, caret > linkRange.location, caret <= NSMaxRange(linkRange) { return }
+                    if let caret {
+                        let run = Self.nonWhitespaceRun(around: linkRange, in: ns, within: content)
+                        if caret > run.location, caret <= NSMaxRange(run) { return }
+                    }
                     if linkRange.location == matchedRange.location,
                        Self.isWordCharacter(before: linkRange.location, in: ns, floor: content.location) { return }
                     guard !Self.isExcluded(linkRange, in: storage) else { return }
@@ -105,7 +109,7 @@ public final class AutoLinkPlugin: EditorPlugin {
                     let captures = (0..<result.numberOfRanges).map { index -> NSRange in
                         let capture = result.range(at: index)
                         guard capture.location != NSNotFound else { return capture }
-                        return NSRange(location: content.location + capture.location, length: capture.length)
+                        return NSRange(location: window.location + capture.location, length: capture.length)
                     }
                     let match = AutoLinkMatch(
                         storage: storage,
@@ -123,6 +127,30 @@ public final class AutoLinkPlugin: EditorPlugin {
 
     static func touches(_ link: NSRange, _ edit: NSRange) -> Bool {
         edit.location <= NSMaxRange(link) + 1 && NSMaxRange(edit) >= link.location
+    }
+
+    static func searchWindow(around edit: NSRange, in ns: NSString, within content: NSRange) -> NSRange {
+        let lower = max(content.location, min(edit.location, NSMaxRange(content)))
+        let upper = max(lower, min(NSMaxRange(edit), NSMaxRange(content)))
+        var start = nonWhitespaceRun(around: NSRange(location: lower, length: 0), in: ns, within: content).location
+        while start > content.location, isWhitespace(ns.character(at: start - 1)) { start -= 1 }
+        start = nonWhitespaceRun(around: NSRange(location: start, length: 0), in: ns, within: content).location
+        start = max(content.location, start - 1)
+        let end = min(NSMaxRange(content), NSMaxRange(nonWhitespaceRun(around: NSRange(location: upper, length: 0), in: ns, within: content)) + 1)
+        return NSRange(location: start, length: end - start)
+    }
+
+    static func nonWhitespaceRun(around range: NSRange, in ns: NSString, within content: NSRange) -> NSRange {
+        var start = range.location
+        while start > content.location, !isWhitespace(ns.character(at: start - 1)) { start -= 1 }
+        var end = NSMaxRange(range)
+        while end < NSMaxRange(content), !isWhitespace(ns.character(at: end)) { end += 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
+    private static func isWhitespace(_ unit: unichar) -> Bool {
+        guard let scalar = Unicode.Scalar(unit) else { return false }
+        return CharacterSet.whitespacesAndNewlines.contains(scalar)
     }
 
     static func isWordCharacter(before location: Int, in ns: NSString, floor: Int) -> Bool {
