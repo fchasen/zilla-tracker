@@ -30,7 +30,7 @@ public struct ListMarker: Equatable {
 enum ListNumbering {
     static func itemNumber(at paragraphStart: Int, in storage: NSAttributedString) -> Int? {
         let lists = Normalizer.effectiveTextLists(in: storage, at: paragraphStart)
-        guard let list = lists.last, list.isOrdered else { return nil }
+        guard let list = lists.last, list.hasOrderedMarker else { return nil }
         let depth = lists.count
         var count = 0
         var start = list.startingItemNumber
@@ -39,7 +39,7 @@ enum ListNumbering {
         while location > 0 {
             let previous = ns.paragraphRange(for: NSRange(location: location - 1, length: 0))
             let previousLists = Normalizer.effectiveTextLists(in: storage, at: previous.location)
-            guard previousLists.count >= depth, previousLists[depth - 1].isOrdered else { break }
+            guard previousLists.count >= depth, previousLists[depth - 1].hasOrderedMarker else { break }
             if previousLists.count == depth, storage.markdownBlock(at: previous.location)?.isContinuation != true {
                 count += 1
                 start = previousLists[depth - 1].startingItemNumber
@@ -56,7 +56,7 @@ enum ListNumbering {
         let lists = Normalizer.effectiveTextLists(in: storage, at: paragraphStart)
         guard let list = lists.last else { return nil }
         if let task = block.task { return .task(task) }
-        if list.isOrdered, let number = itemNumber(at: paragraphStart, in: storage) {
+        if list.hasOrderedMarker, let number = itemNumber(at: paragraphStart, in: storage) {
             return .ordinal(number)
         }
         return .bullet(bulletGlyph(for: list, depth: lists.count))

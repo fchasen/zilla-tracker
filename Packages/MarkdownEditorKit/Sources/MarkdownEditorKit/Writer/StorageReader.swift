@@ -139,20 +139,6 @@ private final class ListNode {
     }
 }
 
-extension NSTextList {
-    var hasOrderedMarker: Bool {
-        switch markerFormat {
-        case .disc, .circle, .square, .hyphen, .box, .check, .diamond:
-            return false
-        case .decimal, .octal, .lowercaseHexadecimal, .uppercaseHexadecimal, .lowercaseAlpha, .uppercaseAlpha,
-             .lowercaseLatin, .uppercaseLatin, .lowercaseRoman, .uppercaseRoman:
-            return true
-        default:
-            return isOrdered
-        }
-    }
-}
-
 private final class CodeNode {
     let language: String?
     let group: GroupToken

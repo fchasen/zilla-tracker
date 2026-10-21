@@ -51,8 +51,8 @@ extension MarkdownEditorController {
         case .strikethrough: return markIsActive(.strikethrough, in: selection)
         case .codeSpan: return markIsActive(.code, in: selection)
         case .heading(let level): return paragraphs.allSatisfy { $0.block.headingLevel == level }
-        case .unorderedList: return paragraphs.allSatisfy { innermostList($0)?.isOrdered == false && $0.block.task == nil }
-        case .orderedList: return paragraphs.allSatisfy { innermostList($0)?.isOrdered == true }
+        case .unorderedList: return paragraphs.allSatisfy { innermostList($0)?.hasOrderedMarker == false && $0.block.task == nil }
+        case .orderedList: return paragraphs.allSatisfy { innermostList($0)?.hasOrderedMarker == true }
         case .taskList: return paragraphs.allSatisfy { $0.block.task != nil }
         case .blockquote: return paragraphs.allSatisfy { $0.block.isInQuote }
         case .codeBlock: return paragraphs.allSatisfy { $0.block.isCode }
@@ -168,7 +168,7 @@ extension MarkdownEditorController {
     func toggleList(ordered: Bool) {
         let paragraphs = selectedParagraphs(in: currentSelection).filter { !$0.block.isAtom }
         guard let first = paragraphs.first else { return }
-        let removing = paragraphs.allSatisfy { innermostList($0)?.isOrdered == ordered && ($0.block.task == nil || ordered) }
+        let removing = paragraphs.allSatisfy { innermostList($0)?.hasOrderedMarker == ordered && ($0.block.task == nil || ordered) }
         if removing {
             _ = removeInnermostList(paragraphs, actionName: ordered ? "Numbered List" : "Bulleted List")
             return
@@ -177,7 +177,7 @@ extension MarkdownEditorController {
         let depth = max(1, base.count)
         let reuse = previousParagraphInfo(before: first).flatMap { previous -> NSTextList? in
             let lists = effectiveLists(previous)
-            guard lists.count >= depth, lists[depth - 1].isOrdered == ordered,
+            guard lists.count >= depth, lists[depth - 1].hasOrderedMarker == ordered,
                   zip(lists, base.dropLast()).allSatisfy({ $0 === $1 }) else { return nil }
             return lists[depth - 1]
         }

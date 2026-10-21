@@ -107,7 +107,7 @@ extension MarkdownEditorController {
             let previousLists = effectiveLists(previous)
             let current = effectiveLists(info)
             if previousLists.count > depth, zip(previousLists, current).allSatisfy({ $0 === $1 }),
-               previousLists[depth].isOrdered == ordered {
+               previousLists[depth].hasOrderedMarker == ordered {
                 return previousLists[depth]
             }
         }

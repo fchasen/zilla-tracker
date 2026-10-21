@@ -338,7 +338,7 @@ extension MarkdownEditorController {
         guard previousLists.count >= depth, zip(previousLists, base).allSatisfy({ $0 === $1 }) else { return true }
         let list = previousLists.count > depth
             ? previousLists[depth]
-            : LoaderStructure.makeList(ordered: innermost.isOrdered, start: 1, depth: depth + 1)
+            : LoaderStructure.makeList(ordered: innermost.hasOrderedMarker, start: 1, depth: depth + 1)
         let applied = rewriteParagraphs(paragraphs, actionName: actionName) { info in
             let effective = self.effectiveLists(info)
             guard effective.count >= depth, zip(effective, base).allSatisfy({ $0 === $1 }) else { return nil }

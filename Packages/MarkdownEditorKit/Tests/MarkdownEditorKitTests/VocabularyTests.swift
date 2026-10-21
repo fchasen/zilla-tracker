@@ -2,6 +2,11 @@ import Foundation
 import Testing
 @testable import MarkdownEditorKit
 import PhabricatorKit
+#if canImport(AppKit) && os(macOS)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 @Suite("Vocabulary")
 struct VocabularyTests {
@@ -62,5 +67,18 @@ struct VocabularyTests {
     @Test @MainActor func controllerReturnsOriginalBytesWhenUnchanged() {
         let controller = MarkdownEditorController(markdown: "hello\n\n")
         #expect(controller.markdown() == "hello\n\n")
+    }
+
+    @Test func orderedMarkerMatchesTextKit() {
+        let formats: [NSTextList.MarkerFormat] = [
+            .disc, .circle, .square, .hyphen, .box, .check, .diamond,
+            .decimal, .octal, .lowercaseHexadecimal, .uppercaseHexadecimal, .lowercaseAlpha, .uppercaseAlpha,
+            .lowercaseLatin, .uppercaseLatin, .lowercaseRoman, .uppercaseRoman,
+            NSTextList.MarkerFormat(rawValue: "({decimal})"), NSTextList.MarkerFormat(rawValue: "")
+        ]
+        for format in formats {
+            let list = NSTextList(markerFormat: format, options: 0)
+            #expect(list.hasOrderedMarker == list.isOrdered, "\(format.rawValue)")
+        }
     }
 }
