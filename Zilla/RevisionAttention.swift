@@ -10,6 +10,7 @@ struct RevisionActivity: Hashable {
     let dateModified: Date
     let latestFromViewer: Date?
     let latestFromOthers: Date?
+    var latestNotifiable: RevisionEvent? = nil
 }
 
 enum RevisionAttention {
@@ -20,20 +21,47 @@ enum RevisionAttention {
     ) -> RevisionActivity {
         var fromViewer: Date?
         var fromOthers: Date?
+        var notifiable: RevisionEvent?
         for transaction in transactions {
             guard let author = transaction.authorPHID else { continue }
             let date = transaction.dateCreated
             if author == viewerPHID {
                 fromViewer = max(fromViewer ?? date, date)
-            } else if author.hasPrefix("PHID-USER-"), isAttentionWorthy(transaction) {
-                fromOthers = max(fromOthers ?? date, date)
+            } else if author.hasPrefix("PHID-USER-") {
+                if isAttentionWorthy(transaction) {
+                    fromOthers = max(fromOthers ?? date, date)
+                }
+                if let kind = notifiableKind(of: transaction) {
+                    let event = RevisionEvent(actorPHID: author, kind: kind, date: date)
+                    if notifiable.map({ event.supersedes($0) }) ?? true {
+                        notifiable = event
+                    }
+                }
             }
         }
         return RevisionActivity(
             dateModified: revision.fields.dateModified,
             latestFromViewer: fromViewer,
-            latestFromOthers: fromOthers
+            latestFromOthers: fromOthers,
+            latestNotifiable: notifiable
         )
+    }
+
+    static func notifiableKind(of transaction: RevisionTransaction) -> RevisionEventKind? {
+        switch transaction.kind {
+        case .verb(.accept): return .accepted
+        case .verb(.requestChanges), .verb(.reject): return .requestedChanges
+        case .verb(.resign): return .resigned
+        case .verb(.commandeer): return .commandeered
+        case .verb(.close): return .landed
+        case .verb(.abandon): return .abandoned
+        case .verb(.reclaim): return .reclaimed
+        case .verb(.reopen): return .reopened
+        case .statusChange(_, let new): return .statusChanged(new)
+        case .inline: return .inlineCommented
+        case .comment: return .commented
+        default: return nil
+        }
     }
 
     static func isAttentionWorthy(_ transaction: RevisionTransaction) -> Bool {
@@ -60,10 +88,36 @@ enum RevisionAttention {
         return true
     }
 
+    static func notifiableEvent(mark: SeenMark?, activity: RevisionActivity?) -> RevisionEvent? {
+        guard let event = activity?.latestNotifiable else { return nil }
+        if let seenThrough = mark?.seenThrough, seenThrough >= event.date { return nil }
+        if let own = activity?.latestFromViewer, own >= event.date { return nil }
+        return event
+    }
+
     static func needsActivity(_ revision: Revision, in list: RevisionList, mark: SeenMark?) -> Bool {
         guard let mark else { return list == .patches }
         guard let seenThrough = mark.seenThrough else { return false }
         return revision.fields.dateModified > seenThrough
+    }
+}
+
+private extension RevisionEvent {
+    func supersedes(_ other: RevisionEvent) -> Bool {
+        if date != other.date { return date > other.date }
+        return kind.precedence > other.kind.precedence
+    }
+}
+
+private extension RevisionEventKind {
+    var precedence: Int {
+        switch self {
+        case .accepted, .requestedChanges, .resigned, .commandeered: return 4
+        case .landed, .abandoned, .reclaimed, .reopened: return 3
+        case .statusChanged: return 2
+        case .inlineCommented: return 1
+        case .commented: return 0
+        }
     }
 }
 

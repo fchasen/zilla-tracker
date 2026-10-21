@@ -174,6 +174,9 @@ struct ZillaCommands: Commands {
             Button("Phabricator Settings…") {
                 workspace.phabricatorSettingsPresented = true
             }
+            Button("Notification Settings…") {
+                workspace.notificationSettingsPresented = true
+            }
 
             Divider()
 

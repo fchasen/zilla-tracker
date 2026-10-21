@@ -403,6 +403,7 @@ final class Workspace {
 
     var bugzillaSettingsPresented: Bool = false
     var phabricatorSettingsPresented: Bool = false
+    var notificationSettingsPresented: Bool = false
     var quickSearchPresented: Bool = false
     var lastUpdateError: String?
     var dupePromptRequested: Bool = false
@@ -1508,6 +1509,11 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.phabricatorSettingsPresented) {
             PhabricatorSettingsView()
         }
+        #if os(macOS)
+        .sheet(isPresented: $workspace.notificationSettingsPresented) {
+            NotificationsSettingsView()
+        }
+        #endif
         .sheet(isPresented: $workspace.quickSearchPresented) {
             QuickSearchSheet { bugID in
                 workspace.selectedBugID = bugID
@@ -2158,10 +2164,7 @@ struct Sidebar: View {
     @Environment(AuthStore.self) private var auth
     @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(Workspace.self) private var workspace
-    @Environment(ResourceCache.self) private var cache
-    @Environment(ViewedBugsStore.self) private var viewedBugs
-    @Environment(ViewedRevisionsStore.self) private var viewedRevisions
-    @Environment(RevisionActivityStore.self) private var revisionActivity
+    @Environment(AttentionMonitor.self) private var attention
     @Query(sort: [SortDescriptor(\FollowedComponent.position),
                   SortDescriptor(\FollowedComponent.addedAt)])
     private var followedComponents: [FollowedComponent]
@@ -2170,8 +2173,6 @@ struct Sidebar: View {
 
     @State private var addMetaBugTarget: FollowedComponent?
     @State private var showAddComponent = false
-    @State private var needsInfoBugs: [Bug] = []
-    @State private var needsInfoCount: Int?
 
     @AppStorage("sidebar.section.components.expanded") private var componentsExpanded = true
 
@@ -2184,10 +2185,10 @@ struct Sidebar: View {
                                 .tag(SidebarSelection.smart(endpoint))
                         } else if endpoint == .needsReview {
                             smartEndpointRow(endpoint) {
-                                if needsInfoAttentionCount > 0 {
-                                    AttentionBadge(count: needsInfoAttentionCount, noun: "unseen requests")
+                                if attention.needsInfoAttentionCount > 0 {
+                                    AttentionBadge(count: attention.needsInfoAttentionCount, noun: "unseen requests")
                                 } else {
-                                    SidebarCount(value: needsInfoCount)
+                                    SidebarCount(value: attention.needsInfoCount)
                                 }
                             }
                             .tag(SidebarSelection.smart(endpoint))
@@ -2199,15 +2200,15 @@ struct Sidebar: View {
                     Label("Drafts", systemImage: "square.and.pencil")
                     .tag(SidebarSelection.allDrafts)
                     revisionListRow(.reviews) {
-                        if reviewAttentionCount > 0 {
-                            AttentionBadge(count: reviewAttentionCount, noun: "revisions needing your review")
+                        if attention.reviewAttentionCount > 0 {
+                            AttentionBadge(count: attention.reviewAttentionCount, noun: "revisions needing your review")
                         }
                     }
                     revisionListRow(.patches) {
-                        if patchAttentionCount > 0 {
-                            AttentionBadge(count: patchAttentionCount, noun: "patches with new activity")
+                        if attention.patchAttentionCount > 0 {
+                            AttentionBadge(count: attention.patchAttentionCount, noun: "patches with new activity")
                         } else {
-                            SidebarCount(value: needsChangesCount)
+                            SidebarCount(value: attention.needsChangesCount)
                         }
                     }
                 }
@@ -2264,22 +2265,17 @@ struct Sidebar: View {
             }
         }
         .task(id: workspace.bugListRefreshToken) {
-            await loadNeedsInfo(force: true)
+            await attention.loadNeedsInfo(force: true)
         }
         .task(id: needsInfoCountKey) {
-            await loadNeedsInfo(force: false)
+            await attention.loadNeedsInfo(force: false)
         }
         .task(id: revisionBadgeKey) {
-            await loadRevisionBadges(force: false)
+            await attention.loadRevisionBadges(force: false)
         }
         .task(id: workspace.revisionListRefreshToken) {
-            await loadRevisionBadges(force: true)
+            await attention.loadRevisionBadges(force: true)
         }
-        #if os(macOS)
-        .onChange(of: reviewAttentionCount + patchAttentionCount + needsInfoAttentionCount, initial: true) { _, new in
-            NSApplication.shared.dockTile.badgeLabel = new > 0 ? "\(new)" : nil
-        }
-        #endif
     }
 
     private func smartEndpointRow<Accessory: View>(
@@ -2347,41 +2343,6 @@ struct Sidebar: View {
         }
     }
 
-    private func loadNeedsInfo(force: Bool) async {
-        guard auth.isSignedIn, let login = auth.currentUser?.name, !login.isEmpty else {
-            needsInfoBugs = []
-            needsInfoCount = nil
-            return
-        }
-        var query = BugStatusFilter.all.apply(to: .needsReviewFromMe).substitutingMe(with: login)
-        query.includeFields = ["id", "status", "creation_time", "last_change_time", "flags"]
-        query.limit = 0
-        guard let result = try? await cache.bugList(query, force: force, using: auth.client) else {
-            needsInfoBugs = []
-            needsInfoCount = nil
-            return
-        }
-        needsInfoBugs = result.bugs
-        needsInfoCount = result.bugs.count
-    }
-
-    private var needsInfoAttentionCount: Int {
-        guard let login = auth.currentUser?.name else { return 0 }
-        return needsInfoBugs.filter {
-            BugAttention.hasUnseenRequest($0, for: login, mark: viewedBugs.mark(for: $0.id))
-        }.count
-    }
-
-    private var reviewQuery: RevisionQuery? {
-        guard let phid = phab.currentUser?.phid else { return nil }
-        return .reviewing(responsiblePHID: phid, statuses: [RevisionStatus.Value.needsReview])
-    }
-
-    private var patchesQuery: RevisionQuery? {
-        guard let phid = phab.currentUser?.phid else { return nil }
-        return .authored(authorPHID: phid, statuses: nil)
-    }
-
     private struct RevisionBadgeKey: Hashable {
         let signedIn: Bool
         let phid: String?
@@ -2392,78 +2353,6 @@ struct Sidebar: View {
             signedIn: phab.isSignedIn,
             phid: phab.currentUser?.phid
         )
-    }
-
-    private func cachedRevisions(for query: RevisionQuery?) -> [Revision] {
-        guard let query, let page: RevisionPage = cache.get(.revisionSearchPages(query)) else {
-            return []
-        }
-        return page.revisions
-    }
-
-    private var visibleReviewRevisions: [Revision] {
-        guard let viewerPHID = phab.currentUser?.phid else { return [] }
-        return cachedRevisions(for: reviewQuery).filter { revision in
-            guard revision.fields.authorPHID != viewerPHID else { return false }
-            let scopes = ReviewerScope.scopes(
-                for: revision,
-                viewerPHID: viewerPHID,
-                viewerProjectPHIDs: phab.viewerProjectPHIDs
-            )
-            return !scopes.allSatisfy { workspace.hiddenReviewerScopeIDs.contains($0.id) }
-        }
-    }
-
-    private var reviewAttentionCount: Int {
-        visibleReviewRevisions.filter { needsAttention($0, in: .reviews) }.count
-    }
-
-    private var patchAttentionCount: Int {
-        cachedRevisions(for: patchesQuery).filter { needsAttention($0, in: .patches) }.count
-    }
-
-    private func needsAttention(_ revision: Revision, in list: RevisionList) -> Bool {
-        RevisionAttention.needsAttention(
-            in: list,
-            mark: viewedRevisions.mark(for: revision.id),
-            activity: revisionActivity.activity[revision.id]
-        )
-    }
-
-    private var needsChangesCount: Int? {
-        guard let query = patchesQuery,
-              let page: RevisionPage = cache.get(.revisionSearchPages(query)) else {
-            return nil
-        }
-        return page.revisions.filter {
-            $0.fields.status.value == RevisionStatus.Value.needsRevision
-        }.count
-    }
-
-    private func loadRevisionBadges(force: Bool) async {
-        guard phab.isSignedIn else { return }
-        async let reviews: Void = warmRevisionBadge(reviewQuery, force: force)
-        async let patches: Void = warmRevisionBadge(patchesQuery, force: force)
-        _ = await (reviews, patches)
-        await refreshRevisionActivity()
-    }
-
-    private func warmRevisionBadge(_ query: RevisionQuery?, force: Bool) async {
-        guard let query else { return }
-        _ = try? await cache.revisionSearchAllPages(query, force: force, using: phab.client) { _ in
-            Task { await refreshRevisionActivity() }
-        }
-    }
-
-    private func refreshRevisionActivity() async {
-        guard let viewerPHID = phab.currentUser?.phid else { return }
-        let reviews = visibleReviewRevisions.filter {
-            RevisionAttention.needsActivity($0, in: .reviews, mark: viewedRevisions.mark(for: $0.id))
-        }
-        let patches = cachedRevisions(for: patchesQuery).filter {
-            RevisionAttention.needsActivity($0, in: .patches, mark: viewedRevisions.mark(for: $0.id))
-        }
-        await revisionActivity.refresh(reviews + patches, viewerPHID: viewerPHID, using: phab.client)
     }
 
     private func moveComponents(from source: IndexSet, to destination: Int) {
@@ -3797,11 +3686,28 @@ extension String {
 }
 
 #Preview {
+    let workspace = Workspace.preview
+    let auth = AuthStore()
+    let phab = PhabricatorAuthStore()
+    let viewedBugs = ViewedBugsStore()
+    let viewedRevisions = ViewedRevisionsStore()
+    let revisionActivity = RevisionActivityStore()
+    let cache = ResourceCache()
     ContentView()
-        .environment(Workspace.preview)
-        .environment(AuthStore())
-        .environment(ViewedBugsStore())
-        .environment(ViewedRevisionsStore())
-        .environment(RevisionActivityStore())
-        .environment(ResourceCache())
+        .environment(workspace)
+        .environment(auth)
+        .environment(phab)
+        .environment(viewedBugs)
+        .environment(viewedRevisions)
+        .environment(revisionActivity)
+        .environment(cache)
+        .environment(AttentionMonitor(
+            auth: auth,
+            phab: phab,
+            workspace: workspace,
+            cache: cache,
+            viewedBugs: viewedBugs,
+            viewedRevisions: viewedRevisions,
+            revisionActivity: revisionActivity
+        ))
 }

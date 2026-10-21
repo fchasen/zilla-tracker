@@ -13,15 +13,19 @@ import Textual
 
 @main
 struct ZillaApp: App {
-    @State private var auth = AuthStore()
-    @State private var phab = PhabricatorAuthStore()
-    @State private var workspace = Workspace()
-    @State private var viewedBugs = ViewedBugsStore()
-    @State private var viewedRevisions = ViewedRevisionsStore()
-    @State private var revisionActivity = RevisionActivityStore()
-    @State private var cache = ResourceCache()
+    @State private var auth: AuthStore
+    @State private var phab: PhabricatorAuthStore
+    @State private var workspace: Workspace
+    @State private var viewedBugs: ViewedBugsStore
+    @State private var viewedRevisions: ViewedRevisionsStore
+    @State private var revisionActivity: RevisionActivityStore
+    @State private var cache: ResourceCache
     @State private var bugIndex = BugIndexStore()
-    @State private var refreshScheduler: RevisionRefreshScheduler?
+    @State private var attention: AttentionMonitor
+    @State private var refreshScheduler: AttentionRefreshScheduler?
+    #if os(macOS)
+    @State private var notifications: NotificationCoordinator
+    #endif
 
     private let modelContainer: ModelContainer = {
         do {
@@ -31,8 +35,43 @@ struct ZillaApp: App {
         }
     }()
 
+    init() {
+        let auth = AuthStore()
+        let phab = PhabricatorAuthStore()
+        let workspace = Workspace()
+        let viewedBugs = ViewedBugsStore()
+        let viewedRevisions = ViewedRevisionsStore()
+        let revisionActivity = RevisionActivityStore()
+        let cache = ResourceCache()
+        _auth = State(initialValue: auth)
+        _phab = State(initialValue: phab)
+        _workspace = State(initialValue: workspace)
+        _viewedBugs = State(initialValue: viewedBugs)
+        _viewedRevisions = State(initialValue: viewedRevisions)
+        _revisionActivity = State(initialValue: revisionActivity)
+        _cache = State(initialValue: cache)
+        let attention = AttentionMonitor(
+            auth: auth,
+            phab: phab,
+            workspace: workspace,
+            cache: cache,
+            viewedBugs: viewedBugs,
+            viewedRevisions: viewedRevisions,
+            revisionActivity: revisionActivity
+        )
+        _attention = State(initialValue: attention)
+        #if os(macOS)
+        _notifications = State(initialValue: NotificationCoordinator(
+            snapshot: { attention.notificationSnapshot },
+            workspace: workspace,
+            viewedBugs: viewedBugs,
+            viewedRevisions: viewedRevisions
+        ))
+        #endif
+    }
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: RootView.windowID) {
             RootView()
                 .textual.blockQuoteStyle(.gitHub)
                 .environment(auth)
@@ -43,6 +82,10 @@ struct ZillaApp: App {
                 .environment(revisionActivity)
                 .environment(cache)
                 .environment(bugIndex)
+                .environment(attention)
+                #if os(macOS)
+                .environment(notifications)
+                #endif
                 .task {
                     workspace.cache = cache
                     workspace.bugIndex = bugIndex
@@ -59,8 +102,12 @@ struct ZillaApp: App {
                     if auth.isSignedIn {
                         Task { await bugIndex.backfill(viewedIDs: viewedBugs.ids, using: auth.client) }
                     }
+                    attention.start()
+                    #if os(macOS)
+                    notifications.start()
+                    #endif
                     if refreshScheduler == nil {
-                        let s = RevisionRefreshScheduler(workspace: workspace, phab: phab)
+                        let s = AttentionRefreshScheduler(workspace: workspace, monitor: attention)
                         s.start()
                         refreshScheduler = s
                     }
@@ -88,6 +135,7 @@ struct ZillaApp: App {
                 .environment(revisionActivity)
                 .environment(cache)
                 .environment(bugIndex)
+                .environment(attention)
             }
         }
         .defaultSize(width: 1280, height: 760)
@@ -148,9 +196,16 @@ extension ModelContainer {
 }
 
 struct RootView: View {
+    static let windowID = "main"
+
     @Environment(AuthStore.self) private var auth
+    @Environment(PhabricatorAuthStore.self) private var phab
     @Environment(Workspace.self) private var workspace
     @Environment(\.scenePhase) private var scenePhase
+    #if os(macOS)
+    @Environment(NotificationCoordinator.self) private var notifications
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     var body: some View {
         Group {
@@ -172,5 +227,18 @@ struct RootView: View {
                   let bugID = BugIndexStore.bugID(from: identifier) else { return }
             workspace.selectedBugID = bugID
         }
+        #if os(macOS)
+        .onAppear {
+            notifications.openMainWindow = { [openWindow] in openWindow(id: Self.windowID) }
+            notifications.mainWindowDidAppear()
+        }
+        .onDisappear {
+            notifications.mainWindowDidDisappear()
+        }
+        .task(id: auth.isSignedIn || phab.isSignedIn) {
+            guard auth.isSignedIn || phab.isSignedIn else { return }
+            await notifications.requestAuthorizationIfNeeded()
+        }
+        #endif
     }
 }
