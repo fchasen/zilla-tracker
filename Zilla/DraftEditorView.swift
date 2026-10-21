@@ -10,26 +10,17 @@ import BugzillaKit
 struct DraftEditorView: View {
     let draftID: UUID
 
-    @Environment(Workspace.self) private var workspace
-    @Environment(AuthStore.self) private var auth
-    @Environment(ResourceCache.self) private var cache
-    @Environment(\.modelContext) private var modelContext
     @Query private var matchingDrafts: [BugDraft]
-
-    @State private var submitError: String?
-    @State private var showDiscardConfirm = false
-    @State private var summaryFocused = false
 
     init(draftID: UUID) {
         self.draftID = draftID
         self._matchingDrafts = Query(filter: #Predicate<BugDraft> { $0.id == draftID })
     }
 
-    private var isSubmitting: Bool { workspace.isSubmittingDraft(draftID) }
-
     var body: some View {
         if let draft = matchingDrafts.first {
-            content(for: draft)
+            DraftEditorForm(draftID: draftID, draft: draft)
+                .id(draftID)
         } else {
             ContentUnavailableView(
                 "Draft not found",
@@ -38,11 +29,32 @@ struct DraftEditorView: View {
             )
         }
     }
+}
 
-    @ViewBuilder
-    private func content(for draft: BugDraft) -> some View {
-        @Bindable var draft = draft
+private struct DraftEditorForm: View {
+    let draftID: UUID
+    @Bindable var draft: BugDraft
 
+    @Environment(Workspace.self) private var workspace
+    @Environment(AuthStore.self) private var auth
+    @Environment(ResourceCache.self) private var cache
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+
+    @State private var submitError: String?
+    @State private var showDiscardConfirm = false
+    @State private var summaryFocused = false
+    @State private var description: DraftDescriptionBuffer
+
+    init(draftID: UUID, draft: BugDraft) {
+        self.draftID = draftID
+        self.draft = draft
+        self._description = State(initialValue: DraftDescriptionBuffer(draft: draft))
+    }
+
+    private var isSubmitting: Bool { workspace.isSubmittingDraft(draftID) }
+
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -64,7 +76,7 @@ struct DraftEditorView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Description").scaledFont(.headline)
                     MarkdownEditor(
-                        text: $draft.bugDescription,
+                        text: Binding(get: { description.text }, set: { description.edit($0) }),
                         minHeight: 240,
                         isDisabled: isSubmitting,
                         allowsImages: true
@@ -120,11 +132,22 @@ struct DraftEditorView: View {
             }
         }
         .onChange(of: draft.summary) { draft.updatedAt = .now }
-        .onChange(of: draft.bugDescription) { draft.updatedAt = .now }
+        .onChange(of: draft.bugDescription) { _, stored in description.adopt(stored) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { description.commit() }
+        }
+        .onDisappear { description.commit() }
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            description.commit()
+            try? modelContext.save()
+        }
+        #endif
     }
 
     private func submit(_ draft: BugDraft) async {
         guard draft.isReadyToSubmit, !isSubmitting else { return }
+        description.commit()
         submitError = nil
         workspace.beginDraftSubmit(draftID)
         defer { workspace.endDraftSubmit(draftID) }
@@ -202,6 +225,7 @@ struct DraftEditorView: View {
 
     private func discard(_ draft: BugDraft) {
         guard !isSubmitting else { return }
+        description.discard()
         modelContext.delete(draft)
         workspace.dismissDraft(draftID)
     }
