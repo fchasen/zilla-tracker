@@ -34,6 +34,18 @@ struct AutoLinkPluginTests {
         #expect(editor.controller.markdown() == "see https://example.com ")
     }
 
+    @Test func editBeforePendingBoundaryStillLinks() {
+        let editor = makeEditor()
+        editor.type("see https://example.com")
+        editor.settle()
+        editor.type(" ")
+        editor.select(0)
+        editor.type("an insertion longer than the link ")
+        editor.settle()
+        #expect(editor.link(at: 40) == "https://example.com")
+        #expect(editor.linkRange(at: 40) == NSRange(location: 38, length: 19))
+    }
+
     @Test func trailingPunctuationStaysOutsideLink() {
         let editor = makeEditor()
         editor.type("go to https://example.com/a.")

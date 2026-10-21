@@ -32,7 +32,7 @@ public final class AutoLinkPlugin: EditorPlugin {
         }
         let scheduled = pendingRange != nil
         if let pending = pendingRange {
-            pendingRange = NSUnionRange(pending, change.editedRange)
+            pendingRange = pending.merged(withEdit: change.editedRange, changeInLength: change.changeInLength)
             if change.origin == .command { pendingOrigin = .command }
         } else {
             pendingRange = change.editedRange

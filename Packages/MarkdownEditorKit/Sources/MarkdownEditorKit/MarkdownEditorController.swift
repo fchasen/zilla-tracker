@@ -562,7 +562,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     private func recordChange(_ editedRange: NSRange, delta: Int, origin: DocumentChange.Origin) {
         if let existing = pendingChange {
             pendingChange = DocumentChange(
-                editedRange: NSUnionRange(existing.editedRange, editedRange),
+                editedRange: existing.editedRange.merged(withEdit: editedRange, changeInLength: delta),
                 changeInLength: existing.changeInLength + delta,
                 origin: existing.origin == origin ? origin : (origin == .user ? existing.origin : origin)
             )
