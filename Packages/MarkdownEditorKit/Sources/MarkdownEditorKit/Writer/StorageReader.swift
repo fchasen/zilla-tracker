@@ -14,7 +14,7 @@ public struct StorageReader {
     }
 
     public func document(from storage: NSAttributedString, range: NSRange) -> EditorDocument {
-        let text = UTF16Text(storage.string)
+        let text = UTF16Text(storage.string as NSString)
         var builder = TreeBuilder(storage: storage, text: text)
         let paragraphs = scanParagraphs(storage, text: text, range: range)
         let last = paragraphs.lastIndex { !$0.isBlank } ?? -1
@@ -120,13 +120,13 @@ private final class ListNode {
     var lists: [ObjectIdentifier]
     var items: [ItemNode] = []
 
-    init(list: NSTextList) {
-        kind = ListNode.kind(of: list)
+    init(list: NSTextList, kind: EditorDocument.ListKind) {
+        self.kind = kind
         lists = [ObjectIdentifier(list)]
     }
 
-    func accepts(_ list: NSTextList) -> Bool {
-        lists.contains(ObjectIdentifier(list)) || ListNode.kind(of: list).isOrdered == kind.isOrdered
+    func accepts(_ list: NSTextList, kind other: EditorDocument.ListKind) -> Bool {
+        lists.contains(ObjectIdentifier(list)) || other.isOrdered == kind.isOrdered
     }
 
     func adopt(_ list: NSTextList) {
@@ -135,7 +135,21 @@ private final class ListNode {
     }
 
     static func kind(of list: NSTextList) -> EditorDocument.ListKind {
-        list.isOrdered ? .ordered(start: list.startingItemNumber) : .bullet
+        list.hasOrderedMarker ? .ordered(start: list.startingItemNumber) : .bullet
+    }
+}
+
+extension NSTextList {
+    var hasOrderedMarker: Bool {
+        switch markerFormat {
+        case .disc, .circle, .square, .hyphen, .box, .check, .diamond:
+            return false
+        case .decimal, .octal, .lowercaseHexadecimal, .uppercaseHexadecimal, .lowercaseAlpha, .uppercaseAlpha,
+             .lowercaseLatin, .uppercaseLatin, .lowercaseRoman, .uppercaseRoman:
+            return true
+        default:
+            return isOrdered
+        }
     }
 }
 
@@ -175,6 +189,7 @@ private struct TreeBuilder {
     var stack: [OpenContainer] = []
     var openCode: CodeNode?
     var inline: InlineExtractor
+    var listKinds: [ObjectIdentifier: EditorDocument.ListKind] = [:]
 
     init(storage: NSAttributedString, text: UTF16Text) {
         self.storage = storage
@@ -256,8 +271,9 @@ private struct TreeBuilder {
                 stack.append(.quote(QuoteNode(token: token)))
                 parentHost(of: level).blocks.append(.quote(lastQuote()))
             case .list(let list):
+                let listKind = kind(of: list)
                 if level < stack.count, case .list(let node) = stack[level],
-                   reuses(node, list: list) {
+                   reuses(node, list: list, kind: listKind) {
                     node.adopt(list)
                     if isItemStart {
                         truncate(to: level + 1)
@@ -268,7 +284,7 @@ private struct TreeBuilder {
                     continue
                 }
                 truncate(to: level)
-                let node = ListNode(list: list)
+                let node = ListNode(list: list, kind: listKind)
                 node.items.append(ItemNode(task: isItemStart ? task : nil))
                 parentHost(of: level).blocks.append(.list(node))
                 stack.append(.list(node))
@@ -279,9 +295,17 @@ private struct TreeBuilder {
         return stack.last?.host ?? root
     }
 
-    private func reuses(_ node: ListNode, list: NSTextList) -> Bool {
+    private func reuses(_ node: ListNode, list: NSTextList, kind: EditorDocument.ListKind) -> Bool {
         guard !node.items.isEmpty else { return false }
-        return node.accepts(list)
+        return node.accepts(list, kind: kind)
+    }
+
+    private mutating func kind(of list: NSTextList) -> EditorDocument.ListKind {
+        let id = ObjectIdentifier(list)
+        if let cached = listKinds[id] { return cached }
+        let kind = ListNode.kind(of: list)
+        listKinds[id] = kind
+        return kind
     }
 
     private mutating func truncate(to count: Int) {
@@ -511,8 +535,14 @@ private struct InlineExtractor {
 struct UTF16Text {
     let units: [UInt16]
 
-    init(_ string: String) {
-        units = Array(string.utf16)
+    init(_ string: NSString) {
+        let length = string.length
+        units = [UInt16](unsafeUninitializedCapacity: length) { buffer, count in
+            if let base = buffer.baseAddress, length > 0 {
+                string.getCharacters(base, range: NSRange(location: 0, length: length))
+            }
+            count = length
+        }
     }
 
     var count: Int { units.count }
@@ -521,7 +551,16 @@ struct UTF16Text {
 
     func substring(_ range: NSRange) -> String {
         units.withUnsafeBufferPointer { buffer in
-            String(decoding: UnsafeBufferPointer(rebasing: buffer[range.location..<NSMaxRange(range)]), as: UTF16.self)
+            let slice = UnsafeBufferPointer(rebasing: buffer[range.location..<NSMaxRange(range)])
+            guard slice.allSatisfy({ $0 < 0x80 }) else {
+                return String(decoding: slice, as: UTF16.self)
+            }
+            return String(unsafeUninitializedCapacity: slice.count) { bytes in
+                for index in slice.indices {
+                    bytes[index] = UInt8(truncatingIfNeeded: slice[index])
+                }
+                return slice.count
+            }
         }
     }
 

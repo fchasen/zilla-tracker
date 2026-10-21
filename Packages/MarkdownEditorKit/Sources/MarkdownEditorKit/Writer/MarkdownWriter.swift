@@ -4,7 +4,9 @@ public struct MarkdownWriter: DocumentWriter {
     public init() {}
 
     public func write(_ document: EditorDocument) -> String {
-        lines(for: document.blocks, context: .top).joined(separator: "\n")
+        var output = LineOutput()
+        output.write(document.blocks, context: .top)
+        return output.text
     }
 
     public func markdown(from storage: NSAttributedString) -> String {
@@ -13,119 +15,6 @@ public struct MarkdownWriter: DocumentWriter {
 
     public func markdown(from storage: NSAttributedString, range: NSRange) -> String {
         write(StorageReader().document(from: storage, range: range))
-    }
-
-    private enum Context {
-        case top
-        case quote
-        case item
-    }
-
-    private func lines(for blocks: [EditorDocument.Block], context: Context) -> [String] {
-        var output: [String] = []
-        var hasPrevious = false
-        for block in blocks {
-            var interrupts = false
-            let rendered: [String]
-            if case .list(let list) = block {
-                let result = listLines(list)
-                rendered = result.lines
-                var startsAtOne = true
-                if case .ordered(let start) = list.kind { startsAtOne = start == 1 }
-                interrupts = startsAtOne && !result.startsWithEmptyItem
-            } else {
-                rendered = lines(for: block, isFirstInItem: context == .item && !hasPrevious)
-            }
-            guard !rendered.isEmpty else { continue }
-            if hasPrevious, needsBlankLine(before: block, interrupts: interrupts, context: context) {
-                output.append("")
-            }
-            output.append(contentsOf: rendered)
-            hasPrevious = true
-        }
-        return output
-    }
-
-    private func needsBlankLine(before block: EditorDocument.Block, interrupts: Bool, context: Context) -> Bool {
-        guard context == .item else { return true }
-        switch block {
-        case .list:
-            return !interrupts
-        case .code, .heading, .quote:
-            return false
-        case .paragraph, .thematicBreak, .atom:
-            return true
-        }
-    }
-
-    private func lines(for block: EditorDocument.Block, isFirstInItem: Bool) -> [String] {
-        switch block {
-        case .paragraph(let runs):
-            let text = InlineSerializer.serialize(runs, inHeading: false)
-            return text.isEmpty ? [] : Self.split(text)
-        case .heading(let level, let runs):
-            let marker = String(repeating: "#", count: max(1, min(6, level)))
-            let text = InlineSerializer.serialize(runs, inHeading: true)
-            return [text.isEmpty ? marker : marker + " " + text]
-        case .code(let code):
-            return codeLines(code)
-        case .thematicBreak:
-            return [isFirstInItem ? "***" : "---"]
-        case .atom(let atom) where atom.kind == AtomKind.thematicBreak:
-            return [Self.thematicBreak(source: atom.source, isFirstInItem: isFirstInItem)]
-        case .atom(let atom):
-            return Self.split(atom.source)
-        case .quote(let blocks):
-            let inner = lines(for: blocks, context: .quote)
-            guard !inner.isEmpty else { return [">"] }
-            return inner.map { $0.isEmpty ? ">" : "> " + $0 }
-        case .list(let list):
-            return listLines(list).lines
-        }
-    }
-
-    private func listLines(_ list: EditorDocument.ListBlock) -> (lines: [String], startsWithEmptyItem: Bool) {
-        var output: [String] = []
-        var startsWithEmptyItem = false
-        for (index, item) in list.items.enumerated() {
-            let marker: String
-            switch list.kind {
-            case .bullet:
-                marker = "-"
-            case .ordered(let start):
-                marker = "\(start + index)."
-            }
-            let indent = String(repeating: " ", count: marker.count + 1)
-            let head: String
-            switch item.task {
-            case .none: head = marker
-            case .unchecked?: head = marker + " [ ]"
-            case .checked?: head = marker + " [x]"
-            }
-            let content = lines(for: item.blocks, context: .item)
-            guard let first = content.first else {
-                if index == 0 { startsWithEmptyItem = true }
-                output.append(head)
-                continue
-            }
-            output.append(head + " " + first)
-            for line in content.dropFirst() {
-                output.append(line.isEmpty ? "" : indent + line)
-            }
-        }
-        return (output, startsWithEmptyItem)
-    }
-
-    private func codeLines(_ code: EditorDocument.CodeBlock) -> [String] {
-        let info = code.language ?? ""
-        let fenceCharacter: Character = info.contains("`") ? "~" : "`"
-        var longest = 0
-        for line in code.lines {
-            longest = max(longest, Self.longestRun(of: fenceCharacter, in: line))
-        }
-        let fence = String(repeating: fenceCharacter, count: max(3, longest + 1))
-        let body = code.lines == [""] ? [] : code.lines
-        return [fence + info] + body + [fence]
     }
 
     static func thematicBreak(source: String, isFirstInItem: Bool) -> String {
@@ -152,10 +41,183 @@ public struct MarkdownWriter: DocumentWriter {
         }
         return longest
     }
+}
 
-    private static func split(_ text: String) -> [String] {
-        guard text.utf8.contains(0x0A) else { return [text] }
-        return text.utf8.split(separator: 0x0A, omittingEmptySubsequences: false).map { String(Substring($0)) }
+private struct LineOutput {
+    enum Context {
+        case top
+        case quote
+        case item
+    }
+
+    private enum Prefix {
+        case quote
+        case item(head: String, indent: String, isFirstLine: Bool)
+
+        var fillsEmptyLine: Bool {
+            switch self {
+            case .quote: return true
+            case .item(_, _, let isFirstLine): return isFirstLine
+            }
+        }
+    }
+
+    private(set) var text = ""
+    private var prefixes: [Prefix] = []
+    private var lineCount = 0
+
+    mutating func write(_ blocks: [EditorDocument.Block], context: Context) {
+        var hasPrevious = false
+        for block in blocks {
+            let isFirstInItem = context == .item && !hasPrevious
+            switch block {
+            case .paragraph(let runs):
+                let rendered = InlineSerializer.serialize(runs, inHeading: false)
+                guard !rendered.isEmpty else { continue }
+                separate(block, hasPrevious: hasPrevious, context: context)
+                lines(rendered)
+            case .list(let list):
+                guard !list.items.isEmpty else { continue }
+                separate(block, hasPrevious: hasPrevious, context: context)
+                write(list)
+            case .heading(let level, let runs):
+                separate(block, hasPrevious: hasPrevious, context: context)
+                let marker = String(repeating: "#", count: max(1, min(6, level)))
+                let rendered = InlineSerializer.serialize(runs, inHeading: true)
+                line(rendered.isEmpty ? marker : marker + " " + rendered)
+            case .code(let code):
+                separate(block, hasPrevious: hasPrevious, context: context)
+                write(code)
+            case .thematicBreak:
+                separate(block, hasPrevious: hasPrevious, context: context)
+                line(isFirstInItem ? "***" : "---")
+            case .atom(let atom):
+                separate(block, hasPrevious: hasPrevious, context: context)
+                if atom.kind == AtomKind.thematicBreak {
+                    line(MarkdownWriter.thematicBreak(source: atom.source, isFirstInItem: isFirstInItem))
+                } else {
+                    lines(atom.source)
+                }
+            case .quote(let inner):
+                separate(block, hasPrevious: hasPrevious, context: context)
+                let start = lineCount
+                prefixes.append(.quote)
+                write(inner, context: .quote)
+                prefixes.removeLast()
+                if lineCount == start { line(">") }
+            }
+            hasPrevious = true
+        }
+    }
+
+    private mutating func separate(_ block: EditorDocument.Block, hasPrevious: Bool, context: Context) {
+        guard hasPrevious else { return }
+        guard context == .item else {
+            line("")
+            return
+        }
+        let needsBlankLine: Bool
+        switch block {
+        case .list(let list):
+            var startsAtOne = true
+            if case .ordered(let start) = list.kind { startsAtOne = start == 1 }
+            needsBlankLine = !startsAtOne || Self.rendersNothing(list.items[0].blocks)
+        case .code, .heading, .quote:
+            needsBlankLine = false
+        case .paragraph, .thematicBreak, .atom:
+            needsBlankLine = true
+        }
+        if needsBlankLine { line("") }
+    }
+
+    private static func rendersNothing(_ blocks: [EditorDocument.Block]) -> Bool {
+        blocks.allSatisfy { block in
+            switch block {
+            case .paragraph(let runs): return InlineSerializer.serialize(runs, inHeading: false).isEmpty
+            case .list(let list): return list.items.isEmpty
+            default: return false
+            }
+        }
+    }
+
+    private mutating func write(_ list: EditorDocument.ListBlock) {
+        for (index, item) in list.items.enumerated() {
+            let marker: String
+            switch list.kind {
+            case .bullet:
+                marker = "-"
+            case .ordered(let start):
+                marker = "\(start + index)."
+            }
+            let head: String
+            switch item.task {
+            case .none: head = marker
+            case .unchecked?: head = marker + " [ ]"
+            case .checked?: head = marker + " [x]"
+            }
+            let indent = String(repeating: " ", count: marker.count + 1)
+            let start = lineCount
+            prefixes.append(.item(head: head, indent: indent, isFirstLine: true))
+            write(item.blocks, context: .item)
+            prefixes.removeLast()
+            if lineCount == start { line(head) }
+        }
+    }
+
+    private mutating func write(_ code: EditorDocument.CodeBlock) {
+        let info = code.language ?? ""
+        let fenceCharacter: Character = info.contains("`") ? "~" : "`"
+        var longest = 0
+        for line in code.lines {
+            longest = max(longest, MarkdownWriter.longestRun(of: fenceCharacter, in: line))
+        }
+        let fence = String(repeating: fenceCharacter, count: max(3, longest + 1))
+        line(fence + info)
+        if code.lines != [""] {
+            for body in code.lines { line(body) }
+        }
+        line(fence)
+    }
+
+    private mutating func lines(_ content: String) {
+        let utf8 = content.utf8
+        var start = utf8.startIndex
+        var index = start
+        while index < utf8.endIndex {
+            if utf8[index] == 0x0A {
+                line(Substring(utf8[start..<index]))
+                start = utf8.index(after: index)
+            }
+            index = utf8.index(after: index)
+        }
+        line(Substring(utf8[start..<utf8.endIndex]))
+    }
+
+    private mutating func line(_ content: String) {
+        line(content[...])
+    }
+
+    private mutating func line(_ content: Substring) {
+        if lineCount > 0 { text.append("\n") }
+        lineCount += 1
+        let isEmpty = content.isEmpty
+        let lastFilling = isEmpty ? prefixes.lastIndex(where: \.fillsEmptyLine) : nil
+        for index in prefixes.indices {
+            let innerIsEmpty = isEmpty && (lastFilling.map { $0 <= index } ?? true)
+            switch prefixes[index] {
+            case .quote:
+                text.append(innerIsEmpty ? ">" : "> ")
+            case .item(let head, let indent, let isFirstLine):
+                if isFirstLine {
+                    text.append(head)
+                    text.append(" ")
+                    prefixes[index] = .item(head: head, indent: indent, isFirstLine: false)
+                } else if !innerIsEmpty {
+                    text.append(indent)
+                }
+            }
+        }
+        text.append(contentsOf: content)
     }
 }
 
@@ -169,6 +231,9 @@ enum InlineSerializer {
     static func serialize(_ runs: [Run], inHeading: Bool) -> String {
         if runs.count == 1, case .text(let text) = runs[0].content, runs[0].marks.isEmpty, runs[0].link == nil {
             return text
+        }
+        if !runs.contains(where: { $0.content == .softBreak || $0.content == .hardBreak }) {
+            return runs.isEmpty ? "" : render(runs)
         }
         var segments: [[Run]] = [[]]
         var breaks: [Bool] = []
@@ -236,7 +301,7 @@ enum InlineSerializer {
     }
 
     private static func render(_ segment: [Run]) -> String {
-        if segment.allSatisfy({ $0.marks.isEmpty && $0.link == nil }) {
+        if emitsVerbatim(segment) {
             var output = ""
             for run in segment { output += emittedText(of: run) }
             return output
@@ -248,6 +313,25 @@ enum InlineSerializer {
         var emitter = PieceEmitter()
         emitter.emit(items)
         return emitter.render()
+    }
+
+    private static func emitsVerbatim(_ segment: [Run]) -> Bool {
+        var previousIsCode = false
+        for run in segment {
+            guard run.link == nil, run.marks.and(delimiterMarks).rawValue == 0 else { return false }
+            guard case .text(let text) = run.content else {
+                previousIsCode = false
+                continue
+            }
+            let isCode = run.marks.has(.code)
+            if text.isEmpty {
+                if isCode { return false }
+                continue
+            }
+            if isCode, previousIsCode { return false }
+            previousIsCode = isCode
+        }
+        return true
     }
 
     static func isWhitespaceOnly(_ run: Run) -> Bool {
@@ -273,6 +357,10 @@ enum InlineSerializer {
                 continue
             }
             let coreEnd = scalars.index(after: last)
+            if first == scalars.startIndex, coreEnd == scalars.endIndex {
+                output.append(run)
+                continue
+            }
             if first > scalars.startIndex {
                 output.append(.text(String(scalars[..<first]), marks: bare, link: run.link))
             }
@@ -376,11 +464,21 @@ enum InlineSerializer {
     }
 
     private static func firstCharacter(of run: Run) -> Character? {
-        emittedText(of: run).first
+        switch run.content {
+        case .text(let text): return run.marks.has(.code) ? "`" : text.first
+        case .literal(_, let source): return source.first
+        case .atom(let atom): return atom.source.first
+        case .softBreak, .hardBreak: return nil
+        }
     }
 
     private static func lastCharacter(of run: Run) -> Character? {
-        emittedText(of: run).last
+        switch run.content {
+        case .text(let text): return run.marks.has(.code) ? "`" : text.last
+        case .literal(_, let source): return source.last
+        case .atom(let atom): return atom.source.last
+        case .softBreak, .hardBreak: return nil
+        }
     }
 
     static func codeSpan(_ text: String) -> String {
@@ -392,6 +490,9 @@ enum InlineSerializer {
     }
 
     static func destination(_ url: String) -> String {
+        if url.utf8.allSatisfy({ $0 < 0x80 }) {
+            return asciiDestination(url)
+        }
         var depth = 0
         var balanced = true
         for character in url {
@@ -407,6 +508,32 @@ enum InlineSerializer {
             return "<" + url + ">"
         }
         return url
+    }
+}
+
+extension InlineSerializer {
+    fileprivate static func asciiDestination(_ url: String) -> String {
+        var depth = 0
+        var balanced = true
+        var hasSpace = false
+        var hasAngle = false
+        for byte in url.utf8 {
+            switch byte {
+            case UInt8(ascii: "("):
+                depth += 1
+            case UInt8(ascii: ")"):
+                depth -= 1
+                if depth < 0 { balanced = false }
+            case UInt8(ascii: " "), UInt8(ascii: "\t"):
+                hasSpace = true
+            case UInt8(ascii: "<"), UInt8(ascii: ">"):
+                hasAngle = true
+            default:
+                break
+            }
+        }
+        if depth != 0 { balanced = false }
+        return (!balanced || hasSpace) && !hasAngle ? "<" + url + ">" : url
     }
 }
 

@@ -47,6 +47,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
 
     var textSink: ((String) -> Void)?
     var lastPushed: String
+    var bindingDirty = false
     var originalText: String
     var serializedAtLoad: String
     var restyler: Restyler
@@ -136,6 +137,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         deferredEdits.removeAll()
         originalText = markdown
         lastPushed = markdown
+        bindingDirty = false
         serializedAtLoad = serialize()
         let caret = min(currentSelection.location, textStorage.length)
         headlessSelection = NSRange(location: caret, length: 0)
@@ -177,7 +179,8 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     }
 
     func pushBinding() {
-        guard !isLoading, !hostHasMarkedText, !isSettingMarkedText else { return }
+        guard !isLoading, !hostHasMarkedText, !isSettingMarkedText, bindingDirty else { return }
+        bindingDirty = false
         let serialized = serialize()
         let value = serialized == serializedAtLoad ? originalText : serialized
         guard value != lastPushed else { return }
@@ -592,6 +595,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         range editedRange: NSRange,
         changeInLength delta: Int
     ) {
+        if !isLoading { bindingDirty = true }
         guard !isLoading, !isRestyling, !isProcessingEdit else { return }
         isProcessingEdit = true
         defer { isProcessingEdit = false }

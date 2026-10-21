@@ -16,6 +16,19 @@ struct WriterBlockTests {
         #expect(WF.write(WF.p("a"), WF.p("  "), WF.p("b")) == "a\n\nb")
     }
 
+    @Test func orderedMarkerMatchesTextKit() {
+        let formats: [NSTextList.MarkerFormat] = [
+            .disc, .circle, .square, .hyphen, .box, .check, .diamond,
+            .decimal, .octal, .lowercaseHexadecimal, .uppercaseHexadecimal, .lowercaseAlpha, .uppercaseAlpha,
+            .lowercaseLatin, .uppercaseLatin, .lowercaseRoman, .uppercaseRoman,
+            NSTextList.MarkerFormat(rawValue: "({decimal})"), NSTextList.MarkerFormat(rawValue: "")
+        ]
+        for format in formats {
+            let list = NSTextList(markerFormat: format, options: 0)
+            #expect(list.hasOrderedMarker == list.isOrdered, "\(format.rawValue)")
+        }
+    }
+
     @Test func trailingEmptyParagraphsAreStripped() {
         #expect(WF.write(WF.p("a"), trailingNewline: true) == "a")
         #expect(WF.write(WF.p("a"), WF.p(""), WF.p(""), trailingNewline: true) == "a")
