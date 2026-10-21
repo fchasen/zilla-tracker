@@ -200,7 +200,7 @@ struct EditorHostingTests {
         hosting.applyInlineContent(rules: [rule], provider: nil)
         #expect(loads == 0)
         hosting.applyInlineContent(rules: [], provider: nil)
-        #expect(loads == 1)
+        #expect(loads == 0)
         #expect(controller.inlineContentRules.isEmpty)
         #expect(controller.markdown() == "hello")
         controller.removeObserver(token)

@@ -328,7 +328,9 @@ extension MarkdownEditorController {
         return splitParagraph(info, at: caret, lowerBlock: lower, actionName: "New Item")
     }
 
-    func indentList(_ paragraphs: [ParagraphInfo], actionName: String) -> Bool {
+    func indentList(_ selected: [ParagraphInfo], actionName: String) -> Bool {
+        guard let head = selected.first else { return false }
+        let paragraphs = expandedToWholeItems(selected, atDepth: effectiveLists(head).count)
         guard let first = paragraphs.first else { return false }
         let base = effectiveLists(first)
         guard let innermost = base.last else { return false }
@@ -347,7 +349,7 @@ extension MarkdownEditorController {
             lists.insert(list, at: rawIndex)
             var containers = info.block.containers
             containers.insert(.listItem, at: Self.containerIndex(afterListItem: depth, in: containers))
-            let isContinuation = effective.count == depth ? false : info.block.isContinuation
+            let isContinuation = info.range.location == first.range.location ? false : info.block.isContinuation
             let block = MarkdownBlock(leaf: info.block.leaf, containers: containers, isContinuation: isContinuation, task: info.block.task)
             return (block, lists)
         }
@@ -355,7 +357,9 @@ extension MarkdownEditorController {
         return true
     }
 
-    func outdentList(_ paragraphs: [ParagraphInfo], actionName: String) -> Bool {
+    func outdentList(_ selected: [ParagraphInfo], actionName: String) -> Bool {
+        guard let head = selected.first else { return false }
+        let paragraphs = expandedToWholeItems(selected, atDepth: effectiveLists(head).count)
         guard let first = paragraphs.first else { return false }
         let base = effectiveLists(first)
         guard let removed = base.last else { return false }
@@ -392,6 +396,29 @@ extension MarkdownEditorController {
 
     func effectiveLists(_ info: ParagraphInfo) -> [NSTextList] {
         info.lists.filter { !$0.markerFormat.rawValue.isEmpty }
+    }
+
+    func expandedToWholeItems(_ paragraphs: [ParagraphInfo], atDepth depth: Int) -> [ParagraphInfo] {
+        guard depth > 0, var head = paragraphs.first, var tail = paragraphs.last else { return paragraphs }
+        var result = paragraphs
+        func continuesItem(_ info: ParagraphInfo, in list: NSTextList) -> Bool {
+            let lists = effectiveLists(info)
+            return lists.count >= depth && lists[depth - 1] === list
+                && (lists.count > depth || info.block.isContinuation)
+        }
+        while let list = effectiveLists(head).dropFirst(depth - 1).first, continuesItem(head, in: list),
+              let previous = previousParagraphInfo(before: head) {
+            let lists = effectiveLists(previous)
+            guard lists.count >= depth, lists[depth - 1] === list else { break }
+            result.insert(previous, at: 0)
+            head = previous
+        }
+        while let list = effectiveLists(tail).dropFirst(depth - 1).first,
+              let next = nextParagraphInfo(after: tail), continuesItem(next, in: list) {
+            result.append(next)
+            tail = next
+        }
+        return result
     }
 
     func rewriteParagraphs(

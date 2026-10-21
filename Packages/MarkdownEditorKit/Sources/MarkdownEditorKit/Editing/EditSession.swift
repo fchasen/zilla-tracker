@@ -80,17 +80,29 @@ final class EditSession {
         let selection = controller.currentSelection
         let lengthBefore = storage.length
         let manager = undoManager
+        let after = RangeBox(NSRange(location: affected.location, length: affected.length))
         manager.beginUndoGrouping()
+        manager.registerUndo(withTarget: controller) { [weak self, weak manager] _ in
+            guard let manager else { return }
+            self?.restore(range: after.range, snapshot: snapshot, selection: selection, actionName: actionName, manager: manager)
+        }
         run(actionName: actionName) {
             storage.beginEditing()
             body(storage)
             storage.endEditing()
         }
-        let after = NSRange(location: affected.location, length: max(0, affected.length + storage.length - lengthBefore))
-        registerRestore(on: manager, range: after, snapshot: snapshot, selection: selection, actionName: actionName)
+        after.range.length = max(0, affected.length + storage.length - lengthBefore)
         if !actionName.isEmpty { manager.setActionName(actionName) }
         manager.endUndoGrouping()
         return true
+    }
+
+    private final class RangeBox {
+        var range: NSRange
+
+        init(_ range: NSRange) {
+            self.range = range
+        }
     }
 
     private func snapshotRange(for ranges: [NSRange], in storage: NSTextStorage) -> NSRange {

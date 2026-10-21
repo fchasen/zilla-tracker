@@ -58,6 +58,34 @@ struct ControllerKeyRuleTests {
         #expect(harness.markdown == "- a\n  - b\n  - c")
     }
 
+    @Test func tabAndShiftTabMoveContinuationsWithTheirItem() {
+        let harness = EditorHarness(markdown: "- a\n- b\n\n  cont")
+        let b = (harness.string as NSString).range(of: "b").location
+        harness.select(NSRange(location: b, length: harness.storage.length - b))
+        harness.insertTab()
+        #expect(harness.markdown == "- a\n  - b\n\n    cont")
+        harness.insertBacktab()
+        #expect(harness.markdown == "- a\n- b\n\n  cont")
+
+        let caret = EditorHarness(markdown: "- a\n  - b\n\n    cont\n- c")
+        caret.select((caret.string as NSString).range(of: "b").location)
+        caret.insertBacktab()
+        #expect(caret.markdown == "- a\n- b\n\n  cont\n- c")
+
+        let inContinuation = EditorHarness(markdown: "- a\n- b\n\n  cont")
+        inContinuation.select(inContinuation.storage.length)
+        inContinuation.insertTab()
+        #expect(inContinuation.markdown == "- a\n  - b\n\n    cont")
+    }
+
+    @Test func sharedBackspaceOutdentKeepsContinuations() {
+        let harness = EditorHarness(markdown: "- a\n  - b\n\n    cont\n- c")
+        harness.controller.usesNativeListEditing = false
+        harness.select((harness.string as NSString).range(of: "b").location)
+        harness.deleteBackward()
+        #expect(harness.markdown == "- a\n- b\n\n  cont\n- c")
+    }
+
     @Test func tabOutsideListInsertsTabCharacter() {
         let harness = EditorHarness(markdown: "plain")
         harness.select(5)
@@ -145,6 +173,36 @@ struct ControllerKeyRuleTests {
         #expect(harness.markdown == "> a\n\nb")
     }
 
+    @Test func quoteReturnOnEmptyMiddleLineTypesOutsideQuote() {
+        let harness = EditorHarness(markdown: "> a\n>\n> b")
+        harness.select(1)
+        harness.insertNewline()
+        harness.insertNewline()
+        harness.type("x")
+        let x = (harness.string as NSString).range(of: "x").location
+        #expect(harness.block(at: x)?.isInQuote == false)
+        #expect(harness.markdown == "> a\n\nx\n\n> b")
+    }
+
+    @Test func headingBackspaceOnEmptyLineTypesParagraph() {
+        let harness = EditorHarness(markdown: "# Title")
+        harness.select(0)
+        harness.insertNewline()
+        harness.select(0)
+        harness.deleteBackward()
+        harness.type("x")
+        #expect(harness.markdown == "x\n\n# Title")
+    }
+
+    @Test func tabOnEmptyMiddleItemTypesNestedItem() {
+        let harness = EditorHarness(markdown: "- a\n- b")
+        harness.select(1)
+        harness.insertNewline()
+        harness.insertTab()
+        harness.type("x")
+        #expect(harness.markdown == "- a\n  - x\n- b")
+    }
+
     @Test func codeReturnContinuesAndSecondEmptyLineExits() {
         let harness = EditorHarness(markdown: "```\nx\n```")
         harness.select(1)
@@ -217,6 +275,34 @@ struct ControllerKeyRuleTests {
         harness.select(2)
         harness.deleteBackward()
         #expect(harness.markdown == "- [ ] a\n- b")
+    }
+
+    @Test func coalescedReturnUndoesWithItsTaskNormalization() {
+        let harness = EditorHarness(markdown: "- [x] done\n\nafter")
+        harness.undoManager.groupsByEvent = true
+        harness.select(4)
+        harness.spin()
+        for text in ["x", "\n", "a", "b"] {
+            if text == "\n" {
+                harness.textView.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+            } else {
+                harness.textView.insertText(text, replacementRange: harness.textView.selectedRange())
+            }
+            harness.spin()
+        }
+        #expect(harness.markdown == "- [x] donex\n- [ ] ab\n\nafter")
+        var states: [String] = []
+        while harness.undoManager.canUndo, states.count < 6 {
+            harness.undoManager.undo()
+            harness.spin()
+            states.append(harness.markdown)
+        }
+        #expect(states == [
+            "- [x] donex\n- [ ] a\n\nafter",
+            "- [x] donex\n- [ ]\n\nafter",
+            "- [x] donex\n\nafter",
+            "- [x] done\n\nafter",
+        ])
     }
 
     @Test func returnAfterCheckedTaskCreatesUncheckedItem() {
@@ -544,6 +630,74 @@ struct ControllerFormatCommandTests {
         #expect(harness.markdown == "```\na\nb\n```")
         harness.step { harness.controller.perform(.taskList) }
         #expect(harness.markdown == "- [ ] a\n- [ ] b")
+    }
+
+    @Test func blockCommandOnEmptyMiddleParagraphAppliesToTyping() {
+        let list = EditorHarness(markdown: "a\n\nb")
+        list.select(1)
+        list.insertNewline()
+        list.step { list.controller.perform(.unorderedList) }
+        list.type("x")
+        #expect(list.markdown == "a\n\n- x\n\nb")
+
+        let heading = EditorHarness(markdown: "a\n\nb")
+        heading.select(1)
+        heading.insertNewline()
+        heading.step { heading.controller.perform(.heading(level: 2)) }
+        heading.type("x")
+        #expect(heading.markdown == "a\n\n## x\n\nb")
+    }
+
+    @Test func blockCommandKeepsPendingInlineMarks() {
+        let harness = EditorHarness(markdown: "a")
+        harness.select(1)
+        harness.step { harness.controller.perform(.bold) }
+        harness.step { harness.controller.perform(.heading(level: 1)) }
+        harness.type("b")
+        #expect(harness.markdown == "# a**b**")
+    }
+
+    @Test func listToggleRetypesTopLevelAndKeepsNestedLists() {
+        let harness = EditorHarness(markdown: "- a\n  - b\n- c")
+        harness.select(NSRange(location: 0, length: harness.storage.length))
+        harness.step { harness.controller.perform(.orderedList) }
+        #expect(harness.markdown == "1. a\n   - b\n2. c")
+        harness.undo()
+        #expect(harness.markdown == "- a\n  - b\n- c")
+        harness.redo()
+        harness.select(NSRange(location: 0, length: harness.storage.length))
+        harness.step { harness.controller.perform(.orderedList) }
+        #expect(harness.markdown == "a\n\n- b\n\nc")
+    }
+
+    @Test func listToggleKeepsContinuationsAndWrapsPlainParagraphs() {
+        let continued = EditorHarness(markdown: "- a\n\n  cont")
+        continued.select(NSRange(location: 0, length: continued.storage.length))
+        continued.step { continued.controller.perform(.orderedList) }
+        #expect(continued.markdown == "1. a\n\n   cont")
+
+        let mixed = EditorHarness(markdown: "p\n\n1. a\n   1. b")
+        mixed.select(NSRange(location: 0, length: mixed.storage.length))
+        mixed.step { mixed.controller.perform(.unorderedList) }
+        #expect(mixed.markdown == "- p\n- a\n  1. b")
+    }
+
+    @Test func listToggleCoversWholeItems() {
+        let partial = EditorHarness(markdown: "- a\n  - b\n- c")
+        let b = (partial.string as NSString).range(of: "b").location
+        partial.select(NSRange(location: b, length: partial.storage.length - b))
+        partial.step { partial.controller.perform(.orderedList) }
+        #expect(partial.markdown == "1. a\n   - b\n2. c")
+
+        let head = EditorHarness(markdown: "- a\n  - b\n- c")
+        head.select(0)
+        head.step { head.controller.perform(.orderedList) }
+        #expect(head.markdown == "1. a\n   - b\n\n- c")
+
+        let continuation = EditorHarness(markdown: "- a\n\n  cont")
+        continuation.select(continuation.storage.length)
+        continuation.step { continuation.controller.perform(.orderedList) }
+        #expect(continuation.markdown == "1. a\n\n   cont")
     }
 
     @Test func horizontalRuleCommand() {

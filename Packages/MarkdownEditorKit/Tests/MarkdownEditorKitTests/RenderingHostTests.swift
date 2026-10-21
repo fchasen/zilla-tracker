@@ -23,6 +23,25 @@ struct RenderingHostTests {
         harness.textView.mouseDown(with: event)
     }
 
+    @Test func inParagraphDeletionLeavesFollowingListLayoutIntact() throws {
+        let harness = EditorHarness(markdown: "abc\n\n1. one\n2. two\n3. three")
+        harness.spin()
+        let last = (harness.string as NSString).range(of: "three").location
+        let before = try #require(fragment(harness, at: last))
+        #expect(before.state == .layoutAvailable)
+
+        harness.select(2)
+        harness.deleteBackward()
+        harness.settle()
+        #expect(harness.string.hasPrefix("ac\n"))
+        #expect(before.state == .layoutAvailable)
+
+        harness.select(2)
+        harness.insertNewline()
+        harness.settle()
+        #expect(before.state != .layoutAvailable)
+    }
+
     @Test func listsStayOnTextKit2() {
         let harness = EditorHarness(markdown: "1. one\n\n   more\n2. two\n\n> - [x] quoted task")
         #expect(harness.isTextKit2)

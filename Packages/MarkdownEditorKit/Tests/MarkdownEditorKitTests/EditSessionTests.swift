@@ -127,6 +127,28 @@ struct EditSessionSnapshotTests {
         #expect(forced)
     }
 
+    @Test @MainActor func undoRestoresVocabularyNormalizedDuringSnapshotEdit() {
+        let editor = HeadlessEditor(markdown: "- one\n- two\n\nafter\n\nlast")
+        let controller = editor.controller
+        let original = controller.markdown()
+        let blocks = controller.textStorage.markdownParagraphRanges().filter { $0.length > 0 }
+            .map { controller.textStorage.markdownBlock(at: $0.location) }
+        controller.insertMarkdown("x\n\ny", replacing: NSRange(location: 2, length: 0))
+        let pasted = controller.markdown()
+        #expect(pasted != original)
+
+        controller.undoManager.undo()
+        #expect(controller.markdown() == original)
+        let restored = controller.textStorage.markdownParagraphRanges().filter { $0.length > 0 }
+            .map { controller.textStorage.markdownBlock(at: $0.location) }
+        #expect(restored == blocks)
+
+        controller.undoManager.redo()
+        #expect(controller.markdown() == pasted)
+        controller.undoManager.undo()
+        #expect(controller.markdown() == original)
+    }
+
     @Test func mismatchedReplacementCountIsRejected() {
         let controller = makeController("x\n")
         let session = EditSession(controller: controller)

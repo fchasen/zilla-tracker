@@ -166,34 +166,66 @@ extension MarkdownEditorController {
     }
 
     func toggleList(ordered: Bool) {
-        let paragraphs = selectedParagraphs(in: currentSelection).filter { !$0.block.isAtom }
+        let selected = selectedParagraphs(in: currentSelection).filter { !$0.block.isAtom }
+        let depth = max(1, selected.map { effectiveLists($0).count }.min() ?? 1)
+        let paragraphs = expandedToWholeItems(selected, atDepth: depth)
         guard let first = paragraphs.first else { return }
-        let removing = paragraphs.allSatisfy { innermostList($0)?.hasOrderedMarker == ordered && ($0.block.task == nil || ordered) }
+        let removing = paragraphs.allSatisfy { info in
+            let lists = effectiveLists(info)
+            return lists.count >= depth && lists[depth - 1].hasOrderedMarker == ordered
+                && (info.block.task == nil || ordered || lists.count > depth)
+        }
+        let actionName = ordered ? "Numbered List" : "Bulleted List"
         if removing {
-            _ = removeInnermostList(paragraphs, actionName: ordered ? "Numbered List" : "Bulleted List")
+            _ = removeList(atDepth: depth, from: paragraphs, actionName: actionName)
             return
         }
-        let base = effectiveLists(first)
-        let depth = max(1, base.count)
+        let base = effectiveLists(first).prefix(depth - 1)
         let reuse = previousParagraphInfo(before: first).flatMap { previous -> NSTextList? in
             let lists = effectiveLists(previous)
             guard lists.count >= depth, lists[depth - 1].hasOrderedMarker == ordered,
-                  zip(lists, base.dropLast()).allSatisfy({ $0 === $1 }) else { return nil }
+                  zip(lists, base).allSatisfy({ $0 === $1 }) else { return nil }
             return lists[depth - 1]
         }
         let fresh = reuse ?? LoaderStructure.makeList(ordered: ordered, start: 1, depth: depth)
-        _ = rewriteParagraphs(paragraphs, actionName: ordered ? "Numbered List" : "Bulleted List") { info in
+        _ = rewriteParagraphs(paragraphs, actionName: actionName) { info in
+            let effective = self.effectiveLists(info)
             var lists = info.lists
             var containers = info.block.containers
             var task = info.block.task
-            if let current = self.innermostList(info) {
-                if let index = lists.lastIndex(where: { $0 === current }) { lists[index] = fresh }
-                if ordered { task = nil }
+            var isContinuation = info.block.isContinuation
+            if effective.count >= depth {
+                let current = effective[depth - 1]
+                if let index = lists.firstIndex(where: { $0 === current }) { lists[index] = fresh }
+                if ordered, effective.count == depth { task = nil }
             } else {
                 lists.append(fresh)
                 containers.append(.listItem)
+                isContinuation = false
             }
-            return (MarkdownBlock(leaf: info.block.leaf, containers: containers, isContinuation: false, task: task), lists)
+            return (MarkdownBlock(leaf: info.block.leaf, containers: containers, isContinuation: isContinuation, task: task), lists)
+        }
+    }
+
+    func removeList(atDepth depth: Int, from paragraphs: [ParagraphInfo], actionName: String) -> Bool {
+        rewriteParagraphs(paragraphs, actionName: actionName) { info in
+            let effective = self.effectiveLists(info)
+            guard effective.count >= depth else { return nil }
+            let removed = effective[depth - 1]
+            var lists = info.lists
+            lists.removeAll { $0 === removed }
+            var containers = info.block.containers
+            let index = Self.containerIndex(afterListItem: depth, in: containers) - 1
+            if index >= 0, index < containers.count, containers[index] == .listItem {
+                containers.remove(at: index)
+            }
+            let stillList = containers.contains(.listItem)
+            return (MarkdownBlock(
+                leaf: info.block.leaf,
+                containers: containers,
+                isContinuation: stillList ? info.block.isContinuation : false,
+                task: stillList ? info.block.task : nil
+            ), lists)
         }
     }
 

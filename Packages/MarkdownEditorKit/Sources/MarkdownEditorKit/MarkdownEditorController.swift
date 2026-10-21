@@ -55,6 +55,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     private(set) var isLoading = false
     private(set) var isRestyling = false
     private var isProcessingEdit = false
+    private var needsInlineContentRefresh = false
     var commandDepth = 0
     var isSettingMarkedText = false
     var isWritingToolsActive = false
@@ -65,6 +66,8 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     var headlessTypingAttributes: [NSAttributedString.Key: Any] = [:]
     lazy var editSession = EditSession(controller: self)
     private var pendingChange: DocumentChange?
+    private var pendingChangeIsParagraphLocal = false
+    private var typedEdit: (range: NSRange, isParagraphLocal: Bool)?
     private var flushScheduled = false
     private let layoutDelegate = LayoutManagerDelegate()
     private var pluginStates: [AnyPluginKey: Any] = [:]
@@ -129,6 +132,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         restyler.restyleAll(textStorage)
         textStorage.endEditing()
         isLoading = false
+        needsInlineContentRefresh = false
         undoManager.removeAllActions()
         let activeManager = editSession.undoManager
         if activeManager !== undoManager { activeManager.removeAllActions() }
@@ -158,12 +162,99 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     }
 
     public func setInlineContent(rules: [InlineContentRule], provider: InlineContentProvider?) {
-        let current = markdown()
-        let pushed = lastPushed
         inlineContentRules = rules
         inlineContentProvider = provider
-        setMarkdown(current)
-        lastPushed = pushed
+        needsInlineContentRefresh = true
+        refreshInlineContentIfNeeded()
+    }
+
+    func refreshInlineContentIfNeeded() {
+        guard needsInlineContentRefresh, !isLoading, !isProcessingEdit, !isApplyingCommand,
+              !hostHasMarkedText, !isSettingMarkedText else { return }
+        needsInlineContentRefresh = false
+        let reloaded = MarkdownLoader(
+            inlineContentRules: inlineContentRules,
+            inlineContentProvider: inlineContentProvider
+        ).load(markdown())
+        restyler.restyleAll(reloaded)
+        let current = textStorage.markdownParagraphRanges()
+        let updated = reloaded.markdownParagraphRanges()
+        var changes: [(range: NSRange, replacement: NSAttributedString)] = []
+        if current.count == updated.count {
+            for (old, new) in zip(current, updated) {
+                guard let change = inlineContentChange(from: old, to: new, in: reloaded) else { continue }
+                changes.append(change)
+            }
+        } else {
+            changes = [(NSRange(location: 0, length: textStorage.length), reloaded)]
+        }
+        guard !changes.isEmpty else { return }
+        let selection = currentSelection
+        let start = Self.location(selection.location, shiftedBy: changes)
+        let end = Self.location(NSMaxRange(selection), shiftedBy: changes)
+        performEdit(
+            "",
+            ranges: changes.map(\.range),
+            replacements: changes.map(\.replacement.string),
+            ignoringEditability: true,
+            selection: NSRange(location: start, length: max(0, end - start))
+        ) { storage in
+            for change in changes.reversed() {
+                storage.replaceCharacters(in: change.range, with: change.replacement)
+            }
+        }
+    }
+
+    private func inlineContentChange(
+        from old: NSRange,
+        to new: NSRange,
+        in reloaded: NSAttributedString
+    ) -> (range: NSRange, replacement: NSAttributedString)? {
+        let oldText = textStorage.string as NSString
+        let newText = reloaded.string as NSString
+        func same(_ oldIndex: Int, _ newIndex: Int) -> Bool {
+            let unit = oldText.character(at: oldIndex)
+            guard unit == newText.character(at: newIndex) else { return false }
+            guard unit == 0xFFFC else { return true }
+            let lhs = textStorage.markdownSourceAttachment(at: oldIndex)
+            let rhs = reloaded.markdownSourceAttachment(at: newIndex)
+            guard let lhs, let rhs else { return lhs == nil && rhs == nil }
+            return type(of: lhs) == type(of: rhs)
+                && lhs.markdownSource == rhs.markdownSource
+                && lhs.contentKind == rhs.contentKind
+        }
+        let shorter = min(old.length, new.length)
+        var prefix = 0
+        while prefix < shorter, same(old.location + prefix, new.location + prefix) { prefix += 1 }
+        if prefix == old.length, prefix == new.length { return nil }
+        var suffix = 0
+        while suffix < shorter - prefix, same(NSMaxRange(old) - suffix - 1, NSMaxRange(new) - suffix - 1) { suffix += 1 }
+        let range = NSRange(location: old.location + prefix, length: old.length - prefix - suffix)
+        let source = NSRange(location: new.location + prefix, length: new.length - prefix - suffix)
+        let replacement = NSMutableAttributedString(attributedString: reloaded.attributedSubstring(from: source))
+        if old.length > 0, replacement.length > 0 {
+            let full = NSRange(location: 0, length: replacement.length)
+            let paragraph = textStorage.attributes(at: old.location, effectiveRange: nil)
+            replacement.addAttribute(.markdownBlock, value: paragraph[.markdownBlock] ?? MarkdownBlock.paragraph, range: full)
+            if let style = paragraph[.paragraphStyle] {
+                replacement.addAttribute(.paragraphStyle, value: style, range: full)
+            }
+        }
+        return (range, replacement)
+    }
+
+    private static func location(_ location: Int, shiftedBy changes: [(range: NSRange, replacement: NSAttributedString)]) -> Int {
+        var shift = 0
+        for change in changes {
+            if NSMaxRange(change.range) <= location {
+                shift += change.replacement.length - change.range.length
+            } else if change.range.location < location {
+                return change.range.location + shift + change.replacement.length
+            } else {
+                break
+            }
+        }
+        return location + shift
     }
 
     func applyExternalText(_ text: String) {
@@ -392,6 +483,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     }
 
     func shouldChangeText(in range: NSRange, replacement: String?) -> Bool {
+        typedEdit = nil
         guard !isApplyingCommand else { return true }
         let manager = editSession.undoManager
         guard !manager.isUndoing, !manager.isRedoing else {
@@ -404,6 +496,19 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
             return false
         }
         recordTypedInput(range: range, replacement: replacement)
+        #if canImport(AppKit) && os(macOS)
+        if let replacement, replacement.contains("\n"), !hostHasMarkedText,
+           paragraphInfo(at: range.location).block.task != nil {
+            hostTextView?.breakUndoCoalescing()
+        }
+        #endif
+        if let replacement {
+            let ns = textStorage.string as NSString
+            let removed = Normalizer.clamp(range, to: ns.length)
+            let isParagraphLocal = replacement.rangeOfCharacter(from: .newlines) == nil
+                && ns.substring(with: removed).rangeOfCharacter(from: .newlines) == nil
+            typedEdit = (removed, isParagraphLocal)
+        }
         return true
     }
 
@@ -464,7 +569,7 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         let target = Normalizer.clamp(range, to: textStorage.length)
         guard target.length > 0 else { return false }
         let selection = currentSelection
-        return performEdit(
+        let applied = performEdit(
             actionName,
             ranges: [target],
             replacements: nil,
@@ -472,6 +577,30 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
             selection: selection,
             body
         )
+        if applied { refreshTypingAttributes(afterEditing: target, caret: selection) }
+        return applied
+    }
+
+    private func refreshTypingAttributes(afterEditing target: NSRange, caret selection: NSRange) {
+        guard selection.length == 0, !hostHasMarkedText else { return }
+        let info = paragraphInfo(at: selection.location)
+        guard !info.isTrailingEmpty, NSIntersectionRange(info.range, target).length > 0 else { return }
+        let current = hostTypingAttributes
+        guard !info.block.isCode else {
+            applyTypingAttributes(typingAttributes(for: info.block, textLists: info.lists))
+            return
+        }
+        var updated = typingAttributes(
+            for: info.block,
+            textLists: info.lists,
+            intent: current.markdownInlineIntent.intersection(.markdownMarks)
+        )
+        if let link = current[.link], selection.location > info.content.location,
+           let before = textStorage.attribute(.link, at: selection.location - 1, effectiveRange: nil),
+           (before as AnyObject).isEqual(link) {
+            updated[.link] = link
+        }
+        applyTypingAttributes(updated)
     }
 
     func deferEdit(_ work: @escaping () -> Void) {
@@ -492,16 +621,17 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
     }
 
     func flushDocumentChanges() {
+        refreshInlineContentIfNeeded()
         guard let change = pendingChange else { return }
         pendingChange = nil
-        invalidateDecorations(after: change)
+        invalidateDecorations(after: change, isParagraphLocal: pendingChangeIsParagraphLocal)
         fanoutDocumentChange(change)
         if change.origin == .user { scheduleInputRules() }
     }
 
-    func invalidateDecorations(after change: DocumentChange) {
+    func invalidateDecorations(after change: DocumentChange, isParagraphLocal: Bool = false) {
         let total = textStorage.length
-        guard change.origin != .load, total > 0 else { return }
+        guard change.origin != .load, total > 0, !isParagraphLocal else { return }
         let ns = textStorage.string as NSString
         let edited = Normalizer.clamp(change.editedRange, to: total)
         if change.origin == .user, change.changeInLength == edited.length,
@@ -559,7 +689,8 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         }
     }
 
-    private func recordChange(_ editedRange: NSRange, delta: Int, origin: DocumentChange.Origin) {
+    private func recordChange(_ editedRange: NSRange, delta: Int, origin: DocumentChange.Origin, isParagraphLocal: Bool) {
+        pendingChangeIsParagraphLocal = isParagraphLocal && (pendingChange == nil || pendingChangeIsParagraphLocal)
         if let existing = pendingChange {
             pendingChange = DocumentChange(
                 editedRange: existing.editedRange.merged(withEdit: editedRange, changeInLength: delta),
@@ -603,6 +734,9 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
         let isUndo = manager.isUndoing || manager.isRedoing
         let marked = markedRangeForNormalization(editedRange)
         let characters = editedMask.contains(.editedCharacters)
+        let typed = typedEdit
+        typedEdit = nil
+        var normalizedVocabulary = false
         if isUndo {
             let affected = Normalizer.affectedRange(for: editedRange, in: textStorage)
             restyler.restyle(textStorage, in: affected, excluding: marked)
@@ -614,10 +748,13 @@ public final class MarkdownEditorController: NSObject, NSTextStorageDelegate, NS
                 markedRange: marked
             )
             result.revert?.registerUndo(on: manager, storage: textStorage)
+            normalizedVocabulary = result.revert != nil
             restyler.restyle(textStorage, in: result.touched, excluding: marked)
         }
         let origin: DocumentChange.Origin = isUndo ? .undo : (isApplyingCommand ? .command : .user)
-        recordChange(editedRange, delta: characters ? delta : 0, origin: origin)
+        let isParagraphLocal = origin == .user && characters && !normalizedVocabulary
+            && typed?.isParagraphLocal == true && typed?.range.location == editedRange.location
+        recordChange(editedRange, delta: characters ? delta : 0, origin: origin, isParagraphLocal: isParagraphLocal)
         pushBinding()
         if characters { intrinsicSizeInvalidator?() }
         scheduleFlush()

@@ -460,6 +460,7 @@ final class MarkdownNSTextView: NSTextView {
     override func unmarkText() {
         super.unmarkText()
         markdownController?.pushBinding()
+        markdownController?.refreshInlineContentIfNeeded()
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {

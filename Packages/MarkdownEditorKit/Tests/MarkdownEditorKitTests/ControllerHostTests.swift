@@ -161,6 +161,49 @@ struct ControllerHostTests {
         }
     }
 
+    private static let wordRule = InlineContentRule(id: "test.word", pattern: "world") { _ in
+        .custom(kind: "test.word", label: "world", systemImage: "tag")
+    }
+
+    private static let chipProvider: InlineContentProvider = { ChipAttachment.make(for: $0) }
+
+    @Test func inlineContentChangeKeepsUndoAndSelection() {
+        let harness = EditorHarness(markdown: "hello world")
+        harness.select(5)
+        harness.type(" there")
+        harness.controller.setInlineContent(rules: [Self.wordRule], provider: Self.chipProvider)
+        #expect(harness.string == "hello there \u{FFFC}")
+        #expect(harness.selection == NSRange(location: 11, length: 0))
+        #expect(harness.controller.markdown() == "hello there world")
+        #expect(harness.pushes == ["hello there world"])
+
+        harness.select(13)
+        harness.controller.setInlineContent(rules: [], provider: nil)
+        #expect(harness.string == "hello there world")
+        #expect(harness.selection == NSRange(location: 17, length: 0))
+        harness.undo()
+        #expect(harness.string == "hello there \u{FFFC}")
+        harness.undo()
+        #expect(harness.string == "hello there world")
+        harness.undo()
+        #expect(harness.string == "hello world")
+        #expect(harness.pushes == ["hello there world", "hello world"])
+    }
+
+    @Test func inlineContentChangeWaitsForComposition() {
+        let harness = EditorHarness(markdown: "a world")
+        harness.select(1)
+        harness.setMarkedText("か")
+        harness.controller.setInlineContent(rules: [Self.wordRule], provider: Self.chipProvider)
+        #expect(harness.textView.hasMarkedText())
+        #expect(harness.string == "aか world")
+        harness.unmarkText()
+        harness.spin()
+        #expect(harness.string == "aか \u{FFFC}")
+        #expect(harness.pushes == ["aか world"])
+        #expect(harness.selection == NSRange(location: 2, length: 0))
+    }
+
     @Test func setMarkdownDuringCompositionDoesNotPushStaleText() {
         let harness = EditorHarness(markdown: "a")
         harness.select(1)
