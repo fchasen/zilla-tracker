@@ -392,6 +392,7 @@ public struct BugCreate: Sendable, Equatable {
     public var type: String?
     public var severity: String?
     public var priority: String?
+    public var points: String?
     public var assignedTo: String?
     public var keywords: [String]
     public var whiteboard: String?
@@ -410,6 +411,7 @@ public struct BugCreate: Sendable, Equatable {
         type: String? = nil,
         severity: String? = nil,
         priority: String? = nil,
+        points: String? = nil,
         assignedTo: String? = nil,
         keywords: [String] = [],
         whiteboard: String? = nil,
@@ -427,6 +429,7 @@ public struct BugCreate: Sendable, Equatable {
         self.type = type
         self.severity = severity
         self.priority = priority
+        self.points = points
         self.assignedTo = assignedTo
         self.keywords = keywords
         self.whiteboard = whiteboard

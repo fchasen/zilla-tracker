@@ -372,6 +372,7 @@ public extension BugzillaClient {
             let type: String?
             let severity: String?
             let priority: String?
+            let points: String?
             let assignedTo: String?
             let keywords: [String]?
             let whiteboard: String?
@@ -384,6 +385,7 @@ public extension BugzillaClient {
             enum CodingKeys: String, CodingKey {
                 case product, component, summary, version, description, type
                 case severity, priority, assignedTo, keywords, whiteboard, blocks, dependsOn, seeAlso, cc, groups
+                case points = "cfFxPoints"
             }
 
             func encode(to encoder: Encoder) throws {
@@ -396,6 +398,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(type, forKey: .type)
                 try c.encodeIfPresent(severity, forKey: .severity)
                 try c.encodeIfPresent(priority, forKey: .priority)
+                try c.encodeIfPresent(points, forKey: .points)
                 try c.encodeIfPresent(assignedTo, forKey: .assignedTo)
                 try c.encodeIfPresent(keywords, forKey: .keywords)
                 try c.encodeIfPresent(whiteboard, forKey: .whiteboard)
@@ -416,6 +419,7 @@ public extension BugzillaClient {
             type: create.type,
             severity: create.severity,
             priority: create.priority,
+            points: create.points,
             assignedTo: create.assignedTo,
             keywords: create.keywords.isEmpty ? nil : create.keywords,
             whiteboard: create.whiteboard,

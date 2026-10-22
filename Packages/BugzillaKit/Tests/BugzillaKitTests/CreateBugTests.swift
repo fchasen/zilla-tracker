@@ -24,6 +24,7 @@ final class CreateBugTests: XCTestCase {
             XCTAssertNil(json["type"])
             XCTAssertNil(json["severity"])
             XCTAssertNil(json["priority"])
+            XCTAssertNil(json["cf_fx_points"])
             XCTAssertNil(json["assigned_to"])
             XCTAssertNil(json["keywords"])
             XCTAssertNil(json["blocks"])
@@ -47,6 +48,7 @@ final class CreateBugTests: XCTestCase {
             XCTAssertEqual(json["type"] as? String, "defect")
             XCTAssertEqual(json["severity"] as? String, "S2")
             XCTAssertEqual(json["priority"] as? String, "P2")
+            XCTAssertEqual(json["cf_fx_points"] as? String, "3")
             XCTAssertEqual(json["assigned_to"] as? String, "dev@example.com")
             XCTAssertEqual(json["keywords"] as? [String], ["regression", "perf"])
             XCTAssertEqual(json["blocks"] as? [Int], [111, 222])
@@ -68,6 +70,7 @@ final class CreateBugTests: XCTestCase {
                 type: "defect",
                 severity: "S2",
                 priority: "P2",
+                points: "3",
                 assignedTo: "dev@example.com",
                 keywords: ["regression", "perf"],
                 blocks: [111, 222],

@@ -161,7 +161,7 @@ extension ModelContainer {
             BugOrderEntry.self
         ])
         let localSchema = Schema([InlineDraftBuffer.self])
-        let fullSchema = Schema(versionedSchema: ZillaSchemaV4.self)
+        let fullSchema = Schema(versionedSchema: ZillaSchemaV5.self)
 
         let cloudConfig = ModelConfiguration(
             "CloudSynced",

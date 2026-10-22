@@ -176,6 +176,7 @@ private struct DraftEditorForm: View {
             type: draft.type,
             severity: draft.severity,
             priority: draft.priority,
+            points: draft.points,
             assignedTo: draft.assignedTo?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             keywords: draft.keywords,
             whiteboard: draft.whiteboard.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,

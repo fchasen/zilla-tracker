@@ -1798,6 +1798,14 @@ private struct DraftMetadata: View {
                     draft.severity = value
                     draft.updatedAt = .now
                 }
+                segmentedRow(
+                    label: "Points",
+                    current: draft.points,
+                    options: ["1", "2", "3", "5", "8", "13"]
+                ) { value in
+                    draft.points = value
+                    draft.updatedAt = .now
+                }
                 assigneeRow
                 keywordsRow
                 whiteboardRow
