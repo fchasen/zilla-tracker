@@ -104,3 +104,39 @@ final class ProductsTests: XCTestCase {
         XCTAssertEqual(products.first?.id, 10)
     }
 }
+
+final class KeywordsTests: XCTestCase {
+    let baseURL = URL(string: "https://bugzilla.example.com")!
+
+    override func tearDown() {
+        super.tearDown()
+        MockURLProtocol.reset()
+    }
+
+    func testKeywordsDecodesFieldValues() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/rest/field/bug/keywords")
+            let body = #"""
+            {
+              "fields": [
+                {
+                  "name": "keywords",
+                  "values": [
+                    {"name": "regression", "description": "A bug that used to work."},
+                    {"name": "perf"}
+                  ]
+                }
+              ]
+            }
+            """#.data(using: .utf8)!
+            return (httpResponse(for: request, status: 200), body)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        let keywords = try await client.keywords()
+        XCTAssertEqual(keywords, [
+            BugKeyword(name: "regression", description: "A bug that used to work."),
+            BugKeyword(name: "perf")
+        ])
+    }
+}

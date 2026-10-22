@@ -360,7 +360,7 @@ extension Bug {
             lastChangeTime: lastChangeTime,
             priority: update.priority ?? priority,
             severity: update.severity ?? severity,
-            keywords: keywords,
+            keywords: update.keywords.map { $0.applied(to: keywords) } ?? keywords,
             whiteboard: update.whiteboard ?? whiteboard,
             blocks: update.blocks.map { $0.applied(to: blocks) } ?? blocks,
             dependsOn: update.dependsOn.map { $0.applied(to: dependsOn) } ?? dependsOn,
@@ -434,6 +434,19 @@ private extension SeeAlsoUpdate {
         var result = urls
         for url in add ?? [] where !result.contains(url) {
             result.append(url)
+        }
+        if let remove {
+            result.removeAll { remove.contains($0) }
+        }
+        return result
+    }
+}
+
+private extension KeywordsUpdate {
+    func applied(to keywords: [String]) -> [String] {
+        var result = set ?? keywords
+        for keyword in add ?? [] where !result.contains(keyword) {
+            result.append(keyword)
         }
         if let remove {
             result.removeAll { remove.contains($0) }

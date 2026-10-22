@@ -289,6 +289,9 @@ struct DependencyMetadata: Sendable, Hashable {
 final class Workspace {
     private(set) var products: [Product] = []
     private(set) var isLoadingProducts = false
+    private(set) var keywordCatalog: [BugKeyword] = []
+    @ObservationIgnored private var isLoadingKeywords = false
+    let whiteboardTagHistory = WhiteboardTagHistory()
     private(set) var loadError: String?
 
     var sidebarSelection: SidebarSelection? = Workspace.defaultSidebarSelection {
@@ -661,6 +664,25 @@ final class Workspace {
 
     func dependencyMetadata(for id: Bug.ID) -> DependencyMetadata? {
         cache?.dependencyMeta(for: id)
+    }
+
+    func loadKeywords(using client: BugzillaClient) async {
+        guard keywordCatalog.isEmpty, !isLoadingKeywords else { return }
+        isLoadingKeywords = true
+        defer { isLoadingKeywords = false }
+        do {
+            let fetched: [BugKeyword]
+            if let cache {
+                fetched = try await cache.keywords(using: client)
+            } else {
+                fetched = try await client.keywords()
+            }
+            keywordCatalog = fetched.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        } catch {
+            return
+        }
     }
 
     func loadProducts(using client: BugzillaClient) async {
@@ -2114,9 +2136,19 @@ private struct DraftMetadata: View {
     private var keywordsRow: some View {
         GridRow {
             Text("Keywords").foregroundStyle(.secondary)
-            TextField("comma-separated", text: $draft.keywordsCSV)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: draft.keywordsCSV) { draft.updatedAt = .now }
+            KeywordTokenList(
+                keywords: draft.keywords,
+                onAdd: { keyword in
+                    guard !draft.keywords.contains(where: { $0.caseInsensitiveCompare(keyword) == .orderedSame }) else { return }
+                    draft.keywordsCSV = (draft.keywords + [keyword]).joined(separator: ", ")
+                    draft.updatedAt = .now
+                },
+                onRemove: { keyword in
+                    draft.keywordsCSV = draft.keywords.filter { $0 != keyword }.joined(separator: ", ")
+                    draft.updatedAt = .now
+                }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -2124,9 +2156,11 @@ private struct DraftMetadata: View {
     private var whiteboardRow: some View {
         GridRow {
             Text("Whiteboard").foregroundStyle(.secondary)
-            TextField("[tag1][tag2]…", text: $draft.whiteboard)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: draft.whiteboard) { draft.updatedAt = .now }
+            WhiteboardTokenList(whiteboard: draft.whiteboard) { raw in
+                draft.whiteboard = raw
+                draft.updatedAt = .now
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -3222,7 +3256,7 @@ struct BugListView: View {
 
     private static let bugIncludeFields = [
         "id", "summary", "status", "resolution", "product", "component",
-        "assigned_to", "priority", "severity", "keywords", "type",
+        "assigned_to", "priority", "severity", "keywords", "whiteboard", "type",
         "last_change_time", "creation_time", "cf_rank", "groups", "flags",
         "attachments.id", "attachments.content_type", "attachments.is_obsolete"
     ]
@@ -3349,6 +3383,7 @@ struct BugListView: View {
             totalMatches = result.totalMatches
             canLoadMore = hasMore(loaded: result.bugs.count, fetched: result.bugs.count, total: result.totalMatches)
             indexFollowedComponentBugs(result.bugs)
+            workspace.whiteboardTagHistory.observe(result.bugs.compactMap(\.whiteboard))
             await fetchDependents(for: result.bugs.filter { Self.isMetaSummary($0.summary) }.map(\.id), key: key)
         } catch is CancellationError {
             return

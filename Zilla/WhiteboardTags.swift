@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import Observation
 
 struct Whiteboard: Equatable, Sendable {
     enum Segment: Equatable, Sendable {
@@ -156,5 +157,48 @@ struct Whiteboard: Equatable, Sendable {
         }
         if !text.isEmpty { segments.append(.text(text)) }
         return segments
+    }
+}
+
+@MainActor
+@Observable
+final class WhiteboardTagHistory {
+    static let storageKey = "zilla.whiteboard.tagHistory"
+    static let limit = 500
+
+    private(set) var tags: [String]
+
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.tags = defaults.stringArray(forKey: Self.storageKey) ?? []
+    }
+
+    func record(_ input: String) {
+        let used = Whiteboard.tokenize(input)
+        guard !used.isEmpty else { return }
+        let lowered = Set(used.map { $0.lowercased() })
+        let updated = used + tags.filter { !lowered.contains($0.lowercased()) }
+        store(updated)
+    }
+
+    func observe(_ whiteboards: [String]) {
+        var known = Set(tags.map { $0.lowercased() })
+        var updated = tags
+        for raw in whiteboards {
+            for tag in Whiteboard(raw).tags where known.insert(tag.lowercased()).inserted {
+                updated.append(tag)
+            }
+        }
+        guard updated.count != tags.count else { return }
+        store(updated)
+    }
+
+    private func store(_ updated: [String]) {
+        let capped = Array(updated.prefix(Self.limit))
+        guard capped != tags else { return }
+        tags = capped
+        defaults.set(capped, forKey: Self.storageKey)
     }
 }

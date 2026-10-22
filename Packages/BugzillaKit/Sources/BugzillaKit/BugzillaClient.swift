@@ -178,6 +178,13 @@ public extension BugzillaClient {
         return try await products(ids: idResponse.ids)
     }
 
+    func keywords() async throws -> [BugKeyword] {
+        struct Field: Decodable { let values: [BugKeyword]? }
+        struct Response: Decodable { let fields: [Field] }
+        let response: Response = try await execute(Endpoint(path: "field/bug/keywords"))
+        return response.fields.first?.values ?? []
+    }
+
     func products(ids: [Int]) async throws -> [Product] {
         try await fetchProducts(query:
             .repeating("ids", values: ids.map(String.init))
@@ -291,6 +298,7 @@ public extension BugzillaClient {
             let severity: String?
             let targetMilestone: String?
             let whiteboard: String?
+            let keywords: KeywordsUpdate?
             let points: String?
             let rank: Int?
             let comment: CommentBody?
@@ -303,7 +311,7 @@ public extension BugzillaClient {
             enum CodingKeys: String, CodingKey {
                 case summary, status, resolution, dupeOf
                 case assignedTo, priority, severity, comment
-                case targetMilestone, whiteboard
+                case targetMilestone, whiteboard, keywords
                 case blocks, dependsOn, seeAlso, flags, groups
                 case points = "cfFxPoints"
                 case rank = "cfRank"
@@ -320,6 +328,7 @@ public extension BugzillaClient {
                 try c.encodeIfPresent(severity, forKey: .severity)
                 try c.encodeIfPresent(targetMilestone, forKey: .targetMilestone)
                 try c.encodeIfPresent(whiteboard, forKey: .whiteboard)
+                try c.encodeIfPresent(keywords, forKey: .keywords)
                 try c.encodeIfPresent(points, forKey: .points)
                 try c.encodeIfPresent(rank, forKey: .rank)
                 try c.encodeIfPresent(comment, forKey: .comment)
@@ -341,6 +350,7 @@ public extension BugzillaClient {
             severity: update.severity,
             targetMilestone: update.targetMilestone,
             whiteboard: update.whiteboard,
+            keywords: update.keywords,
             points: update.points,
             rank: update.rank,
             comment: update.comment.map { CommentBody(body: $0, isPrivate: update.commentIsPrivate) },

@@ -742,7 +742,7 @@ struct BugMetadata: View {
             }
             qeVerifyRow
             a11yReviewRow
-            if !bug.keywords.isEmpty { row("Keywords", bug.keywords.joined(separator: ", ")) }
+            keywordsRow
             if let when = bug.creationTime { dateRow("Created", when, relative: false) }
             if let when = bug.lastChangeTime { dateRow("Last change", when, relative: true) }
         }
@@ -751,6 +751,18 @@ struct BugMetadata: View {
             if auth.isSignedIn {
                 await workspace.loadProducts(using: auth.client)
             }
+        }
+    }
+
+    private var keywordsRow: some View {
+        GridRow {
+            Text("Keywords").foregroundStyle(.secondary)
+            KeywordTokenList(
+                keywords: bug.keywords,
+                onAdd: { onUpdate(BugUpdate(keywords: .add([$0])), []) },
+                onRemove: { onUpdate(BugUpdate(keywords: .remove([$0])), []) }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -1683,6 +1695,8 @@ private struct WhiteboardSection: View {
     let bug: Bug
     let onUpdate: (BugUpdate) -> Void
 
+    @Environment(Workspace.self) private var workspace
+
     @State private var isAddingTag = false
     @State private var isEditingRaw = false
 
@@ -1699,6 +1713,9 @@ private struct WhiteboardSection: View {
                 title: "Whiteboard",
                 trailing: tags.count > 1 ? "\(tags.count)" : nil
             )
+            .task(id: bug.whiteboard) {
+                workspace.whiteboardTagHistory.observe(bug.whiteboard.map { [$0] } ?? [])
+            }
 
             if tags.isEmpty {
                 Text("No tags")
@@ -1733,8 +1750,14 @@ private struct WhiteboardSection: View {
                 }
                 .buttonStyle(.borderless)
                 .popover(isPresented: $isAddingTag, arrowEdge: .bottom) {
-                    WhiteboardFieldEditor(title: "Add Tag", placeholder: "tag") { value in
-                        isAddingTag = false
+                    TagSuggestionPopover(
+                        title: "Add Tag",
+                        placeholder: "tag",
+                        suggestions: workspace.whiteboardTagHistory.tags.map { TagSuggestion(name: $0) },
+                        excluded: tags,
+                        allowsCustom: true,
+                        monospaced: true
+                    ) { value in
                         commit { $0.add(value) }
                     }
                 }
@@ -1772,6 +1795,11 @@ private struct WhiteboardSection: View {
 
     private func commitRaw(_ raw: String) {
         guard raw != whiteboard.rawValue else { return }
+        let existing = Set(whiteboard.tags.map { $0.lowercased() })
+        let added = Whiteboard(raw).tags.filter { !existing.contains($0.lowercased()) }
+        if !added.isEmpty {
+            workspace.whiteboardTagHistory.record(added.map { "[\($0)]" }.joined())
+        }
         onUpdate(BugUpdate(whiteboard: raw))
     }
 }
@@ -1787,12 +1815,7 @@ private struct WhiteboardTagPill: View {
         Button {
             isEditing = true
         } label: {
-            Text(tag)
-                .scaledFont(.caption, weight: .semibold, design: .monospaced)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.secondary.opacity(0.15), in: Capsule())
-                .contentShape(Capsule())
+            TagChipLabel(text: tag, monospaced: true)
         }
         .buttonStyle(.plain)
         .help("Edit tag")
@@ -2292,6 +2315,17 @@ struct FlowLayout: Layout {
                 proposal: .unspecified
             )
         }
+    }
+
+    func explicitAlignment(
+        of guide: VerticalAlignment,
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGFloat? {
+        guard guide == .firstTextBaseline, let first = subviews.first else { return nil }
+        return bounds.minY + first.dimensions(in: .unspecified)[.firstTextBaseline]
     }
 
     private func arrange(subviews: Subviews, in width: CGFloat) -> (offsets: [CGPoint], size: CGSize) {

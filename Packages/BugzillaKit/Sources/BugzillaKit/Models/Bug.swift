@@ -332,6 +332,7 @@ public struct BugUpdate: Sendable, Equatable {
     public var severity: String?
     public var targetMilestone: String?
     public var whiteboard: String?
+    public var keywords: KeywordsUpdate?
     public var points: String?
     public var rank: Int?
     public var comment: String?
@@ -352,6 +353,7 @@ public struct BugUpdate: Sendable, Equatable {
         severity: String? = nil,
         targetMilestone: String? = nil,
         whiteboard: String? = nil,
+        keywords: KeywordsUpdate? = nil,
         points: String? = nil,
         rank: Int? = nil,
         comment: String? = nil,
@@ -371,6 +373,7 @@ public struct BugUpdate: Sendable, Equatable {
         self.severity = severity
         self.targetMilestone = targetMilestone
         self.whiteboard = whiteboard
+        self.keywords = keywords
         self.points = points
         self.rank = rank
         self.comment = comment

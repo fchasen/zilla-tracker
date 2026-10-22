@@ -131,6 +131,24 @@ final class UpdateBugTests: XCTestCase {
         _ = try await client.updateBug(id: 1, BugUpdate(whiteboard: ""))
     }
 
+    func testUpdateKeywordsEncodesAddAndRemove() async throws {
+        MockURLProtocol.handler = { request in
+            let body = request.bodyData ?? Data()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let keywords = try XCTUnwrap(json["keywords"] as? [String: Any])
+            XCTAssertEqual(keywords["add"] as? [String], ["regression"])
+            XCTAssertEqual(keywords["remove"] as? [String], ["perf"])
+            XCTAssertNil(keywords["set"])
+            return (httpResponse(for: request, status: 200), #"{"bugs":[]}"#.data(using: .utf8)!)
+        }
+
+        let client = BugzillaClient(baseURL: baseURL, session: MockURLProtocol.session())
+        _ = try await client.updateBug(
+            id: 1,
+            BugUpdate(keywords: KeywordsUpdate(add: ["regression"], remove: ["perf"]))
+        )
+    }
+
     func testEmptyUpdateOmitsAllFields() async throws {
         MockURLProtocol.handler = { request in
             let body = request.bodyData ?? Data()

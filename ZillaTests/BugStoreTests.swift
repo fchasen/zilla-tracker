@@ -350,6 +350,13 @@ struct BugStoreTests {
         #expect(bug.assignedToDetail == user)
     }
 
+    @Test func applyingKeywordsAddsAndRemoves() {
+        let added = makeBug(1).applying(BugUpdate(keywords: .add(["regression", "perf"])))
+        #expect(added.keywords == ["regression", "perf"])
+        let removed = added.applying(BugUpdate(keywords: .remove(["regression"])))
+        #expect(removed.keywords == ["perf"])
+    }
+
     @Test func applyingDuplicateSetsResolution() {
         let bug = makeBug(1).applying(BugUpdate(status: "RESOLVED", dupeOf: 9))
         #expect(bug.resolution == "DUPLICATE")

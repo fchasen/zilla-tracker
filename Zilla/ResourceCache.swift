@@ -10,6 +10,7 @@ import PhabricatorKit
 enum CacheKey: Hashable, Sendable {
     case whoami
     case selectableProducts
+    case keywords
     case bug(Bug.ID)
     case comments(bugID: Bug.ID)
     case bugSearch(BugQuery)
@@ -44,7 +45,7 @@ extension CacheKey {
             return .revisionTransactions
         case .fileContent:
             return .fileContent
-        case .whoami, .selectableProducts, .bug, .bugSearch, .bugCount,
+        case .whoami, .selectableProducts, .keywords, .bug, .bugSearch, .bugCount,
              .dependencyMeta, .phabUser, .revisionSearch, .revisionSearchPages,
              .revision, .revisionStack, .phabricatorUser:
             return nil
@@ -54,7 +55,7 @@ extension CacheKey {
     var freshTTL: TimeInterval {
         switch self {
         // User identity rarely changes within a session.
-        case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
+        case .whoami, .phabUser, .selectableProducts, .keywords, .phabricatorUser:
             return 6 * 60 * 60
         // Revision detail (header/transactions/diff/stack) — keep cached longer
         // so flipping between recently-opened revisions is instant.
@@ -73,7 +74,7 @@ extension CacheKey {
 
     var hardTTL: TimeInterval {
         switch self {
-        case .whoami, .phabUser, .selectableProducts, .phabricatorUser:
+        case .whoami, .phabUser, .selectableProducts, .keywords, .phabricatorUser:
             return 7 * 24 * 60 * 60
         case .revision, .revisionDiff, .revisionTransactions, .revisionStack:
             return 60 * 60
@@ -406,6 +407,15 @@ extension ResourceCache {
     ) async throws -> [Product] {
         try await fetch(key: .selectableProducts, force: force) {
             try await client.selectableProducts()
+        }
+    }
+
+    func keywords(
+        force: Bool = false,
+        using client: BugzillaClient
+    ) async throws -> [BugKeyword] {
+        try await fetch(key: .keywords, force: force) {
+            try await client.keywords()
         }
     }
 
