@@ -2408,44 +2408,15 @@ struct Sidebar: View {
     }
 }
 
-private struct DraftRow: View {
-    let draft: BugDraft
-
-    var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(draft.displaySummary).lineLimit(1)
-                Text(draft.displaySubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } icon: {
-            Image(systemName: "square.and.pencil")
-        }
-    }
-}
-
 private struct AllDraftsList: View {
     @Environment(Workspace.self) private var workspace
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\BugDraft.updatedAt, order: .reverse)])
     private var drafts: [BugDraft]
+    @State private var pendingDiscard: BugDraft?
 
     private func duplicate(_ draft: BugDraft) {
-        let copy = BugDraft(
-            product: draft.product,
-            componentName: draft.componentName,
-            blocks: draft.blocks
-        )
-        copy.summary = draft.summary
-        copy.bugDescription = draft.bugDescription
-        copy.version = draft.version
-        copy.type = draft.type
-        copy.severity = draft.severity
-        copy.priority = draft.priority
-        copy.assignedTo = draft.assignedTo
-        copy.keywordsCSV = draft.keywordsCSV
-        copy.whiteboard = draft.whiteboard
+        let copy = draft.duplicate()
         modelContext.insert(copy)
         workspace.selectedDraftID = copy.id
     }
@@ -2471,10 +2442,7 @@ private struct AllDraftsList: View {
                                 }
                                 Divider()
                                 Button("Discard", role: .destructive) {
-                                    if workspace.selectedDraftID == draft.id {
-                                        workspace.selectedDraftID = nil
-                                    }
-                                    modelContext.delete(draft)
+                                    pendingDiscard = draft
                                 }
                                 .disabled(workspace.isSubmittingDraft(draft.id))
                             }
@@ -2482,6 +2450,28 @@ private struct AllDraftsList: View {
                 }
             }
         }
+        .confirmationDialog(
+            "Discard this draft?",
+            isPresented: Binding(
+                get: { pendingDiscard != nil },
+                set: { if !$0 { pendingDiscard = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDiscard
+        ) { draft in
+            Button("Discard", role: .destructive) {
+                discard(draft)
+            }
+            Button("Keep", role: .cancel) {}
+        } message: { _ in
+            Text("The draft and any unsubmitted changes will be removed.")
+        }
+    }
+
+    private func discard(_ draft: BugDraft) {
+        guard !workspace.isSubmittingDraft(draft.id) else { return }
+        workspace.dismissDraft(draft.id)
+        modelContext.delete(draft)
     }
 }
 
@@ -2502,7 +2492,7 @@ private struct DraftListRow: View {
 
                 HStack(spacing: 6) {
                     Text(draft.displaySubtitle)
-                    if let firstBlocks = draft.blocks.first {
+                    if draft.componentRef != nil, let firstBlocks = draft.blocks.first {
                         Text(verbatim: "·")
                         Text(verbatim: "blocks #\(firstBlocks)")
                     }

@@ -42,4 +42,22 @@ extension BugDraft {
         }
         return "No component yet"
     }
+
+    func duplicate() -> BugDraft {
+        let copy = BugDraft(product: product, componentName: componentName, blocks: blocks)
+        copy.summary = summary
+        copy.bugDescription = bugDescription
+        copy.version = version
+        copy.type = type
+        copy.severity = severity
+        copy.priority = priority
+        copy.points = points
+        copy.assignedTo = assignedTo
+        copy.keywordsCSV = keywordsCSV
+        copy.whiteboard = whiteboard
+        copy.dependsOn = dependsOn
+        copy.seeAlso = seeAlso
+        copy.isConfidential = isConfidential
+        return copy
+    }
 }
