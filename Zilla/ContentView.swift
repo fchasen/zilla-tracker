@@ -1676,6 +1676,7 @@ struct ContentView: View {
 
     private func createDraft() {
         let draft = BugDraft()
+        draft.type = "task"
         switch workspace.sidebarSelection {
         case .component(let ref), .componentTriage(let ref), .componentBoard(let ref):
             draft.product = ref.product
