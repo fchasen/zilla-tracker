@@ -120,7 +120,6 @@ struct InlineComposerHost: View {
                 length: length,
                 isNewFile: isNewFile,
                 newContent: body,
-                replyTo: replyTo,
                 using: phab.client
             )
         } else {
@@ -130,7 +129,6 @@ struct InlineComposerHost: View {
                 length: length,
                 isNewFile: isNewFile,
                 content: body,
-                replyTo: replyTo,
                 using: phab.client
             )
         }

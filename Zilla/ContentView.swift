@@ -1364,7 +1364,6 @@ final class Workspace {
         length: Int,
         isNewFile: Bool,
         content: String,
-        replyTo: String? = nil,
         using client: PhabricatorClient
     ) async -> Error? {
         guard let diff = loadedRevisionDiff, let revision = loadedRevision else { return nil }
@@ -1375,8 +1374,7 @@ final class Workspace {
                 line: line,
                 length: length,
                 isNewFile: isNewFile,
-                content: content,
-                replyToCommentPHID: replyTo
+                content: content
             )
             cache?.invalidate(.revisionTransactions(revision.id))
             await refreshRevisionActivity(for: revision, using: client)
@@ -1439,7 +1437,6 @@ final class Workspace {
         length: Int,
         isNewFile: Bool,
         newContent: String,
-        replyTo: String? = nil,
         using client: PhabricatorClient
     ) async -> Error? {
         if let error = await deleteInlineDraft(phid: phid, using: client) {
@@ -1451,7 +1448,6 @@ final class Workspace {
             length: length,
             isNewFile: isNewFile,
             content: newContent,
-            replyTo: replyTo,
             using: client
         )
     }

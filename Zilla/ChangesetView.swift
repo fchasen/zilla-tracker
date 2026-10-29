@@ -153,6 +153,7 @@ struct ChangesetView: View {
         let visibleInlines = visibleInlineComments()
         let threadsByRoot = threads(in: visibleInlines)
         let marks = commentMarks(from: threadsByRoot)
+        let doneStates = workspace.inlineDoneStates
         let hiddenLineEstimate = changeset.hunks
             .dropFirst(visibleCount)
             .reduce(0) { $0 + max($1.oldLen, $1.newLen) }
@@ -169,7 +170,7 @@ struct ChangesetView: View {
                     selection: $lineSelection,
                     onCommentMarkTap: handleCommentMarkTap,
                     onCreateComment: handleCreateComment,
-                    threadSlot: threadSlot(threadsByRoot: threadsByRoot),
+                    threadSlot: threadSlot(threadsByRoot: threadsByRoot, doneStates: doneStates),
                     composerSlot: inlineComposerSlot()
                 )
                 .frame(maxWidth: .infinity)
@@ -257,7 +258,10 @@ struct ChangesetView: View {
         return nil
     }
 
-    private func threadSlot(threadsByRoot: [String: [InlineComment]]) -> ((FolioCommentMark) -> AnyView)? {
+    private func threadSlot(
+        threadsByRoot: [String: [InlineComment]],
+        doneStates: [String: Bool]
+    ) -> ((FolioCommentMark) -> AnyView)? {
         return { mark in
             let thread = threadsByRoot[mark.id] ?? []
             #if os(macOS)
@@ -268,7 +272,6 @@ struct ChangesetView: View {
             #else
             let composerContent: (() -> AnyView)? = nil
             #endif
-            let doneStates = workspace.inlineDoneStates
             let isDone = doneStates[mark.id]
             let canToggleDone = isDone != nil && isCurrentUserRevisionAuthor
             return AnyView(
@@ -277,7 +280,7 @@ struct ChangesetView: View {
                     userDirectory: workspace.revisionUserDirectory,
                     currentUserPHID: phab.currentUser?.phid,
                     isDone: isDone,
-                    onReply: { handleReply(mark: mark) },
+                    onReply: { handleReply(mark: mark, length: thread.first?.length ?? 1) },
                     onEditDraft: handleEditDraft,
                     onDeleteDraft: handleDeleteDraft,
                     onToggleDone: canToggleDone ? { handleToggleDone(commentPHID: mark.id, current: isDone ?? false) } : nil,
@@ -378,30 +381,7 @@ struct ChangesetView: View {
     }
 
     private func threads(in visible: [InlineComment]) -> [String: [InlineComment]] {
-        let visiblePHIDs = Set(visible.map(\.phid))
-        let roots = visible.filter { inline in
-            guard let parent = inline.replyToCommentPHID else { return true }
-            return !visiblePHIDs.contains(parent)
-        }
-        var result: [String: [InlineComment]] = [:]
-        let byCreated: (InlineComment, InlineComment) -> Bool = { lhs, rhs in
-            (lhs.dateCreated ?? .distantPast) < (rhs.dateCreated ?? .distantPast)
-        }
-        for root in roots {
-            var collected: [InlineComment] = [root]
-            var queue: [String] = [root.phid]
-            while let parent = queue.popLast() {
-                let children = visible
-                    .filter { $0.replyToCommentPHID == parent }
-                    .sorted(by: byCreated)
-                for child in children {
-                    collected.append(child)
-                    queue.append(child.phid)
-                }
-            }
-            result[root.phid] = collected
-        }
-        return result
+        InlineThreads.group(visible)
     }
 
     private func commentMarks(from threadsByRoot: [String: [InlineComment]]) -> [FolioCommentMark] {
@@ -439,11 +419,11 @@ struct ChangesetView: View {
     private func handleCommentMarkTap(_ mark: FolioCommentMark) {
     }
 
-    private func handleReply(mark: FolioCommentMark) {
+    private func handleReply(mark: FolioCommentMark, length: Int) {
         workspace.beginInlineComposer(
             path: changeset.currentPath,
             line: mark.line,
-            length: 1,
+            length: max(1, length),
             isNewFile: mark.side == .newFile,
             replyTo: mark.id
         )

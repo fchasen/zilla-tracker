@@ -21,7 +21,7 @@ struct RevisionDiffView: View {
                         description: Text("This diff has no file-level changes.")
                     )
                 } else {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(visibleChangesets(in: diff)) { changeset in
                             ChangesetView(changeset: changeset, latestDiffID: diff.id)
                                 .id(RevisionDetailView.scrollAnchor(for: changeset.currentPath))

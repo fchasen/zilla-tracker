@@ -147,7 +147,6 @@ struct InlineComposerSheet: View {
                 length: length,
                 isNewFile: isNewFile,
                 newContent: body,
-                replyTo: replyTo,
                 using: phab.client
             )
         } else {
@@ -157,7 +156,6 @@ struct InlineComposerSheet: View {
                 length: length,
                 isNewFile: isNewFile,
                 content: body,
-                replyTo: replyTo,
                 using: phab.client
             )
         }
